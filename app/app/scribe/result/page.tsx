@@ -7,13 +7,25 @@ import AppHeader from '@/components/AppHeader';
 import Stepper from '@/components/Stepper';
 import EditableField from '@/components/EditableField';
 import MkbPicker from '@/components/MkbPicker';
+import MedsPanel from '@/components/MedsPanel';
+import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import { api, ApiError, getSession } from '@/lib/api';
 import type { DoctorInfo } from '@/lib/api';
 import type {
   TranscribeResult,
   TranscribeFields,
   ComorbidDiagnosis,
+  Medication,
 } from '@/lib/types';
+import { checkDrugSafety, type SafetyAlert } from '@/lib/drug-safety';
+import {
+  formatPlainText,
+  copyToClipboard,
+  generatePdfHtml,
+  openPdfPreview,
+  generateWordHtml,
+  downloadWord,
+} from '@/lib/exporters';
 
 const RESULT_STORAGE_KEY = 'tuber_last_result';
 
@@ -23,6 +35,7 @@ interface NavItem {
   id: string;
   label: string;
   indent?: boolean;
+  scrollMode?: 'section' | 'top';
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -31,7 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'sec-obektivno', label: 'Обективен статус' },
   { id: 'sec-izsledvania', label: 'Изследвания' },
   { id: 'sec-terapia', label: 'Терапия' },
-  { id: 'sec-meds', label: 'Медикаменти' },
+  { id: 'sec-meds-panel', label: 'Медикаменти', scrollMode: 'top' },
   { id: 'sec-izdadeni', label: 'Издадени документи' },
   { id: 'sec-napravlenia', label: 'Направления', indent: true },
   { id: 'sec-naznacheni', label: 'Назначени изследвания', indent: true },
@@ -50,6 +63,11 @@ export default function ResultPage() {
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [mkbOpen, setMkbOpen] = useState(false);
   const [mkbTarget, setMkbTarget] = useState<MkbTarget | null>(null);
+  const [lastRemovedMedName, setLastRemovedMedName] = useState<string | null>(
+    null
+  );
+  const [toast, setToast] = useState<ToastData | null>(null);
+  const toastIdRef = useRef(0);
 
   const editTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingEditField = useRef<string | null>(null);
@@ -115,10 +133,48 @@ export default function ResultPage() {
     [trackEdit]
   );
 
+  // ── Meds change — detect removals to drive therapy hint ──────
+  const onMedsChange = useCallback(
+    (next: Medication[]) => {
+      const before = fields.medications_list || [];
+      if (next.length < before.length) {
+        const nextNames = new Set(next.map((m) => m.inn));
+        const removed = before.find((b) => !nextNames.has(b.inn));
+        if (removed) setLastRemovedMedName(removed.inn);
+      }
+      updateField('medications_list', next);
+    },
+    [fields.medications_list, updateField]
+  );
+
+  // ── Safety alerts (derived from fields) ──────────────────────
+  const safetyAlerts = useMemo(() => checkDrugSafety(fields), [fields]);
+  const criticals = useMemo(
+    () => safetyAlerts.filter((a) => a.severity === 'critical'),
+    [safetyAlerts]
+  );
+  const warnings = useMemo(
+    () => safetyAlerts.filter((a) => a.severity === 'warning'),
+    [safetyAlerts]
+  );
+
+  // Auto-dismiss therapy hint when name no longer in terapia text
+  useEffect(() => {
+    if (!lastRemovedMedName) return;
+    const text = (fields.terapia || '').toLowerCase();
+    if (!text.includes(lastRemovedMedName.toLowerCase())) {
+      setLastRemovedMedName(null);
+    }
+  }, [fields.terapia, lastRemovedMedName]);
+
   // ── Navigation: click to scroll ──────────────────────────────
-  const navTo = useCallback((id: string) => {
-    setActiveNav(id);
-    const el = document.getElementById(id);
+  const navTo = useCallback((item: NavItem) => {
+    setActiveNav(item.id);
+    if (item.scrollMode === 'top') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    const el = document.getElementById(item.id);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
 
@@ -130,16 +186,14 @@ export default function ResultPage() {
         const visible = entries
           .filter((e) => e.isIntersecting)
           .sort(
-            (a, b) =>
-              a.boundingClientRect.top - b.boundingClientRect.top
+            (a, b) => a.boundingClientRect.top - b.boundingClientRect.top
           );
-        if (visible.length > 0) {
-          setActiveNav(visible[0].target.id);
-        }
+        if (visible.length > 0) setActiveNav(visible[0].target.id);
       },
       { rootMargin: '-120px 0px -60% 0px', threshold: 0 }
     );
     NAV_ITEMS.forEach((item) => {
+      if (item.scrollMode === 'top') return;
       const el = document.getElementById(item.id);
       if (el) observer.observe(el);
     });
@@ -163,6 +217,9 @@ export default function ResultPage() {
     setMkbTarget(null);
   }, []);
 
+  // Always overwrite both code AND diagnosis name when picking from MKB.
+  // This makes the picker the source of truth — picking a different code
+  // means you wanted to change the diagnosis, not keep stale text.
   const pickMkb = useCallback(
     (code: string, term: string) => {
       if (!mkbTarget) return;
@@ -170,23 +227,14 @@ export default function ResultPage() {
         setFields((prev) => ({
           ...prev,
           osnovna_mkb: code,
-          osnovna_diagnoza:
-            (prev.osnovna_diagnoza || '').trim() === ''
-              ? term
-              : prev.osnovna_diagnoza,
+          osnovna_diagnoza: term,
         }));
         trackEdit('osnovna_mkb');
       } else {
         const idx = mkbTarget.index;
         setFields((prev) => {
           const co = (prev.pridruzhavashti || []).map((d, i) =>
-            i === idx
-              ? {
-                  mkb: code,
-                  diagnoza:
-                    d.diagnoza.trim() === '' ? term : d.diagnoza,
-                }
-              : d
+            i === idx ? { mkb: code, diagnoza: term } : d
           );
           return { ...prev, pridruzhavashti: co };
         });
@@ -196,6 +244,71 @@ export default function ResultPage() {
     [mkbTarget, trackEdit]
   );
 
+  // ── Toast helper ─────────────────────────────────────────────
+  const showToast = useCallback((kind: ToastKind, message: string) => {
+    toastIdRef.current += 1;
+    setToast({ kind, message, id: toastIdRef.current });
+  }, []);
+
+  // ── Export handlers ──────────────────────────────────────────
+  const handleCopy = useCallback(async () => {
+    if (isLocked) return;
+    const text = formatPlainText(fields);
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      showToast('success', '✓ Копирано в клипборда');
+    } else {
+      showToast('error', 'Копирането не е възможно в този браузър');
+    }
+  }, [fields, isLocked, showToast]);
+
+  const handlePdf = useCallback(() => {
+    if (isLocked) return;
+    const dateStr = new Date().toLocaleDateString('bg-BG', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+    const html = generatePdfHtml(fields, dateStr);
+    const opened = openPdfPreview(html);
+    if (opened) {
+      showToast(
+        'success',
+        '✓ Изберете "Запази като PDF" в диалога за печат'
+      );
+    } else {
+      showToast(
+        'error',
+        'Изскачащият прозорец е блокиран — разрешете го за този сайт'
+      );
+    }
+  }, [fields, isLocked, showToast]);
+
+  const handleWord = useCallback(() => {
+    if (isLocked) return;
+    const dateStr = new Date().toLocaleDateString('bg-BG', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+    const html = generateWordHtml(fields, dateStr);
+    const filename =
+      'ambulatoren-list-' +
+      new Date().toISOString().slice(0, 10) +
+      '.doc';
+    try {
+      downloadWord(html, filename);
+      showToast('success', '✓ Word файлът е свален');
+    } catch {
+      showToast('error', 'Грешка при генериране на Word файла');
+    }
+  }, [fields, isLocked, showToast]);
+
+  const handlePrint = useCallback(() => {
+    if (isLocked) return;
+    window.print();
+  }, [isLocked]);
+
   // ── Visible-section bookkeeping ──────────────────────────────
   const visibleSections = useMemo(() => {
     const v: Record<string, boolean> = {};
@@ -204,7 +317,7 @@ export default function ResultPage() {
     v['sec-obektivno'] = true;
     v['sec-izsledvania'] = true;
     v['sec-terapia'] = true;
-    v['sec-meds'] = true;
+    v['sec-meds-panel'] = true;
     const hasNap = !!(fields.napravlenia && fields.napravlenia.trim());
     const hasNaz = !!(fields.naznacheni && fields.naznacheni.trim());
     v['sec-izdadeni'] = hasNap || hasNaz;
@@ -235,6 +348,28 @@ export default function ResultPage() {
       <AppHeader doctor={doctor} />
       <Stepper active="result" />
 
+      {/* Critical safety banner — full width */}
+      {criticals.length > 0 && (
+        <div
+          className="px-6 py-4 border-b no-print"
+          style={{ background: '#FDECEA', borderColor: '#E5BCB6' }}
+        >
+          <div className="max-w-6xl mx-auto">
+            <div
+              className="text-sm font-bold uppercase tracking-wider mb-2"
+              style={{ color: 'var(--color-red)' }}
+            >
+              🚨 Внимание — Проверка за безопасност
+            </div>
+            <div className="space-y-2">
+              {criticals.map((a, i) => (
+                <CriticalChip key={i} alert={a} />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top action bar */}
       <div
         className="px-6 py-3 border-b flex items-center justify-between gap-4 flex-wrap no-print"
@@ -252,27 +387,30 @@ export default function ResultPage() {
         />
         <div className="flex items-center gap-2">
           <TopbarBtn
-            disabled
             locked={isLocked}
+            disabled={isLocked}
+            onClick={handlePdf}
             label="⬇ PDF"
             lockedHint="Първо потвърдете прегледа"
           />
           <TopbarBtn
-            disabled
             locked={isLocked}
+            disabled={isLocked}
+            onClick={handleWord}
             label="⬇ Word"
             lockedHint="Първо потвърдете прегледа"
           />
           <TopbarBtn
-            disabled
             locked={isLocked}
+            disabled={isLocked}
+            onClick={handleCopy}
             label="⎘ Копирай"
             lockedHint="Първо потвърдете прегледа"
           />
           <TopbarBtn
             locked={isLocked}
             disabled={isLocked}
-            onClick={() => window.print()}
+            onClick={handlePrint}
             label="⎙ Печат"
             lockedHint="Първо потвърдете прегледа"
           />
@@ -297,7 +435,7 @@ export default function ResultPage() {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => navTo(item.id)}
+                    onClick={() => navTo(item)}
                     className="flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors"
                     style={{
                       paddingLeft: item.indent ? '28px' : '12px',
@@ -411,7 +549,6 @@ export default function ResultPage() {
             </div>
           </div>
 
-          {/* Sections */}
           <div className="space-y-4">
             <DiagnosesSection
               osnovnaDiagnoza={fields.osnovna_diagnoza || ''}
@@ -424,12 +561,8 @@ export default function ResultPage() {
               onPridruzhavashtiChange={(v) =>
                 updateField('pridruzhavashti', v)
               }
-              onOpenMkbForOsnovna={() =>
-                openMkbPicker({ kind: 'osnovna' })
-              }
-              onOpenMkbForCo={(i) =>
-                openMkbPicker({ kind: 'co', index: i })
-              }
+              onOpenMkbForOsnovna={() => openMkbPicker({ kind: 'osnovna' })}
+              onOpenMkbForCo={(i) => openMkbPicker({ kind: 'co', index: i })}
             />
 
             <TextSection
@@ -456,44 +589,6 @@ export default function ResultPage() {
               value={fields.terapia || ''}
               onChange={(v) => updateField('terapia', v)}
             />
-
-            <div
-              id="sec-meds"
-              className="bg-white rounded-2xl border p-6 scroll-mt-24"
-              style={{ borderColor: 'var(--color-border)' }}
-            >
-              <SectionHead title="Медикаменти" />
-              <div
-                className="text-sm italic"
-                style={{ color: 'var(--color-text-hint)' }}
-              >
-                Пълният панел с медикаменти, безопасност и добавяне от база
-                данни идва в C4c.
-                {fields.medications_list &&
-                  fields.medications_list.length > 0 && (
-                    <div className="mt-3 not-italic">
-                      <div
-                        className="text-xs uppercase tracking-wider mb-2"
-                        style={{ color: 'var(--color-text-muted)' }}
-                      >
-                        AI откри ({fields.medications_list.length}):
-                      </div>
-                      <ul
-                        className="space-y-1"
-                        style={{ color: 'var(--color-text)' }}
-                      >
-                        {fields.medications_list.map((m, i) => (
-                          <li key={i} className="text-sm">
-                            • {m.inn}
-                            {m.dose ? ', ' + m.dose : ''}
-                            {m.regimen ? ', ' + m.regimen : ''}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-              </div>
-            </div>
 
             {visibleSections['sec-izdadeni'] && (
               <div
@@ -541,9 +636,37 @@ export default function ResultPage() {
           </div>
         </main>
 
-        {/* ─── Right: actions panel ─── */}
+        {/* ─── Right: meds + safety + actions ─── */}
         <aside className="no-print">
           <div className="sticky top-[88px] space-y-4">
+            <MedsPanel
+              meds={fields.medications_list || []}
+              onChange={onMedsChange}
+              terapiaText={fields.terapia || ''}
+              inlineCriticals={criticals}
+              lastRemovedName={lastRemovedMedName}
+              onClearRemovedHint={() => setLastRemovedMedName(null)}
+            />
+
+            {warnings.length > 0 && (
+              <div
+                className="bg-white rounded-2xl border p-4"
+                style={{ borderColor: 'var(--color-border)' }}
+              >
+                <div
+                  className="text-xs uppercase tracking-wider mb-2 font-medium"
+                  style={{ color: 'var(--color-gold)' }}
+                >
+                  ⚠ Предупреждения
+                </div>
+                <div className="space-y-2">
+                  {warnings.map((a, i) => (
+                    <WarningChip key={i} alert={a} />
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div
               className="bg-white rounded-2xl border p-4"
               style={{ borderColor: 'var(--color-border)' }}
@@ -565,7 +688,7 @@ export default function ResultPage() {
                 + Нова консултация
               </Link>
               <button
-                onClick={() => !isLocked && window.print()}
+                onClick={handlePrint}
                 disabled={isLocked}
                 title={
                   isLocked ? 'Първо потвърдете прегледа' : undefined
@@ -578,16 +701,6 @@ export default function ResultPage() {
               >
                 {isLocked ? '🔒' : '⎙'} Печат
               </button>
-            </div>
-
-            <div
-              className="bg-white rounded-2xl border p-4 text-xs italic"
-              style={{
-                borderColor: 'var(--color-border)',
-                color: 'var(--color-text-hint)',
-              }}
-            >
-              Странична секция с медикаменти и безопасност идва в C4c.
             </div>
           </div>
         </aside>
@@ -603,11 +716,69 @@ export default function ResultPage() {
             : 'Придружаващо заболяване — МКБ-10'
         }
       />
+
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>
   );
 }
 
 /* ──────────────────────────────────────────────────────────────── */
+
+function CriticalChip({ alert }: { alert: SafetyAlert }) {
+  return (
+    <div
+      className="flex items-start gap-3 px-3 py-2 rounded-md"
+      style={{
+        background: 'white',
+        borderColor: 'var(--color-red)',
+        borderWidth: 1,
+      }}
+    >
+      <span className="text-lg flex-shrink-0">🚨</span>
+      <div className="flex-1 min-w-0">
+        <div
+          className="text-xs font-bold uppercase tracking-wider"
+          style={{ color: 'var(--color-red)' }}
+        >
+          Внимание!
+        </div>
+        <div
+          className="text-sm mt-0.5"
+          style={{ color: 'var(--color-text)' }}
+        >
+          {alert.message}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WarningChip({ alert }: { alert: SafetyAlert }) {
+  return (
+    <div
+      className="flex items-start gap-2 px-2.5 py-2 rounded-md"
+      style={{
+        background: 'var(--color-gold-soft)',
+        borderColor: 'var(--color-gold)',
+        borderWidth: 1,
+      }}
+    >
+      <span className="text-sm flex-shrink-0">⚠️</span>
+      <div
+        className="text-xs leading-snug"
+        style={{ color: 'var(--color-text)' }}
+      >
+        <div
+          className="font-semibold uppercase tracking-wide text-[10px] mb-0.5"
+          style={{ color: 'var(--color-gold)' }}
+        >
+          Предупреждение
+        </div>
+        {alert.message}
+      </div>
+    </div>
+  );
+}
 
 function StatusBadge({
   status,
@@ -690,7 +861,7 @@ function TopbarBtn({
     <button
       onClick={onClick}
       disabled={finalDisabled}
-      title={locked ? lockedHint : disabled ? 'Активира се в C4d' : undefined}
+      title={locked ? lockedHint : undefined}
       className="px-3 py-1.5 rounded-md text-sm font-medium border transition hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed"
       style={{
         borderColor: 'var(--color-border-mid)',
