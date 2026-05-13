@@ -1,15 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import AppHeader from '@/components/AppHeader';
-import {
-  api,
-  clearSession,
-  getSession,
-  type DoctorInfo,
-} from '@/lib/api';
+import Stepper from '@/components/Stepper';
+import EditableField from '@/components/EditableField';
+import MkbPicker from '@/components/MkbPicker';
+import { api, ApiError, getSession } from '@/lib/api';
+import type { DoctorInfo } from '@/lib/api';
 import type {
   TranscribeResult,
   TranscribeFields,
@@ -18,24 +17,45 @@ import type {
 
 const RESULT_STORAGE_KEY = 'tuber_last_result';
 
-type ReviewState = 'pending' | 'confirmed';
+type ReviewStatus = 'pending' | 'confirmed';
 
-/* ─────────────────────────────────────────────────────────────── */
+interface NavItem {
+  id: string;
+  label: string;
+  indent?: boolean;
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { id: 'sec-diag', label: 'Диагнози МКБ-10' },
+  { id: 'sec-anamneza', label: 'Анамнеза' },
+  { id: 'sec-obektivno', label: 'Обективен статус' },
+  { id: 'sec-izsledvania', label: 'Изследвания' },
+  { id: 'sec-terapia', label: 'Терапия' },
+  { id: 'sec-meds', label: 'Медикаменти' },
+  { id: 'sec-izdadeni', label: 'Издадени документи' },
+  { id: 'sec-napravlenia', label: 'Направления', indent: true },
+  { id: 'sec-naznacheni', label: 'Назначени изследвания', indent: true },
+];
+
+type MkbTarget = { kind: 'osnovna' } | { kind: 'co'; index: number };
 
 export default function ResultPage() {
   const router = useRouter();
   const [doctor, setDoctor] = useState<DoctorInfo | null>(null);
-  const [result, setResult] = useState<TranscribeResult | null>(null);
-  const [fields, setFields] = useState<TranscribeFields | null>(null);
-  const [review, setReview] = useState<ReviewState>('pending');
-  const [activeSection, setActiveSection] = useState('section-diag');
+  const [original, setOriginal] = useState<TranscribeResult | null>(null);
+  const [fields, setFields] = useState<TranscribeFields>({});
+  const [reviewStatus, setReviewStatus] = useState<ReviewStatus>('pending');
+  const [reviewPopupOpen, setReviewPopupOpen] = useState(false);
+  const [activeNav, setActiveNav] = useState<string>('sec-diag');
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [mkbOpen, setMkbOpen] = useState(false);
+  const [mkbTarget, setMkbTarget] = useState<MkbTarget | null>(null);
 
-  const fieldsRef = useRef<TranscribeFields | null>(null);
-  const editTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const editCountRef = useRef(0);
+  const editTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingEditField = useRef<string | null>(null);
+  const isLocked = reviewStatus !== 'confirmed';
 
-  // ── Auth + load result
+  // ── Bootstrap ────────────────────────────────────────────────
   useEffect(() => {
     const session = getSession();
     if (!session) {
@@ -51,60 +71,149 @@ export default function ResultPage() {
     }
     try {
       const parsed = JSON.parse(raw) as TranscribeResult;
-      setResult(parsed);
-      setFields(parsed.fields);
-      fieldsRef.current = parsed.fields;
+      setOriginal(parsed);
+      setFields({ ...parsed.fields });
     } catch {
       router.replace('/app/scribe');
     }
   }, [router]);
 
-  // ── Field update: local state + sessionStorage + debounced backend save
-  const updateField = useCallback(
-    <K extends keyof TranscribeFields>(key: K, val: TranscribeFields[K]) => {
-      if (!result) return;
-      setFields((prev) => {
-        const next: TranscribeFields = { ...(prev || {}), [key]: val };
-        fieldsRef.current = next;
-        sessionStorage.setItem(
-          RESULT_STORAGE_KEY,
-          JSON.stringify({ ...result, fields: next })
-        );
-        return next;
-      });
+  // ── Edit tracking (debounced) ─────────────────────────────────
+  const flushEdit = useCallback(() => {
+    if (!original) return;
+    const field = pendingEditField.current ?? undefined;
+    api.editConsultation(original.consultationId, field).catch((err) => {
+      if (err instanceof ApiError) {
+        console.warn('[edit-track] ' + err.status + ' ' + err.message);
+      }
+    });
+    pendingEditField.current = null;
+  }, [original]);
 
-      editCountRef.current++;
-      if (editTimeoutRef.current) clearTimeout(editTimeoutRef.current);
-      editTimeoutRef.current = setTimeout(() => {
-        const snapshot = fieldsRef.current;
-        if (!snapshot) return;
-        api.editConsultation(result.consultationId, snapshot).catch(() => {
-          /* silent — backend logging shouldn't block UX */
-        });
-      }, 1500);
+  const trackEdit = useCallback(
+    (fieldKey: string) => {
+      pendingEditField.current = fieldKey;
+      if (editTimerRef.current) clearTimeout(editTimerRef.current);
+      editTimerRef.current = setTimeout(flushEdit, 1500);
+      if (reviewStatus === 'confirmed') setReviewStatus('pending');
     },
-    [result]
+    [flushEdit, reviewStatus]
   );
 
-  // ── Section nav: scroll-into-view + update active state
+  useEffect(() => {
+    return () => {
+      if (editTimerRef.current) clearTimeout(editTimerRef.current);
+    };
+  }, []);
+
+  // ── Field updaters ───────────────────────────────────────────
+  const updateField = useCallback(
+    <K extends keyof TranscribeFields>(key: K, next: TranscribeFields[K]) => {
+      setFields((prev) => ({ ...prev, [key]: next }));
+      trackEdit(String(key));
+    },
+    [trackEdit]
+  );
+
+  // ── Navigation: click to scroll ──────────────────────────────
   const navTo = useCallback((id: string) => {
-    setActiveSection(id);
+    setActiveNav(id);
     const el = document.getElementById(id);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
 
-  // ── Copy whole document as plain text
-  const copyText = useCallback(async () => {
-    if (!fields) return;
-    const text = buildPlainText(fields, doctor);
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      /* fallback omitted — modern browsers support clipboard */
-    }
-  }, [fields, doctor]);
+  // ── Active-section observer (sync on scroll) ─────────────────
+  useEffect(() => {
+    if (!original) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort(
+            (a, b) =>
+              a.boundingClientRect.top - b.boundingClientRect.top
+          );
+        if (visible.length > 0) {
+          setActiveNav(visible[0].target.id);
+        }
+      },
+      { rootMargin: '-120px 0px -60% 0px', threshold: 0 }
+    );
+    NAV_ITEMS.forEach((item) => {
+      const el = document.getElementById(item.id);
+      if (el) observer.observe(el);
+    });
+    return () => observer.disconnect();
+  }, [original, fields.napravlenia, fields.naznacheni]);
 
-  if (!doctor || !result || !fields) {
+  // ── Review status flow ───────────────────────────────────────
+  const confirmReview = useCallback(() => {
+    setReviewStatus('confirmed');
+    setReviewPopupOpen(false);
+  }, []);
+
+  // ── MKB picker handlers ──────────────────────────────────────
+  const openMkbPicker = useCallback((target: MkbTarget) => {
+    setMkbTarget(target);
+    setMkbOpen(true);
+  }, []);
+
+  const closeMkbPicker = useCallback(() => {
+    setMkbOpen(false);
+    setMkbTarget(null);
+  }, []);
+
+  const pickMkb = useCallback(
+    (code: string, term: string) => {
+      if (!mkbTarget) return;
+      if (mkbTarget.kind === 'osnovna') {
+        setFields((prev) => ({
+          ...prev,
+          osnovna_mkb: code,
+          osnovna_diagnoza:
+            (prev.osnovna_diagnoza || '').trim() === ''
+              ? term
+              : prev.osnovna_diagnoza,
+        }));
+        trackEdit('osnovna_mkb');
+      } else {
+        const idx = mkbTarget.index;
+        setFields((prev) => {
+          const co = (prev.pridruzhavashti || []).map((d, i) =>
+            i === idx
+              ? {
+                  mkb: code,
+                  diagnoza:
+                    d.diagnoza.trim() === '' ? term : d.diagnoza,
+                }
+              : d
+          );
+          return { ...prev, pridruzhavashti: co };
+        });
+        trackEdit('pridruzhavashti');
+      }
+    },
+    [mkbTarget, trackEdit]
+  );
+
+  // ── Visible-section bookkeeping ──────────────────────────────
+  const visibleSections = useMemo(() => {
+    const v: Record<string, boolean> = {};
+    v['sec-diag'] = true;
+    v['sec-anamneza'] = true;
+    v['sec-obektivno'] = true;
+    v['sec-izsledvania'] = true;
+    v['sec-terapia'] = true;
+    v['sec-meds'] = true;
+    const hasNap = !!(fields.napravlenia && fields.napravlenia.trim());
+    const hasNaz = !!(fields.naznacheni && fields.naznacheni.trim());
+    v['sec-izdadeni'] = hasNap || hasNaz;
+    v['sec-napravlenia'] = hasNap;
+    v['sec-naznacheni'] = hasNaz;
+    return v;
+  }, [fields.napravlenia, fields.naznacheni]);
+
+  if (!doctor || !original) {
     return (
       <main
         className="min-h-screen flex items-center justify-center"
@@ -115,231 +224,447 @@ export default function ResultPage() {
     );
   }
 
-  const date = new Date().toLocaleDateString('bg-BG', {
+  const todayBg = new Date().toLocaleDateString('bg-BG', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
-  });
-  const time = new Date().toLocaleTimeString('bg-BG', {
-    hour: '2-digit',
-    minute: '2-digit',
   });
 
   return (
     <div className="min-h-screen flex flex-col">
       <AppHeader doctor={doctor} />
+      <Stepper active="result" />
 
-      <WizardSteps activeStep={4} />
-
-      <main className="flex-1 px-6 pb-12">
-        <div className="max-w-6xl mx-auto">
-          <TopActionBar
-            review={review}
-            onConfirm={() => setReview('confirmed')}
-            onCopy={copyText}
-            onPrint={() => window.print()}
-          />
-
-          <div className="grid gap-6 mt-6" style={{ gridTemplateColumns: '220px 1fr 240px' }}>
-            <SideNav active={activeSection} onNavigate={navTo} fields={fields} />
-
-            <MainDocument
-              fields={fields}
-              transcript={result.transcript}
-              transcriptOpen={transcriptOpen}
-              onToggleTranscript={() => setTranscriptOpen((v) => !v)}
-              date={date}
-              time={time}
-              doctor={doctor}
-              onUpdate={updateField}
-            />
-
-            <RightPanel
-              onNewRecord={() => {
-                sessionStorage.removeItem(RESULT_STORAGE_KEY);
-                router.push('/app/scribe');
-              }}
-              onLogout={() => {
-                clearSession();
-                router.replace('/app/login');
-              }}
-            />
-          </div>
-        </div>
-      </main>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────── */
-/* WIZARD STEPS                                                   */
-/* ─────────────────────────────────────────────────────────────── */
-
-function WizardSteps({ activeStep }: { activeStep: number }) {
-  const steps = [
-    { num: 1, label: 'Вход', sub: 'Пациент' },
-    { num: 2, label: 'Запис', sub: 'Консултация' },
-    { num: 3, label: 'Обработка', sub: 'AI анализ' },
-    { num: 4, label: 'Резултат', sub: 'Документ' },
-  ];
-
-  return (
-    <div className="px-6 pt-6 pb-2 print:hidden">
-      <div className="max-w-3xl mx-auto flex items-center gap-2">
-        {steps.map((s, i) => {
-          const done = s.num < activeStep;
-          const active = s.num === activeStep;
-          return (
-            <div key={s.num} className="flex items-center flex-1">
-              <div className="flex items-center gap-3">
-                <div
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium"
-                  style={{
-                    background:
-                      done || active
-                        ? 'var(--color-brand)'
-                        : 'var(--color-bg-card)',
-                    color: done || active ? 'white' : 'var(--color-text-muted)',
-                    borderColor: 'var(--color-border)',
-                    borderWidth: done || active ? 0 : 1,
-                  }}
-                >
-                  {done ? '✓' : s.num}
-                </div>
-                <div className="hidden sm:block leading-tight">
-                  <div
-                    className="text-sm font-medium"
-                    style={{
-                      color: active
-                        ? 'var(--color-brand)'
-                        : 'var(--color-text-muted)',
-                    }}
-                  >
-                    {s.label}
-                  </div>
-                  <div
-                    className="text-xs"
-                    style={{ color: 'var(--color-text-hint)' }}
-                  >
-                    {s.sub}
-                  </div>
-                </div>
-              </div>
-              {i < steps.length - 1 && (
-                <div
-                  className="flex-1 h-px mx-3"
-                  style={{
-                    background:
-                      s.num < activeStep
-                        ? 'var(--color-brand)'
-                        : 'var(--color-border)',
-                  }}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────── */
-/* TOP ACTION BAR                                                 */
-/* ─────────────────────────────────────────────────────────────── */
-
-function TopActionBar({
-  review,
-  onConfirm,
-  onCopy,
-  onPrint,
-}: {
-  review: ReviewState;
-  onConfirm: () => void;
-  onCopy: () => void;
-  onPrint: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 pt-4 print:hidden">
-      <ReviewBadge review={review} onConfirm={onConfirm} />
-      <div className="flex items-center gap-2">
-        <ActionBtn onClick={onCopy}>⎘ Копирай</ActionBtn>
-        <ActionBtn onClick={onPrint}>⎙ Печат</ActionBtn>
-        <ActionBtn disabled title="PDF идва в C4c">
-          ⬇ PDF
-        </ActionBtn>
-        <ActionBtn disabled title="Word идва в C4c">
-          ⬇ Word
-        </ActionBtn>
-      </div>
-    </div>
-  );
-}
-
-function ReviewBadge({
-  review,
-  onConfirm,
-}: {
-  review: ReviewState;
-  onConfirm: () => void;
-}) {
-  const [popoverOpen, setPopoverOpen] = useState(false);
-  if (review === 'confirmed') {
-    return (
+      {/* Top action bar */}
       <div
-        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium"
+        className="px-6 py-3 border-b flex items-center justify-between gap-4 flex-wrap no-print"
         style={{
-          background: 'var(--color-ok-soft)',
-          color: 'var(--color-ok)',
+          background: 'var(--color-bg-card)',
+          borderColor: 'var(--color-border)',
         }}
       >
-        ✓ Потвърдено от лекар
+        <StatusBadge
+          status={reviewStatus}
+          popupOpen={reviewPopupOpen}
+          onClick={() => setReviewPopupOpen((o) => !o)}
+          onConfirm={confirmReview}
+          onDismiss={() => setReviewPopupOpen(false)}
+        />
+        <div className="flex items-center gap-2">
+          <TopbarBtn
+            disabled
+            locked={isLocked}
+            label="⬇ PDF"
+            lockedHint="Първо потвърдете прегледа"
+          />
+          <TopbarBtn
+            disabled
+            locked={isLocked}
+            label="⬇ Word"
+            lockedHint="Първо потвърдете прегледа"
+          />
+          <TopbarBtn
+            disabled
+            locked={isLocked}
+            label="⎘ Копирай"
+            lockedHint="Първо потвърдете прегледа"
+          />
+          <TopbarBtn
+            locked={isLocked}
+            disabled={isLocked}
+            onClick={() => window.print()}
+            label="⎙ Печат"
+            lockedHint="Първо потвърдете прегледа"
+          />
+        </div>
       </div>
-    );
-  }
+
+      {/* 3-column grid */}
+      <div className="result-grid flex-1">
+        {/* ─── Left: section nav ─── */}
+        <aside className="no-print">
+          <div className="sticky top-[88px]">
+            <div
+              className="text-xs uppercase tracking-wider mb-3 font-medium"
+              style={{ color: 'var(--color-text-hint)' }}
+            >
+              Раздели
+            </div>
+            <nav className="flex flex-col gap-0.5">
+              {NAV_ITEMS.map((item) => {
+                if (!visibleSections[item.id]) return null;
+                const isActive = activeNav === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => navTo(item.id)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors"
+                    style={{
+                      paddingLeft: item.indent ? '28px' : '12px',
+                      fontSize: item.indent ? '13px' : '14px',
+                      color: isActive
+                        ? 'var(--color-brand)'
+                        : 'var(--color-text-muted)',
+                      background: isActive
+                        ? 'var(--color-brand-soft)'
+                        : 'transparent',
+                      fontWeight: isActive ? 600 : 500,
+                    }}
+                  >
+                    <span
+                      className="w-1.5 h-1.5 rounded-full flex-shrink-0 transition-colors"
+                      style={{
+                        background: isActive
+                          ? 'var(--color-brand)'
+                          : 'var(--color-border-mid)',
+                      }}
+                    />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div
+              className="mt-6 pt-4 border-t"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              <div
+                className="text-xs uppercase tracking-wider mb-2 font-medium"
+                style={{ color: 'var(--color-text-hint)' }}
+              >
+                Шаблон
+              </div>
+              <select
+                className="w-full px-2 py-1.5 rounded text-sm border"
+                style={{
+                  borderColor: 'var(--color-border-mid)',
+                  background: 'white',
+                }}
+                disabled
+                defaultValue="общ"
+              >
+                <option value="общ">Общ преглед — SOAP</option>
+                <option value="кардио">Кардиологичен SOAP</option>
+                <option value="пед">Педиатричен преглед</option>
+              </select>
+            </div>
+          </div>
+        </aside>
+
+        {/* ─── Center: document ─── */}
+        <main className="min-w-0">
+          {/* Transcript collapsible */}
+          <details
+            className="mb-4 no-print"
+            open={transcriptOpen}
+            onToggle={(e) =>
+              setTranscriptOpen(
+                (e.currentTarget as HTMLDetailsElement).open
+              )
+            }
+          >
+            <summary
+              className="cursor-pointer text-sm font-medium px-3 py-2 rounded-md inline-block"
+              style={{
+                background: 'var(--color-bg-card)',
+                color: 'var(--color-text-muted)',
+                borderColor: 'var(--color-border)',
+                borderWidth: 1,
+              }}
+            >
+              Транскрипт на консултацията
+            </summary>
+            <div
+              className="mt-2 p-4 rounded-md text-sm leading-relaxed whitespace-pre-wrap"
+              style={{
+                background: 'var(--color-bg-card)',
+                color: 'var(--color-text-muted)',
+                borderColor: 'var(--color-border)',
+                borderWidth: 1,
+              }}
+            >
+              {original.transcript || (
+                <em style={{ color: 'var(--color-text-hint)' }}>
+                  Транскриптът е празен.
+                </em>
+              )}
+            </div>
+          </details>
+
+          {/* Document header */}
+          <div
+            className="bg-white rounded-2xl border p-8 mb-4 flex items-baseline justify-between flex-wrap gap-4"
+            style={{ borderColor: 'var(--color-border)' }}
+          >
+            <h1
+              className="text-3xl font-semibold font-[family-name:var(--font-cormorant)]"
+              style={{ color: 'var(--color-brand)' }}
+            >
+              Амбулаторен лист
+            </h1>
+            <div
+              className="text-sm font-[family-name:var(--font-jetbrains)]"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              {todayBg}
+            </div>
+          </div>
+
+          {/* Sections */}
+          <div className="space-y-4">
+            <DiagnosesSection
+              osnovnaDiagnoza={fields.osnovna_diagnoza || ''}
+              osnovnaMkb={fields.osnovna_mkb || ''}
+              pridruzhavashti={fields.pridruzhavashti || []}
+              onOsnovnaDiagnozaChange={(v) =>
+                updateField('osnovna_diagnoza', v)
+              }
+              onOsnovnaMkbChange={(v) => updateField('osnovna_mkb', v)}
+              onPridruzhavashtiChange={(v) =>
+                updateField('pridruzhavashti', v)
+              }
+              onOpenMkbForOsnovna={() =>
+                openMkbPicker({ kind: 'osnovna' })
+              }
+              onOpenMkbForCo={(i) =>
+                openMkbPicker({ kind: 'co', index: i })
+              }
+            />
+
+            <TextSection
+              id="sec-anamneza"
+              title="Анамнеза"
+              value={fields.anamneza || ''}
+              onChange={(v) => updateField('anamneza', v)}
+            />
+            <TextSection
+              id="sec-obektivno"
+              title="Обективно състояние"
+              value={fields.obektivno || ''}
+              onChange={(v) => updateField('obektivno', v)}
+            />
+            <TextSection
+              id="sec-izsledvania"
+              title="Изследвания"
+              value={fields.izsledvania || ''}
+              onChange={(v) => updateField('izsledvania', v)}
+            />
+            <TextSection
+              id="sec-terapia"
+              title="Терапия"
+              value={fields.terapia || ''}
+              onChange={(v) => updateField('terapia', v)}
+            />
+
+            <div
+              id="sec-meds"
+              className="bg-white rounded-2xl border p-6 scroll-mt-24"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              <SectionHead title="Медикаменти" />
+              <div
+                className="text-sm italic"
+                style={{ color: 'var(--color-text-hint)' }}
+              >
+                Пълният панел с медикаменти, безопасност и добавяне от база
+                данни идва в C4c.
+                {fields.medications_list &&
+                  fields.medications_list.length > 0 && (
+                    <div className="mt-3 not-italic">
+                      <div
+                        className="text-xs uppercase tracking-wider mb-2"
+                        style={{ color: 'var(--color-text-muted)' }}
+                      >
+                        AI откри ({fields.medications_list.length}):
+                      </div>
+                      <ul
+                        className="space-y-1"
+                        style={{ color: 'var(--color-text)' }}
+                      >
+                        {fields.medications_list.map((m, i) => (
+                          <li key={i} className="text-sm">
+                            • {m.inn}
+                            {m.dose ? ', ' + m.dose : ''}
+                            {m.regimen ? ', ' + m.regimen : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+              </div>
+            </div>
+
+            {visibleSections['sec-izdadeni'] && (
+              <div
+                id="sec-izdadeni"
+                className="bg-white rounded-2xl border p-6 scroll-mt-24"
+                style={{ borderColor: 'var(--color-border)' }}
+              >
+                <SectionHead title="Издадени документи" />
+
+                {visibleSections['sec-napravlenia'] && (
+                  <div id="sec-napravlenia" className="mb-4 scroll-mt-24">
+                    <SubsectionHead title="📋 Направления за консултация" />
+                    <EditableField
+                      value={fields.napravlenia || ''}
+                      onChange={(v) => updateField('napravlenia', v)}
+                    />
+                  </div>
+                )}
+
+                {visibleSections['sec-naznacheni'] && (
+                  <div id="sec-naznacheni" className="scroll-mt-24">
+                    <SubsectionHead title="🔬 Назначени изследвания" />
+                    <EditableField
+                      value={fields.naznacheni || ''}
+                      onChange={(v) => updateField('naznacheni', v)}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {fields._disclaimer && (
+              <div
+                className="text-xs italic px-3 py-2 rounded no-print"
+                style={{
+                  color: 'var(--color-text-hint)',
+                  background: 'var(--color-bg-card)',
+                  borderColor: 'var(--color-border)',
+                  borderWidth: 1,
+                }}
+              >
+                {fields._disclaimer}
+              </div>
+            )}
+          </div>
+        </main>
+
+        {/* ─── Right: actions panel ─── */}
+        <aside className="no-print">
+          <div className="sticky top-[88px] space-y-4">
+            <div
+              className="bg-white rounded-2xl border p-4"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              <div
+                className="text-xs uppercase tracking-wider mb-3 font-medium"
+                style={{ color: 'var(--color-text-hint)' }}
+              >
+                Действия
+              </div>
+              <Link
+                href="/app/scribe"
+                className="block text-center py-2.5 rounded-md text-white font-medium text-sm transition hover:opacity-90 mb-2"
+                style={{ background: 'var(--gradient-brand)' }}
+                onClick={() => {
+                  sessionStorage.removeItem(RESULT_STORAGE_KEY);
+                }}
+              >
+                + Нова консултация
+              </Link>
+              <button
+                onClick={() => !isLocked && window.print()}
+                disabled={isLocked}
+                title={
+                  isLocked ? 'Първо потвърдете прегледа' : undefined
+                }
+                className="block w-full text-center py-2 rounded-md text-sm font-medium transition border hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{
+                  borderColor: 'var(--color-border-mid)',
+                  color: 'var(--color-text-muted)',
+                }}
+              >
+                {isLocked ? '🔒' : '⎙'} Печат
+              </button>
+            </div>
+
+            <div
+              className="bg-white rounded-2xl border p-4 text-xs italic"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text-hint)',
+              }}
+            >
+              Странична секция с медикаменти и безопасност идва в C4c.
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <MkbPicker
+        isOpen={mkbOpen}
+        onClose={closeMkbPicker}
+        onPick={pickMkb}
+        title={
+          mkbTarget?.kind === 'osnovna'
+            ? 'Основна диагноза — МКБ-10'
+            : 'Придружаващо заболяване — МКБ-10'
+        }
+      />
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────── */
+
+function StatusBadge({
+  status,
+  popupOpen,
+  onClick,
+  onConfirm,
+  onDismiss,
+}: {
+  status: ReviewStatus;
+  popupOpen: boolean;
+  onClick: () => void;
+  onConfirm: () => void;
+  onDismiss: () => void;
+}) {
+  const isConfirmed = status === 'confirmed';
   return (
     <div className="relative">
       <button
-        onClick={() => setPopoverOpen((v) => !v)}
-        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border transition hover:opacity-90"
+        onClick={onClick}
+        className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition"
         style={{
-          background: 'var(--color-bg-card)',
-          borderColor: 'var(--color-border-mid)',
-          color: 'var(--color-text-muted)',
+          background: isConfirmed
+            ? 'var(--color-ok-soft)'
+            : 'var(--color-gold-soft)',
+          color: isConfirmed ? 'var(--color-ok)' : 'var(--color-gold)',
         }}
       >
         <span
-          className="w-2 h-2 rounded-full inline-block"
-          style={{ background: 'var(--color-gold)' }}
-        />
-        Чака преглед от лекар
-      </button>
-      {popoverOpen && (
-        <div
-          className="absolute top-full mt-2 left-0 z-50 flex flex-col gap-2 p-2 rounded-md shadow-lg"
+          className="w-2 h-2 rounded-full"
           style={{
-            background: 'var(--color-bg-card)',
-            borderColor: 'var(--color-border)',
-            borderWidth: 1,
-            minWidth: '240px',
+            background: isConfirmed
+              ? 'var(--color-ok)'
+              : 'var(--color-gold)',
           }}
+        />
+        {isConfirmed
+          ? '✓ Потвърдено от лекар'
+          : '🔒 Чака преглед — действията са заключени'}
+      </button>
+      {popupOpen && !isConfirmed && (
+        <div
+          className="absolute top-full left-0 mt-2 bg-white rounded-lg border p-2 shadow-md z-20 flex flex-col gap-1 min-w-[220px]"
+          style={{ borderColor: 'var(--color-border)' }}
         >
           <button
-            onClick={() => {
-              onConfirm();
-              setPopoverOpen(false);
-            }}
-            className="px-3 py-2 rounded-md text-sm text-white font-medium text-left hover:opacity-90"
-            style={{ background: 'var(--color-ok)' }}
+            onClick={onConfirm}
+            className="text-left px-3 py-2 rounded-md text-sm font-medium transition hover:bg-[var(--color-ok-soft)]"
+            style={{ color: 'var(--color-ok)' }}
           >
-            ✓ Вярно! Потвърдено
+            ✓ Вярно! Потвърждавам прегледа
           </button>
           <button
-            onClick={() => setPopoverOpen(false)}
-            className="px-3 py-2 rounded-md text-sm text-left hover:bg-[var(--color-brand-light)]"
+            onClick={onDismiss}
+            className="text-left px-3 py-2 rounded-md text-sm transition hover:bg-[var(--color-bg)]"
             style={{ color: 'var(--color-text-muted)' }}
           >
-            ✎ Ще редактирам
+            ✎ Ще редактирам още
           </button>
         </div>
       )}
@@ -347,509 +672,254 @@ function ReviewBadge({
   );
 }
 
-function ActionBtn({
-  children,
+function TopbarBtn({
+  label,
   onClick,
   disabled,
-  title,
+  locked,
+  lockedHint,
 }: {
-  children: React.ReactNode;
+  label: string;
   onClick?: () => void;
   disabled?: boolean;
-  title?: string;
+  locked?: boolean;
+  lockedHint?: string;
 }) {
+  const finalDisabled = disabled || locked;
   return (
     <button
       onClick={onClick}
-      disabled={disabled}
-      title={title}
-      className="px-3 py-1.5 rounded-md text-sm border transition hover:bg-[var(--color-brand-light)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+      disabled={finalDisabled}
+      title={locked ? lockedHint : disabled ? 'Активира се в C4d' : undefined}
+      className="px-3 py-1.5 rounded-md text-sm font-medium border transition hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed"
       style={{
         borderColor: 'var(--color-border-mid)',
-        color: 'var(--color-text)',
-        background: 'var(--color-bg-card)',
+        color: 'var(--color-text-muted)',
       }}
     >
-      {children}
+      {locked ? '🔒 ' : ''}
+      {label}
     </button>
   );
 }
 
-/* ─────────────────────────────────────────────────────────────── */
-/* SIDE NAVIGATION                                                */
-/* ─────────────────────────────────────────────────────────────── */
-
-interface NavItem {
-  id: string;
-  label: string;
-  indent?: boolean;
-}
-
-function SideNav({
-  active,
-  onNavigate,
-  fields,
-}: {
-  active: string;
-  onNavigate: (id: string) => void;
-  fields: TranscribeFields;
-}) {
-  const medsCount = fields.medications_list?.length || 0;
-  const hasDocs =
-    (fields.napravlenia && fields.napravlenia.trim()) ||
-    (fields.naznacheni && fields.naznacheni.trim());
-
-  const items: NavItem[] = [
-    { id: 'section-diag', label: 'Диагнози МКБ-10' },
-    { id: 'sec-anamneza', label: 'Анамнеза' },
-    { id: 'sec-obektivno', label: 'Обективен статус' },
-    { id: 'sec-izsledvania', label: 'Изследвания' },
-    { id: 'sec-terapia', label: 'Терапия' },
-    { id: 'sec-meds', label: 'Медикаменти' },
-  ];
-  if (hasDocs) {
-    items.push({ id: 'sec-izdadeni', label: 'Издадени документи' });
-    if (fields.napravlenia && fields.napravlenia.trim()) {
-      items.push({ id: 'sec-napravlenia', label: 'Направления', indent: true });
-    }
-    if (fields.naznacheni && fields.naznacheni.trim()) {
-      items.push({ id: 'sec-naznacheni', label: 'Назначени', indent: true });
-    }
-  }
-
+function SectionHead({ title }: { title: string }) {
   return (
-    <aside className="print:hidden">
-      <div className="sticky top-20">
-        <div
-          className="text-xs uppercase tracking-wider mb-3 font-medium"
-          style={{ color: 'var(--color-text-hint)' }}
-        >
-          Раздели
-        </div>
-        <nav className="flex flex-col">
-          {items.map((item) => {
-            const isActive = active === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => onNavigate(item.id)}
-                className="text-left text-sm py-2 px-2 rounded transition flex items-center gap-2 hover:bg-[var(--color-brand-light)]"
-                style={{
-                  color: isActive
-                    ? 'var(--color-brand)'
-                    : 'var(--color-text-muted)',
-                  fontWeight: isActive ? 600 : 400,
-                  paddingLeft: item.indent ? '28px' : '8px',
-                  fontSize: item.indent ? '13px' : '14px',
-                }}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                  style={{
-                    background: isActive
-                      ? 'var(--color-brand)'
-                      : 'var(--color-border-mid)',
-                  }}
-                />
-                <span>{item.label}</span>
-                {item.id === 'sec-meds' && medsCount > 0 && (
-                  <span
-                    className="ml-auto text-xs px-1.5 rounded font-medium"
-                    style={{
-                      background: 'var(--color-brand-soft)',
-                      color: 'var(--color-brand)',
-                    }}
-                  >
-                    {medsCount}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
-      </div>
-    </aside>
+    <h2
+      className="text-xl font-medium mb-4 font-[family-name:var(--font-cormorant)]"
+      style={{ color: 'var(--color-brand)' }}
+    >
+      {title}
+    </h2>
   );
 }
 
-/* ─────────────────────────────────────────────────────────────── */
-/* MAIN DOCUMENT                                                  */
-/* ─────────────────────────────────────────────────────────────── */
-
-function MainDocument({
-  fields,
-  transcript,
-  transcriptOpen,
-  onToggleTranscript,
-  date,
-  time,
-  doctor,
-  onUpdate,
-}: {
-  fields: TranscribeFields;
-  transcript: string;
-  transcriptOpen: boolean;
-  onToggleTranscript: () => void;
-  date: string;
-  time: string;
-  doctor: DoctorInfo;
-  onUpdate: <K extends keyof TranscribeFields>(
-    key: K,
-    val: TranscribeFields[K]
-  ) => void;
-}) {
-  const hasDocs =
-    (fields.napravlenia && fields.napravlenia.trim()) ||
-    (fields.naznacheni && fields.naznacheni.trim());
-
+function SubsectionHead({ title }: { title: string }) {
   return (
-    <main>
-      {/* Transcript toggle */}
-      <div className="mb-4 print:hidden">
-        <button
-          onClick={onToggleTranscript}
-          className="text-sm hover:underline flex items-center gap-2"
-          style={{ color: 'var(--color-text-muted)' }}
-        >
-          <span style={{ fontSize: '10px' }}>
-            {transcriptOpen ? '▼' : '▶'}
-          </span>
-          Транскрипт на консултацията
-        </button>
-        {transcriptOpen && (
-          <div
-            className="mt-2 p-4 rounded-md text-sm whitespace-pre-wrap"
-            style={{
-              background: 'var(--color-bg)',
-              color: 'var(--color-text-muted)',
-              maxHeight: '300px',
-              overflowY: 'auto',
-            }}
-          >
-            {transcript || '(празен транскрипт)'}
-          </div>
-        )}
-      </div>
-
-      {/* Document */}
-      <div
-        className="rounded-2xl p-8 shadow-sm"
-        style={{
-          background: 'var(--color-bg-card)',
-          borderColor: 'var(--color-border)',
-          borderWidth: 1,
-        }}
-      >
-        {/* Document title bar */}
-        <div
-          className="flex items-baseline justify-between pb-5 mb-6 border-b"
-          style={{ borderColor: 'var(--color-border)' }}
-        >
-          <div>
-            <h1
-              className="text-3xl font-medium font-[family-name:var(--font-cormorant)]"
-              style={{ color: 'var(--color-brand)' }}
-            >
-              Амбулаторен лист
-            </h1>
-          </div>
-          <div className="text-right">
-            <div
-              className="text-sm"
-              style={{ color: 'var(--color-text-muted)' }}
-            >
-              {date} · {time}
-            </div>
-            <div
-              className="text-xs mt-1"
-              style={{ color: 'var(--color-text-hint)' }}
-            >
-              д-р {doctor.name.replace(/^д-р\s*/i, '')}
-            </div>
-          </div>
-        </div>
-
-        {/* Sections */}
-        <DiagnosesSection
-          osnovnaDiagnoza={fields.osnovna_diagnoza || ''}
-          osnovnaMkb={fields.osnovna_mkb || ''}
-          pridruzhavashti={fields.pridruzhavashti || []}
-          onChangeOsnovna={(diag, mkb) => {
-            onUpdate('osnovna_diagnoza', diag);
-            onUpdate('osnovna_mkb', mkb);
-          }}
-          onChangePridruzhavashti={(arr) =>
-            onUpdate('pridruzhavashti', arr)
-          }
-        />
-
-        <Section id="sec-anamneza" title="Анамнеза">
-          <EditableField
-            value={fields.anamneza || ''}
-            onChange={(v) => onUpdate('anamneza', v)}
-          />
-        </Section>
-
-        <Section id="sec-obektivno" title="Обективен статус">
-          <EditableField
-            value={fields.obektivno || ''}
-            onChange={(v) => onUpdate('obektivno', v)}
-          />
-        </Section>
-
-        <Section id="sec-izsledvania" title="Изследвания">
-          <EditableField
-            value={fields.izsledvania || ''}
-            onChange={(v) => onUpdate('izsledvania', v)}
-          />
-        </Section>
-
-        <Section id="sec-terapia" title="Терапия">
-          <EditableField
-            value={fields.terapia || ''}
-            onChange={(v) => onUpdate('terapia', v)}
-          />
-        </Section>
-
-        <Section id="sec-meds" title="Медикаменти">
-          <MedsPlaceholder count={fields.medications_list?.length || 0} />
-        </Section>
-
-        {hasDocs && (
-          <Section id="sec-izdadeni" title="Издадени документи">
-            {fields.napravlenia && fields.napravlenia.trim() && (
-              <SubSection id="sec-napravlenia" title="📋 Направления">
-                <EditableField
-                  value={fields.napravlenia || ''}
-                  onChange={(v) => onUpdate('napravlenia', v)}
-                />
-              </SubSection>
-            )}
-            {fields.naznacheni && fields.naznacheni.trim() && (
-              <SubSection id="sec-naznacheni" title="🔬 Назначени изследвания">
-                <EditableField
-                  value={fields.naznacheni || ''}
-                  onChange={(v) => onUpdate('naznacheni', v)}
-                />
-              </SubSection>
-            )}
-          </Section>
-        )}
-
-        {fields._disclaimer && (
-          <div
-            className="mt-8 pt-5 border-t text-xs italic"
-            style={{
-              borderColor: 'var(--color-border)',
-              color: 'var(--color-text-hint)',
-            }}
-          >
-            {fields._disclaimer}
-          </div>
-        )}
-      </div>
-    </main>
+    <div
+      className="text-sm font-semibold uppercase tracking-wider mb-2"
+      style={{ color: 'var(--color-brand)' }}
+    >
+      {title}
+    </div>
   );
 }
 
-/* ─────────────────────────────────────────────────────────────── */
-/* SECTIONS                                                       */
-/* ─────────────────────────────────────────────────────────────── */
-
-function Section({
+function TextSection({
   id,
   title,
-  children,
+  value,
+  onChange,
 }: {
   id: string;
   title: string;
-  children: React.ReactNode;
+  value: string;
+  onChange: (v: string) => void;
 }) {
   return (
-    <section id={id} className="mb-7 scroll-mt-24">
-      <h2
-        className="text-xl font-medium mb-3 font-[family-name:var(--font-cormorant)]"
-        style={{ color: 'var(--color-brand)' }}
-      >
-        {title}
-      </h2>
-      {children}
-    </section>
+    <div
+      id={id}
+      className="bg-white rounded-2xl border p-6 scroll-mt-24"
+      style={{ borderColor: 'var(--color-border)' }}
+    >
+      <SectionHead title={title} />
+      <EditableField value={value} onChange={onChange} />
+    </div>
   );
 }
-
-function SubSection({
-  id,
-  title,
-  children,
-}: {
-  id: string;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section id={id} className="mt-5 scroll-mt-24">
-      <div
-        className="text-sm font-semibold uppercase tracking-wider mb-2"
-        style={{ color: 'var(--color-brand)' }}
-      >
-        {title}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────── */
-/* DIAGNOSES SECTION                                              */
-/* ─────────────────────────────────────────────────────────────── */
 
 function DiagnosesSection({
   osnovnaDiagnoza,
   osnovnaMkb,
   pridruzhavashti,
-  onChangeOsnovna,
-  onChangePridruzhavashti,
+  onOsnovnaDiagnozaChange,
+  onOsnovnaMkbChange,
+  onPridruzhavashtiChange,
+  onOpenMkbForOsnovna,
+  onOpenMkbForCo,
 }: {
   osnovnaDiagnoza: string;
   osnovnaMkb: string;
   pridruzhavashti: ComorbidDiagnosis[];
-  onChangeOsnovna: (diag: string, mkb: string) => void;
-  onChangePridruzhavashti: (arr: ComorbidDiagnosis[]) => void;
+  onOsnovnaDiagnozaChange: (v: string) => void;
+  onOsnovnaMkbChange: (v: string) => void;
+  onPridruzhavashtiChange: (v: ComorbidDiagnosis[]) => void;
+  onOpenMkbForOsnovna: () => void;
+  onOpenMkbForCo: (index: number) => void;
 }) {
-  function updateComorbid(idx: number, key: 'diagnoza' | 'mkb', value: string) {
-    const next = pridruzhavashti.map((d, i) =>
-      i === idx ? { ...d, [key]: value } : d
+  const hasMain = osnovnaDiagnoza.trim().length > 0;
+  const isEmpty = !hasMain && pridruzhavashti.length === 0;
+
+  function updateCo(i: number, patch: Partial<ComorbidDiagnosis>) {
+    const next = pridruzhavashti.map((d, idx) =>
+      idx === i ? { ...d, ...patch } : d
     );
-    onChangePridruzhavashti(next);
+    onPridruzhavashtiChange(next);
   }
 
-  function addComorbid() {
-    onChangePridruzhavashti([
-      ...pridruzhavashti,
-      { diagnoza: '', mkb: '' },
-    ]);
+  function removeCo(i: number) {
+    onPridruzhavashtiChange(pridruzhavashti.filter((_, idx) => idx !== i));
   }
 
-  function removeComorbid(idx: number) {
-    onChangePridruzhavashti(pridruzhavashti.filter((_, i) => i !== idx));
+  function addCo() {
+    onPridruzhavashtiChange([...pridruzhavashti, { diagnoza: '', mkb: '' }]);
   }
-
-  const hasAny = osnovnaDiagnoza || pridruzhavashti.length > 0;
 
   return (
-    <section id="section-diag" className="mb-7 scroll-mt-24">
-      <h2
-        className="text-xl font-medium mb-3 font-[family-name:var(--font-cormorant)]"
-        style={{ color: 'var(--color-brand)' }}
-      >
-        Диагнози МКБ-10
-      </h2>
+    <div
+      id="sec-diag"
+      className="bg-white rounded-2xl border p-6 scroll-mt-24"
+      style={{ borderColor: 'var(--color-border)' }}
+    >
+      <SectionHead title="Диагнози МКБ-10" />
 
-      {!hasAny && (
+      {isEmpty && (
         <div
-          className="italic text-sm mb-4"
+          className="text-sm italic px-3 py-2 mb-3"
           style={{ color: 'var(--color-text-hint)' }}
         >
-          Не е открита диагноза в транскрипта. Добави основна диагноза по-долу.
+          Не е открита диагноза в транскрипта.
         </div>
       )}
 
-      {/* Primary diagnosis */}
-      <div className="mb-4">
+      {hasMain && (
         <div
-          className="text-xs uppercase tracking-wider mb-2 font-medium"
-          style={{ color: 'var(--color-text-hint)' }}
+          className="mb-4 pb-4 border-b"
+          style={{ borderColor: 'var(--color-border)' }}
         >
-          Основна диагноза
-        </div>
-        <DiagRow
-          diagnoza={osnovnaDiagnoza}
-          mkb={osnovnaMkb}
-          onChange={(diag, mkb) => onChangeOsnovna(diag, mkb)}
-        />
-      </div>
-
-      {/* Comorbidities */}
-      {pridruzhavashti.length > 0 && (
-        <div className="mb-4">
           <div
             className="text-xs uppercase tracking-wider mb-2 font-medium"
             style={{ color: 'var(--color-text-hint)' }}
           >
-            Придружаващи заболявания
+            Основна диагноза
           </div>
-          {pridruzhavashti.map((d, i) => (
-            <DiagRow
-              key={i}
-              diagnoza={d.diagnoza}
-              mkb={d.mkb}
-              onChange={(diag, mkb) => {
-                updateComorbid(i, 'diagnoza', diag);
-                updateComorbid(i, 'mkb', mkb);
-              }}
-              onRemove={() => removeComorbid(i)}
-            />
-          ))}
+          <DiagRow
+            diagnoza={osnovnaDiagnoza}
+            mkb={osnovnaMkb}
+            onDiagnozaChange={onOsnovnaDiagnozaChange}
+            onMkbChange={onOsnovnaMkbChange}
+            onPickMkb={onOpenMkbForOsnovna}
+          />
         </div>
       )}
 
-      <button
-        onClick={addComorbid}
-        className="text-sm px-3 py-1.5 rounded-md border transition hover:bg-[var(--color-brand-light)]"
-        style={{
-          borderColor: 'var(--color-border-mid)',
-          color: 'var(--color-text-muted)',
-        }}
+      <div
+        className="text-xs uppercase tracking-wider mb-3 font-medium flex items-center justify-between"
+        style={{ color: 'var(--color-text-hint)' }}
       >
-        + Добави придружаващо
-      </button>
-    </section>
+        <span>Придружаващи заболявания</span>
+        <button
+          onClick={addCo}
+          className="text-xs font-semibold px-2 py-1 rounded transition hover:opacity-80"
+          style={{
+            color: 'var(--color-brand)',
+            background: 'var(--color-brand-soft)',
+          }}
+        >
+          + Добави
+        </button>
+      </div>
+      <div className="space-y-2">
+        {pridruzhavashti.map((d, i) => (
+          <DiagRow
+            key={i}
+            diagnoza={d.diagnoza}
+            mkb={d.mkb}
+            onDiagnozaChange={(v) => updateCo(i, { diagnoza: v })}
+            onMkbChange={(v) => updateCo(i, { mkb: v })}
+            onRemove={() => removeCo(i)}
+            onPickMkb={() => onOpenMkbForCo(i)}
+          />
+        ))}
+        {pridruzhavashti.length === 0 && (
+          <div
+            className="text-sm italic px-3 py-1"
+            style={{ color: 'var(--color-text-hint)' }}
+          >
+            Няма придружаващи заболявания.
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
 function DiagRow({
   diagnoza,
   mkb,
-  onChange,
+  onDiagnozaChange,
+  onMkbChange,
   onRemove,
+  onPickMkb,
 }: {
   diagnoza: string;
   mkb: string;
-  onChange: (diag: string, mkb: string) => void;
+  onDiagnozaChange: (v: string) => void;
+  onMkbChange: (v: string) => void;
   onRemove?: () => void;
+  onPickMkb: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 mb-2">
+    <div className="flex items-center gap-2">
       <input
         type="text"
         value={diagnoza}
-        onChange={(e) => onChange(e.target.value, mkb)}
+        onChange={(e) => onDiagnozaChange(e.target.value)}
         placeholder="Диагноза"
-        className="flex-1 px-3 py-2 rounded-md border outline-none focus:ring-1"
+        className="flex-1 px-3 py-2 rounded-md border outline-none text-base"
         style={{
           borderColor: 'var(--color-border-mid)',
           background: 'white',
         }}
       />
-      <input
-        type="text"
-        value={mkb}
-        onChange={(e) => onChange(diagnoza, e.target.value)}
-        placeholder="МКБ"
-        className="w-24 px-3 py-2 rounded-md border outline-none focus:ring-1 font-[family-name:var(--font-jetbrains)] text-sm uppercase"
-        style={{
-          borderColor: 'var(--color-border-mid)',
-          background: 'white',
-          color: 'var(--color-gold)',
-          fontWeight: 600,
-        }}
-      />
+      <div className="relative flex items-center">
+        <input
+          type="text"
+          value={mkb}
+          onChange={(e) => onMkbChange(e.target.value)}
+          placeholder="МКБ"
+          className="w-28 pl-3 pr-8 py-2 rounded-md border outline-none text-sm font-[family-name:var(--font-jetbrains)] text-center"
+          style={{
+            borderColor: 'var(--color-border-mid)',
+            background: 'white',
+            color: 'var(--color-gold)',
+          }}
+        />
+        <button
+          onClick={onPickMkb}
+          aria-label="Избор от МКБ-10"
+          title="Избор от МКБ-10"
+          className="absolute right-1 w-6 h-6 flex items-center justify-center rounded transition hover:bg-[var(--color-brand-soft)]"
+          style={{ color: 'var(--color-brand)' }}
+        >
+          🔍
+        </button>
+      </div>
       {onRemove && (
         <button
           onClick={onRemove}
           aria-label="Премахни"
-          className="w-8 h-8 rounded-md text-lg leading-none transition hover:bg-[var(--color-brand-light)]"
+          className="w-8 h-8 rounded-md flex items-center justify-center text-lg transition hover:bg-[var(--color-bg)]"
           style={{ color: 'var(--color-text-hint)' }}
         >
           ×
@@ -857,246 +927,4 @@ function DiagRow({
       )}
     </div>
   );
-}
-
-/* ─────────────────────────────────────────────────────────────── */
-/* EDITABLE TEXT FIELD                                            */
-/* ─────────────────────────────────────────────────────────────── */
-
-function EditableField({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-
-  useEffect(() => {
-    if (!editing) setDraft(value);
-  }, [value, editing]);
-
-  useEffect(() => {
-    if (editing && textareaRef.current) {
-      textareaRef.current.focus();
-      autoResize(textareaRef.current);
-      textareaRef.current.setSelectionRange(0, 0);
-    }
-  }, [editing]);
-
-  function commit() {
-    setEditing(false);
-    if (draft !== value) onChange(draft);
-  }
-
-  if (editing) {
-    return (
-      <textarea
-        ref={textareaRef}
-        value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          autoResize(e.currentTarget);
-        }}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            setDraft(value);
-            setEditing(false);
-          }
-        }}
-        className="w-full p-3 rounded-md border outline-none"
-        style={{
-          borderColor: 'var(--color-brand)',
-          fontFamily: 'inherit',
-          fontSize: '15px',
-          lineHeight: '1.6',
-          resize: 'none',
-          minHeight: '60px',
-          background: 'white',
-        }}
-      />
-    );
-  }
-
-  const hasContent = value && value.trim().length > 0;
-  return (
-    <div
-      onClick={() => setEditing(true)}
-      className="cursor-text rounded-md p-3 transition hover:bg-[var(--color-brand-light)]"
-      style={{
-        color: hasContent ? 'var(--color-text)' : 'var(--color-text-hint)',
-        minHeight: '40px',
-      }}
-      title="Кликни за редакция"
-    >
-      {hasContent ? (
-        <div
-          className="whitespace-pre-wrap"
-          style={{ fontSize: '15px', lineHeight: '1.6' }}
-        >
-          {value}
-        </div>
-      ) : (
-        <em className="italic text-sm">
-          {placeholder || 'Не е споменато — кликни за редакция'}
-        </em>
-      )}
-    </div>
-  );
-}
-
-function autoResize(el: HTMLTextAreaElement) {
-  el.style.height = 'auto';
-  el.style.height = el.scrollHeight + 'px';
-}
-
-/* ─────────────────────────────────────────────────────────────── */
-/* MEDS PLACEHOLDER (full panel ships in C4b)                     */
-/* ─────────────────────────────────────────────────────────────── */
-
-function MedsPlaceholder({ count }: { count: number }) {
-  return (
-    <div
-      className="rounded-md p-4 text-sm"
-      style={{
-        background: 'var(--color-bg)',
-        color: 'var(--color-text-muted)',
-      }}
-    >
-      {count > 0 ? (
-        <>
-          Открити <strong>{count}</strong> медикамент
-          {count === 1 ? '' : 'а'} в терапията. Пълният панел с проверка за
-          безопасност и редактиране идва в C4b.
-        </>
-      ) : (
-        <>
-          Не са открити медикаменти в транскрипта. Панелът за добавяне идва в
-          C4b.
-        </>
-      )}
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────── */
-/* RIGHT PANEL                                                    */
-/* ─────────────────────────────────────────────────────────────── */
-
-function RightPanel({
-  onNewRecord,
-  onLogout,
-}: {
-  onNewRecord: () => void;
-  onLogout: () => void;
-}) {
-  return (
-    <aside className="print:hidden">
-      <div className="sticky top-20 flex flex-col gap-4">
-        <div
-          className="rounded-xl p-4"
-          style={{
-            background: 'var(--color-bg-card)',
-            borderColor: 'var(--color-border)',
-            borderWidth: 1,
-          }}
-        >
-          <div
-            className="text-xs uppercase tracking-wider mb-3 font-medium"
-            style={{ color: 'var(--color-text-hint)' }}
-          >
-            Действия
-          </div>
-          <button
-            onClick={onNewRecord}
-            className="w-full px-3 py-2 rounded-md text-sm text-white font-medium transition hover:opacity-90 mb-2"
-            style={{ background: 'var(--gradient-brand)' }}
-          >
-            + Нова консултация
-          </button>
-          <button
-            onClick={onLogout}
-            className="w-full px-3 py-2 rounded-md text-sm transition hover:bg-[var(--color-brand-light)]"
-            style={{ color: 'var(--color-text-muted)' }}
-          >
-            Изход
-          </button>
-        </div>
-
-        <div
-          className="rounded-xl p-4 text-xs"
-          style={{
-            background: 'var(--color-bg)',
-            color: 'var(--color-text-hint)',
-            borderColor: 'var(--color-border)',
-            borderWidth: 1,
-          }}
-        >
-          Меdикаменти + безопасност идват в C4b. PDF/Word експорт в C4c.
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────── */
-/* PLAIN-TEXT COPY                                                */
-/* ─────────────────────────────────────────────────────────────── */
-
-function buildPlainText(f: TranscribeFields, doctor: DoctorInfo | null): string {
-  const date = new Date().toLocaleDateString('bg-BG');
-  const lines: string[] = [];
-  lines.push('АМБУЛАТОРЕН ЛИСТ');
-  lines.push(`Дата: ${date}`);
-  if (doctor) lines.push(`Лекар: д-р ${doctor.name.replace(/^д-р\s*/i, '')}`);
-  lines.push('');
-
-  if (f.osnovna_diagnoza) {
-    lines.push('ДИАГНОЗИ МКБ-10');
-    lines.push(`Основна: ${f.osnovna_diagnoza}${f.osnovna_mkb ? ` (${f.osnovna_mkb})` : ''}`);
-    if (f.pridruzhavashti && f.pridruzhavashti.length > 0) {
-      f.pridruzhavashti.forEach((d) => {
-        lines.push(`Придружаваща: ${d.diagnoza}${d.mkb ? ` (${d.mkb})` : ''}`);
-      });
-    }
-    lines.push('');
-  }
-
-  if (f.anamneza) {
-    lines.push('АНАМНЕЗА');
-    lines.push(f.anamneza);
-    lines.push('');
-  }
-  if (f.obektivno) {
-    lines.push('ОБЕКТИВЕН СТАТУС');
-    lines.push(f.obektivno);
-    lines.push('');
-  }
-  if (f.izsledvania) {
-    lines.push('ИЗСЛЕДВАНИЯ');
-    lines.push(f.izsledvania);
-    lines.push('');
-  }
-  if (f.terapia) {
-    lines.push('ТЕРАПИЯ');
-    lines.push(f.terapia);
-    lines.push('');
-  }
-  if (f.napravlenia) {
-    lines.push('НАПРАВЛЕНИЯ');
-    lines.push(f.napravlenia);
-    lines.push('');
-  }
-  if (f.naznacheni) {
-    lines.push('НАЗНАЧЕНИ ИЗСЛЕДВАНИЯ');
-    lines.push(f.naznacheni);
-    lines.push('');
-  }
-
-  return lines.join('\n').trim();
 }
