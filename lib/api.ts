@@ -1,6 +1,6 @@
 // Thin fetch wrapper for the Railway backend.
 
-import type { TranscribeResult, SessionInit, SessionStatus } from './types';
+import type { TranscribeResult, SessionInit, SessionStatus, TranscribeFields } from './types';
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL!;
 const STORAGE_KEY = 'tuber_auth';
@@ -98,6 +98,11 @@ export const api = {
       body: fd,
     });
   },
+  editConsultation: (consultationId: string, fields: TranscribeFields) =>
+    request<{ ok: boolean }>(`/api/consultations/${consultationId}/edit`, {
+      method: 'POST',
+      body: JSON.stringify({ fields }),
+    }),
 };
 
 export function wsUrl(sessionId: string): string {
