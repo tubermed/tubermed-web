@@ -1,83 +1,674 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { api, clearSession, getSession, ApiError, type DoctorInfo } from "@/lib/api";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { QRCodeSVG } from 'qrcode.react';
+import AppHeader from '@/components/AppHeader';
+import {
+  api,
+  ApiError,
+  clearSession,
+  getSession,
+  wsUrl,
+  type DoctorInfo,
+} from '@/lib/api';
+import type {
+  TranscribeResult,
+  SessionInit,
+  WsMessage,
+} from '@/lib/types';
+
+type Mode = 'phone' | 'pc';
+type View = 'record' | 'processing';
+
+const RESULT_STORAGE_KEY = 'tuber_last_result';
 
 export default function ScribePage() {
   const router = useRouter();
   const [doctor, setDoctor] = useState<DoctorInfo | null>(null);
+  const [mode, setMode] = useState<Mode>('phone');
+  const [view, setView] = useState<View>('record');
+  const [error, setError] = useState<string | null>(null);
+  const [procMain, setProcMain] = useState('Обработва се...');
+  const [procSub, setProcSub] = useState('Моля изчакайте');
 
+  // ── Auth gate
   useEffect(() => {
     const session = getSession();
     if (!session) {
-      router.replace("/app/login");
+      router.replace('/app/login');
       return;
     }
     setDoctor(session.doctor);
-
-    // Background token-validity check. If expired/invalid → kick to login.
     api.me().catch((err) => {
       if (err instanceof ApiError && err.status === 401) {
         clearSession();
-        router.replace("/app/login");
+        router.replace('/app/login');
       }
     });
   }, [router]);
 
-  function handleLogout() {
-    clearSession();
-    router.replace("/app/login");
-  }
+  const onResult = useCallback(
+    (result: TranscribeResult) => {
+      sessionStorage.setItem(RESULT_STORAGE_KEY, JSON.stringify(result));
+      router.push('/app/scribe/result');
+    },
+    [router]
+  );
+
+  const goToProcessing = useCallback((main: string, sub: string) => {
+    setProcMain(main);
+    setProcSub(sub);
+    setView('processing');
+  }, []);
 
   if (!doctor) {
     return (
-      <main className="min-h-screen flex items-center justify-center" style={{ color: "var(--color-text-muted)" }}>
+      <main
+        className="min-h-screen flex items-center justify-center"
+        style={{ color: 'var(--color-text-muted)' }}
+      >
         Зареждане…
       </main>
     );
   }
 
-  const displayName = doctor.name.replace(/^д-р\s*/i, "");
-  const specialty = doctor.specialty || "АМП";
+  return (
+    <div className="min-h-screen flex flex-col">
+      <AppHeader doctor={doctor} />
+
+      <main className="flex-1 px-6 py-8">
+        <div className="max-w-2xl mx-auto">
+          {error && (
+            <ErrorBanner message={error} onClose={() => setError(null)} />
+          )}
+
+          {view === 'processing' && (
+            <ProcessingView main={procMain} sub={procSub} />
+          )}
+
+          {view === 'record' && (
+            <>
+              <ModeTabs mode={mode} onChange={setMode} />
+
+              {mode === 'phone' && (
+                <PhoneMode
+                  active={mode === 'phone'}
+                  onProcessing={() =>
+                    goToProcessing('AI анализира...', 'Транскрипция и извличане')
+                  }
+                  onResult={onResult}
+                  onError={setError}
+                />
+              )}
+
+              {mode === 'pc' && (
+                <PcMode
+                  onProcessing={() =>
+                    goToProcessing('Транскрипция...', 'Изпраща се аудиото')
+                  }
+                  onResult={onResult}
+                  onError={setError}
+                  onAuthError={() => {
+                    clearSession();
+                    router.replace('/app/login');
+                  }}
+                  onBackToIdle={() => setView('record')}
+                />
+              )}
+            </>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────── */
+
+function ErrorBanner({
+  message,
+  onClose,
+}: {
+  message: string;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="mb-6 px-4 py-3 rounded-md flex items-start justify-between gap-3"
+      style={{ background: '#FDECEA', color: 'var(--color-red)' }}
+    >
+      <div className="text-sm">{message}</div>
+      <button
+        onClick={onClose}
+        className="text-lg font-bold leading-none"
+        aria-label="Затвори"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+function ModeTabs({
+  mode,
+  onChange,
+}: {
+  mode: Mode;
+  onChange: (m: Mode) => void;
+}) {
+  return (
+    <div className="flex gap-2 mb-6">
+      <TabBtn active={mode === 'phone'} onClick={() => onChange('phone')}>
+        📱 Телефон (QR)
+      </TabBtn>
+      <TabBtn active={mode === 'pc'} onClick={() => onChange('pc')}>
+        🎙 Микрофон на компютъра
+      </TabBtn>
+    </div>
+  );
+}
+
+function TabBtn({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex-1 px-4 py-2 rounded-md text-sm font-medium transition"
+      style={{
+        background: active ? 'var(--color-brand)' : 'var(--color-bg-card)',
+        color: active ? 'white' : 'var(--color-text-muted)',
+        borderColor: 'var(--color-border)',
+        borderWidth: 1,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ProcessingView({ main, sub }: { main: string; sub: string }) {
+  return (
+    <div
+      className="bg-white rounded-2xl border p-16 flex flex-col items-center text-center"
+      style={{ borderColor: 'var(--color-border)' }}
+    >
+      <Spinner />
+      <div
+        className="text-xl font-medium mt-6 mb-2"
+        style={{ color: 'var(--color-brand)' }}
+      >
+        {main}
+      </div>
+      <div className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+        {sub}
+      </div>
+    </div>
+  );
+}
+
+function Spinner() {
+  return (
+    <div
+      className="w-10 h-10 rounded-full border-4 animate-spin"
+      style={{
+        borderColor: 'var(--color-border)',
+        borderTopColor: 'var(--color-brand)',
+      }}
+    />
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────── */
+/* PHONE MODE (QR + WebSocket + polling fallback)                 */
+/* ─────────────────────────────────────────────────────────────── */
+
+function PhoneMode({
+  active,
+  onProcessing,
+  onResult,
+  onError,
+}: {
+  active: boolean;
+  onProcessing: () => void;
+  onResult: (r: TranscribeResult) => void;
+  onError: (msg: string) => void;
+}) {
+  const [session, setSession] = useState<SessionInit | null>(null);
+  const [expiresIn, setExpiresIn] = useState<number>(0);
+  const [phoneConnected, setPhoneConnected] = useState(false);
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const expiryRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cancelledRef = useRef(false);
+
+  const teardown = useCallback(() => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    if (expiryRef.current) {
+      clearInterval(expiryRef.current);
+      expiryRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!active) {
+      teardown();
+      setSession(null);
+      setPhoneConnected(false);
+      return;
+    }
+
+    cancelledRef.current = false;
+
+    async function init() {
+      teardown();
+      try {
+        const s = await api.createSession();
+        if (cancelledRef.current) return;
+        setSession(s);
+        setPhoneConnected(false);
+
+        const expiresAt = new Date(s.expiresAt).getTime();
+        const tick = () => {
+          const left = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
+          setExpiresIn(left);
+          if (left === 0) {
+            if (expiryRef.current) clearInterval(expiryRef.current);
+            setTimeout(() => {
+              if (!cancelledRef.current) init();
+            }, 1500);
+          }
+        };
+        tick();
+        expiryRef.current = setInterval(tick, 1000);
+
+        // Open WebSocket
+        const ws = new WebSocket(wsUrl(s.sessionId));
+        wsRef.current = ws;
+
+        ws.onmessage = (evt) => {
+          try {
+            const msg: WsMessage = JSON.parse(evt.data);
+            if (msg.type === 'processing') {
+              setPhoneConnected(true);
+              onProcessing();
+            } else if (msg.type === 'result') {
+              onResult({
+                consultationId: msg.consultationId,
+                transcript: msg.transcript,
+                fields: msg.fields,
+              });
+            } else if (msg.type === 'error') {
+              onError('Грешка при обработка: ' + msg.message);
+            }
+          } catch {
+            /* ignore malformed messages */
+          }
+        };
+
+        ws.onerror = () => {
+          // Fall back to polling
+          if (pollRef.current) return;
+          pollRef.current = setInterval(async () => {
+            try {
+              const d = await api.getSessionStatus(s.sessionId);
+              if (d.status === 'processing') {
+                setPhoneConnected(true);
+                onProcessing();
+              } else if (d.status === 'done') {
+                if (pollRef.current) {
+                  clearInterval(pollRef.current);
+                  pollRef.current = null;
+                }
+                onResult(d.result);
+              } else if (d.status === 'error') {
+                if (pollRef.current) {
+                  clearInterval(pollRef.current);
+                  pollRef.current = null;
+                }
+                onError('Грешка: ' + (d.error_msg || 'неизвестна'));
+              }
+            } catch {
+              /* network blip, keep polling */
+            }
+          }, 2500);
+        };
+      } catch (e) {
+        if (!cancelledRef.current) {
+          onError(
+            'Грешка при създаване на сесия: ' +
+              (e instanceof Error ? e.message : 'неизвестна')
+          );
+        }
+      }
+    }
+
+    init();
+
+    return () => {
+      cancelledRef.current = true;
+      teardown();
+    };
+  }, [active, onProcessing, onResult, onError, teardown]);
+
+  if (phoneConnected) {
+    return (
+      <div
+        className="bg-white rounded-2xl border p-12 flex flex-col items-center text-center"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <div className="text-5xl mb-3">📱</div>
+        <div
+          className="text-lg font-medium mb-1"
+          style={{ color: 'var(--color-brand)' }}
+        >
+          Телефонът е свързан
+        </div>
+        <div
+          className="text-sm mb-6"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          Говорете — AI слуша
+        </div>
+        <Spinner />
+      </div>
+    );
+  }
 
   return (
-    <main className="min-h-screen px-8 py-10 max-w-4xl mx-auto">
-      <header className="flex items-center justify-between mb-12">
-        <h1
-          className="text-3xl font-semibold font-[family-name:var(--font-cormorant)]"
-          style={{ color: "var(--color-brand)" }}
-        >
-          TuberMed
-        </h1>
-        <button
-          onClick={handleLogout}
-          className="text-sm hover:underline"
-          style={{ color: "var(--color-text-muted)" }}
-        >
-          Изход
-        </button>
-      </header>
-
-      <section
-        className="rounded-2xl p-8"
-        style={{ background: "var(--color-bg-card)", borderColor: "var(--color-border)", borderWidth: 1 }}
+    <div
+      className="bg-white rounded-2xl border p-10 flex flex-col items-center text-center"
+      style={{ borderColor: 'var(--color-border)' }}
+    >
+      <div
+        className="text-sm mb-4"
+        style={{ color: 'var(--color-text-muted)' }}
       >
-        <p className="text-sm mb-2" style={{ color: "var(--color-text-hint)" }}>
-          Влязохте като
-        </p>
-        <p className="text-2xl font-medium mb-1">д-р {displayName}</p>
-        <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
-          {specialty}
-        </p>
-
+        Сканирайте с телефона
+      </div>
+      {session ? (
+        <>
+          <div
+            className="p-3 rounded-lg"
+            style={{
+              borderColor: 'var(--color-border)',
+              borderWidth: 1,
+              background: 'white',
+            }}
+          >
+            <QRCodeSVG value={session.mobileUrl} size={188} fgColor="#2D1F4A" />
+          </div>
+          <div
+            className="text-xs mt-4"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            Насочете камерата на телефона към QR кода.
+          </div>
+          {expiresIn > 0 && (
+            <div
+              className="text-xs mt-2 font-[family-name:var(--font-jetbrains)]"
+              style={{ color: 'var(--color-text-hint)' }}
+            >
+              Изтича след {Math.floor(expiresIn / 60)}:
+              {String(expiresIn % 60).padStart(2, '0')}
+            </div>
+          )}
+        </>
+      ) : (
         <div
-          className="mt-8 pt-6 border-t text-sm"
-          style={{ borderColor: "var(--color-border)", color: "var(--color-text-muted)" }}
+          className="text-sm py-12"
+          style={{ color: 'var(--color-text-hint)' }}
         >
-          Записът на консултации идва в C2.
+          Генерира се QR код…
         </div>
-      </section>
-    </main>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────── */
+/* PC MODE (MediaRecorder + WebAudio waveform)                    */
+/* ─────────────────────────────────────────────────────────────── */
+
+const WAVE_BARS = 32;
+
+function PcMode({
+  onProcessing,
+  onResult,
+  onError,
+  onAuthError,
+  onBackToIdle,
+}: {
+  onProcessing: () => void;
+  onResult: (r: TranscribeResult) => void;
+  onError: (msg: string) => void;
+  onAuthError: () => void;
+  onBackToIdle: () => void;
+}) {
+  const [recording, setRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+
+  const mrRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const waveWrapRef = useRef<HTMLDivElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const barsRef = useRef<HTMLDivElement[]>([]);
+
+  // Initial bars
+  useEffect(() => {
+    const wrap = waveWrapRef.current;
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const bars: HTMLDivElement[] = [];
+    for (let i = 0; i < WAVE_BARS; i++) {
+      const b = document.createElement('div');
+      b.style.width = '3px';
+      b.style.height = '4px';
+      b.style.background = 'var(--color-brand-mid)';
+      b.style.borderRadius = '2px';
+      b.style.transition = 'height 0.08s ease-out';
+      b.style.opacity = '0.4';
+      wrap.appendChild(b);
+      bars.push(b);
+    }
+    barsRef.current = bars;
+  }, []);
+
+  const stopWaveform = useCallback(() => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
+    }
+    barsRef.current.forEach((b) => {
+      b.style.height = '4px';
+      b.style.opacity = '0.4';
+    });
+  }, []);
+
+  const startWaveform = useCallback((stream: MediaStream) => {
+    try {
+      const Ctx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
+      const ctx = new Ctx();
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 128;
+      analyser.smoothingTimeConstant = 0.8;
+      src.connect(analyser);
+      audioCtxRef.current = ctx;
+      analyserRef.current = analyser;
+
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const bars = barsRef.current;
+      bars.forEach((b) => (b.style.opacity = '1'));
+
+      const draw = () => {
+        rafRef.current = requestAnimationFrame(draw);
+        analyser.getByteFrequencyData(data);
+        bars.forEach((bar, i) => {
+          const idx = Math.floor((i * data.length) / WAVE_BARS);
+          const h = Math.max(4, (data[idx] / 255) * 58);
+          bar.style.height = h + 'px';
+          bar.style.opacity = i > WAVE_BARS * 0.72 ? '0.5' : '1';
+        });
+      };
+      draw();
+    } catch {
+      /* WebAudio unavailable — silent fail */
+    }
+  }, []);
+
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      mr.start(500);
+      mrRef.current = mr;
+      setRecording(true);
+      setSeconds(0);
+      startWaveform(stream);
+      timerRef.current = setInterval(() => {
+        setSeconds((s) => s + 1);
+      }, 1000);
+    } catch (e) {
+      onError(
+        'Нужен е достъп до микрофон: ' +
+          (e instanceof Error ? e.message : 'неизвестна грешка')
+      );
+    }
+  }, [startWaveform, onError]);
+
+  const stopRecording = useCallback(async () => {
+    if (!mrRef.current) return;
+    setRecording(false);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    stopWaveform();
+
+    const mr = mrRef.current;
+    const blob: Blob = await new Promise((resolve) => {
+      mr.onstop = () =>
+        resolve(new Blob(chunksRef.current, { type: mr.mimeType }));
+      mr.stop();
+      mr.stream.getTracks().forEach((t) => t.stop());
+    });
+    mrRef.current = null;
+
+    try {
+      onProcessing();
+      const result = await api.transcribe(blob);
+      onResult(result);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthError();
+        return;
+      }
+      onBackToIdle();
+      onError(
+        'Грешка: ' + (err instanceof Error ? err.message : 'неизвестна')
+      );
+    }
+  }, [stopWaveform, onProcessing, onResult, onAuthError, onBackToIdle, onError]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      stopWaveform();
+      if (mrRef.current && mrRef.current.state !== 'inactive') {
+        mrRef.current.stop();
+        mrRef.current.stream.getTracks().forEach((t) => t.stop());
+      }
+    };
+  }, [stopWaveform]);
+
+  const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
+  const ss = String(seconds % 60).padStart(2, '0');
+
+  return (
+    <div
+      className="bg-white rounded-2xl border p-10 flex flex-col items-center"
+      style={{ borderColor: 'var(--color-border)' }}
+    >
+      <div
+        className="text-sm mb-6"
+        style={{ color: 'var(--color-text-muted)' }}
+      >
+        Запис от микрофон
+      </div>
+
+      <div
+        ref={waveWrapRef}
+        className="flex items-end gap-1 mb-8"
+        style={{ height: '64px' }}
+      />
+
+      <button
+        onClick={recording ? stopRecording : startRecording}
+        className="w-20 h-20 rounded-full flex items-center justify-center transition hover:opacity-90 shadow-lg"
+        style={{
+          background: recording
+            ? 'var(--color-red)'
+            : 'var(--gradient-brand)',
+        }}
+        aria-label={recording ? 'Стоп запис' : 'Започни запис'}
+      >
+        {recording ? (
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="white">
+            <path d="M6 6h12v12H6z" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" width="32" height="32" fill="white">
+            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm6-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+          </svg>
+        )}
+      </button>
+
+      <div
+        className="mt-5 text-2xl font-[family-name:var(--font-jetbrains)]"
+        style={{
+          color: recording
+            ? 'var(--color-red)'
+            : 'var(--color-text-muted)',
+        }}
+      >
+        {recording ? `${mm}:${ss}` : '00:00'}
+      </div>
+      <div
+        className="mt-2 text-sm"
+        style={{ color: 'var(--color-text-muted)' }}
+      >
+        {recording ? 'Записва се — натиснете за стоп' : 'Натиснете за запис'}
+      </div>
+    </div>
   );
 }

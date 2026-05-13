@@ -1,7 +1,9 @@
 // Thin fetch wrapper for the Railway backend.
 
+import type { TranscribeResult, SessionInit, SessionStatus } from './types';
+
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL!;
-const STORAGE_KEY = "tuber_auth";
+const STORAGE_KEY = 'tuber_auth';
 
 export interface DoctorInfo {
   id: string;
@@ -17,7 +19,7 @@ export interface Session {
 }
 
 export function getSession(): Session | null {
-  if (typeof window === "undefined") return null;
+  if (typeof window === 'undefined') return null;
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return null;
   try {
@@ -48,9 +50,9 @@ export class ApiError extends Error {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   const token = getToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-  if (options.body && !headers.has("Content-Type") && !(options.body instanceof FormData)) {
-    headers.set("Content-Type", "application/json");
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (options.body && !headers.has('Content-Type') && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
   }
 
   const res = await fetch(`${BACKEND}${path}`, { ...options, headers });
@@ -77,12 +79,33 @@ export interface LoginResponse {
 }
 
 export const api = {
-  health: () => request<{ status: string }>("/health"),
+  health: () => request<{ status: string }>('/health'),
   login: (payload: LoginPayload) =>
-    request<LoginResponse>("/api/auth/login", {
-      method: "POST",
+    request<LoginResponse>('/api/auth/login', {
+      method: 'POST',
       body: JSON.stringify(payload),
     }),
-  // Token-validity check only; body is ignored.
-  me: () => request<unknown>("/api/auth/me"),
+  me: () => request<unknown>('/api/auth/me'),
+  createSession: () =>
+    request<SessionInit>('/api/sessions', { method: 'POST' }),
+  getSessionStatus: (id: string) =>
+    request<SessionStatus>(`/api/sessions/${id}/status`),
+  transcribe: (audio: Blob, filename = 'audio.webm') => {
+    const fd = new FormData();
+    fd.append('audio', audio, filename);
+    return request<TranscribeResult>('/api/transcribe', {
+      method: 'POST',
+      body: fd,
+    });
+  },
 };
+
+export function wsUrl(sessionId: string): string {
+  const token = getToken();
+  return (
+    BACKEND.replace('https://', 'wss://').replace('http://', 'ws://') +
+    `/ws?session=${sessionId}&token=${token}`
+  );
+}
+
+export { BACKEND };
