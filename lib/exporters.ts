@@ -1,5 +1,7 @@
-// Export helpers — PDF (via print-to-PDF in a new window), Word (.doc Blob),
-// and plain text (for clipboard). Same patterns as v13.
+// Export helpers — PDF (preview in new window, no auto-print),
+// Word (.doc Blob), and plain text (for clipboard).
+// PDF preview includes an in-page action bar with "Save as PDF" and "Close"
+// buttons that are hidden when actually printing.
 
 import type { TranscribeFields } from './types';
 
@@ -11,7 +13,6 @@ function esc(s: string): string {
 }
 
 function clean(s: string): string {
-  // Strip [[...]] uncertain markers if present
   return s.replace(/\[\[(.+?)\]\]/g, '$1');
 }
 
@@ -24,7 +25,6 @@ function fieldText(s: string | undefined): string {
 export function formatPlainText(f: TranscribeFields): string {
   const lines: string[] = [];
 
-  // Diagnoses
   const diagLines: string[] = [];
   if (f.osnovna_diagnoza && f.osnovna_diagnoza.trim()) {
     const mkb = f.osnovna_mkb ? ' (МКБ: ' + f.osnovna_mkb + ')' : '';
@@ -60,7 +60,6 @@ export function formatPlainText(f: TranscribeFields): string {
   section('ИЗСЛЕДВАНИЯ', f.izsledvania);
   section('ТЕРАПИЯ', f.terapia);
 
-  // Meds
   if (f.medications_list && f.medications_list.length > 0) {
     lines.push('МЕДИКАМЕНТИ');
     f.medications_list.forEach((m) => {
@@ -70,7 +69,6 @@ export function formatPlainText(f: TranscribeFields): string {
     lines.push('');
   }
 
-  // Издадени документи
   const nap = fieldText(f.napravlenia);
   const naz = fieldText(f.naznacheni);
   if (nap || naz) {
@@ -108,8 +106,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 function fallbackCopy(text: string): boolean {
   const ta = document.createElement('textarea');
   ta.value = text;
-  ta.style.cssText =
-    'position:fixed;top:-9999px;left:-9999px;opacity:0';
+  ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
   document.body.appendChild(ta);
   ta.focus();
   ta.select();
@@ -123,7 +120,7 @@ function fallbackCopy(text: string): boolean {
   return ok;
 }
 
-// ─── PDF (print-to-PDF in a new window) ──────────────────────
+// ─── PDF / Print preview ──────────────────────────────────────
 
 function pdfSection(title: string, content: string): string {
   const v = fieldText(content);
@@ -167,43 +164,96 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
     <title>Амбулаторен лист — ${esc(dateStr)}</title>
     <style>
-      body{margin:0;padding:32px 48px;font-family:'Segoe UI',Arial,sans-serif;font-size:11pt;color:#1F1418}
+      body{margin:0;padding:32px 48px;font-family:'Segoe UI',Arial,sans-serif;font-size:11pt;color:#1F1418;background:#FAFAFA}
       h1{font-family:Georgia,serif;font-size:22pt;font-weight:500;margin:0 0 4px;color:#1F1418}
       table{width:100%;border-collapse:collapse;margin-top:8px}
       td{padding:5px 10px 5px 0;border-bottom:1px solid #f0e6dc;vertical-align:top}
-      @media print{body{padding:16px 24px}@page{margin:15mm}}
+
+      /* In-preview action bar — only visible on screen, never on paper */
+      .actions{
+        position:sticky;top:0;z-index:10;
+        display:flex;gap:8px;justify-content:flex-end;align-items:center;
+        background:#FFFFFF;border-bottom:1px solid #E8DED5;
+        margin:-32px -48px 24px;padding:12px 48px;
+      }
+      .actions button{
+        font-family:inherit;font-size:13px;font-weight:500;
+        padding:8px 16px;border-radius:6px;cursor:pointer;
+        border:1px solid transparent;transition:opacity .15s,background .15s;
+      }
+      .actions button.primary{
+        background:#6B1A3D;color:#FFFFFF;border-color:#6B1A3D;
+      }
+      .actions button.primary:hover{opacity:.9}
+      .actions button.secondary{
+        background:transparent;color:#5C4B52;border-color:#D9CCC1;
+      }
+      .actions button.secondary:hover{background:#F6F1EC}
+
+      .doc{background:white;max-width:780px;margin:0 auto;padding:0}
+
+      @media print{
+        body{background:white;padding:16px 24px}
+        .actions{display:none !important}
+        .doc{max-width:none;padding:0}
+        @page{margin:15mm}
+      }
     </style></head><body>
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
-      <h1>Амбулаторен лист</h1>
-      <div style="text-align:right;font-size:10pt;color:#8C7A82">Дата: ${esc(dateStr)}</div>
+    <div class="actions">
+      <button class="secondary" onclick="window.close()">Затвори</button>
+      <button class="primary" onclick="window.print()">⬇ Запази като PDF</button>
     </div>
-    <hr style="border:none;border-top:2px solid #6B1A3D;margin:0 0 20px">
+    <div class="doc">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+        <h1>Амбулаторен лист</h1>
+        <div style="text-align:right;font-size:10pt;color:#8C7A82">Дата: ${esc(dateStr)}</div>
+      </div>
+      <hr style="border:none;border-top:2px solid #6B1A3D;margin:0 0 20px">
 
-    ${
-      diagRows
-        ? `<h2 style="font-family:Georgia,serif;font-style:italic;font-size:18pt;color:#6B1A3D;font-weight:500;margin:0 0 6px;border-bottom:1px solid #E8DED5;padding-bottom:4px">Диагнози МКБ-10</h2>
-    <table>${diagRows}</table>`
-        : ''
-    }
+      ${
+        diagRows
+          ? `<h2 style="font-family:Georgia,serif;font-style:italic;font-size:18pt;color:#6B1A3D;font-weight:500;margin:0 0 6px;border-bottom:1px solid #E8DED5;padding-bottom:4px">Диагнози МКБ-10</h2>
+      <table>${diagRows}</table>`
+          : ''
+      }
 
-    ${pdfSection('Анамнеза', f.anamneza || '')}
-    ${pdfSection('Обективно състояние', f.obektivno || '')}
-    ${pdfSection('Изследвания', f.izsledvania || '')}
-    ${pdfSection('Терапия', f.terapia || '')}
-    ${medsBlock}
-    ${izdadeniHeader}
-    ${pdfSection('Направления', f.napravlenia || '')}
-    ${pdfSection('Назначени изследвания', f.naznacheni || '')}
-
-    <script>window.onload=function(){setTimeout(function(){window.print();},200);};<\/script>
+      ${pdfSection('Анамнеза', f.anamneza || '')}
+      ${pdfSection('Обективно състояние', f.obektivno || '')}
+      ${pdfSection('Изследвания', f.izsledvania || '')}
+      ${pdfSection('Терапия', f.terapia || '')}
+      ${medsBlock}
+      ${izdadeniHeader}
+      ${pdfSection('Направления', f.napravlenia || '')}
+      ${pdfSection('Назначени изследвания', f.naznacheni || '')}
+    </div>
   </body></html>`;
 }
 
-export function openPdfPreview(html: string): boolean {
-  const win = window.open('', '_blank', 'width=900,height=700');
+export interface OpenPreviewOpts {
+  autoPrint?: boolean;
+}
+
+export function openPdfPreview(html: string, opts?: OpenPreviewOpts): boolean {
+  const win = window.open('', '_blank', 'width=900,height=900');
   if (!win) return false;
   win.document.write(html);
   win.document.close();
+
+  if (opts?.autoPrint) {
+    const tryPrint = () => {
+      try {
+        win.focus();
+        win.print();
+      } catch {
+        // best-effort
+      }
+    };
+    if (win.document.readyState === 'complete') {
+      setTimeout(tryPrint, 250);
+    } else {
+      win.addEventListener('load', () => setTimeout(tryPrint, 100));
+    }
+  }
   return true;
 }
 

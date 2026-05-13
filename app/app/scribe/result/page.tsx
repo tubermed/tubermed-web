@@ -18,6 +18,8 @@ import type {
   Medication,
 } from '@/lib/types';
 import { checkDrugSafety, type SafetyAlert } from '@/lib/drug-safety';
+import { loadMkb, getMkbDataSync, findByCode } from '@/lib/mkb10';
+import { loadIal } from '@/lib/ial-meds';
 import {
   formatPlainText,
   copyToClipboard,
@@ -96,6 +98,14 @@ export default function ResultPage() {
     }
   }, [router]);
 
+  // Pre-load MKB-10 data so the bidirectional sync works immediately
+  // (and so the picker is instant on first open). Silent failure — picker
+  // will retry if needed.
+  useEffect(() => {
+    loadMkb().catch(() => {});
+    loadIal().catch(() => {});
+  }, []);
+
   // ── Edit tracking (debounced) ─────────────────────────────────
   const flushEdit = useCallback(() => {
     if (!original) return;
@@ -129,6 +139,72 @@ export default function ResultPage() {
     <K extends keyof TranscribeFields>(key: K, next: TranscribeFields[K]) => {
       setFields((prev) => ({ ...prev, [key]: next }));
       trackEdit(String(key));
+    },
+    [trackEdit]
+  );
+
+  // Bidirectional sync helpers: when the doctor types a known МКБ code,
+  // auto-fill the diagnosis name; when they type an exact diagnosis name,
+  // auto-fill the code. Only triggers on exact match — partial / paraphrased
+  // input leaves the other field alone.
+  function diagFromCode(code: string): string | null {
+    const data = getMkbDataSync();
+    if (!data) return null;
+    const m = findByCode(data, code.trim().toUpperCase());
+    return m ? m[1] : null;
+  }
+  function codeFromDiag(diag: string): string | null {
+    const data = getMkbDataSync();
+    if (!data) return null;
+    const q = diag.trim().toLowerCase();
+    if (!q) return null;
+    const m = data.find((r) => r[1].toLowerCase() === q);
+    return m ? m[0] : null;
+  }
+
+  const updateOsnovnaMkb = useCallback(
+    (v: string) => {
+      const term = diagFromCode(v);
+      setFields((prev) => ({
+        ...prev,
+        osnovna_mkb: v,
+        ...(term ? { osnovna_diagnoza: term } : {}),
+      }));
+      trackEdit('osnovna_mkb');
+    },
+    [trackEdit]
+  );
+
+  const updateOsnovnaDiagnoza = useCallback(
+    (v: string) => {
+      const code = codeFromDiag(v);
+      setFields((prev) => ({
+        ...prev,
+        osnovna_diagnoza: v,
+        ...(code ? { osnovna_mkb: code } : {}),
+      }));
+      trackEdit('osnovna_diagnoza');
+    },
+    [trackEdit]
+  );
+
+  const updateCoField = useCallback(
+    (idx: number, key: 'diagnoza' | 'mkb', v: string) => {
+      setFields((prev) => {
+        const co = (prev.pridruzhavashti || []).slice();
+        const current = co[idx] || { diagnoza: '', mkb: '' };
+        const next = { ...current, [key]: v };
+        if (key === 'mkb') {
+          const term = diagFromCode(v);
+          if (term) next.diagnoza = term;
+        } else {
+          const code = codeFromDiag(v);
+          if (code) next.mkb = code;
+        }
+        co[idx] = next;
+        return { ...prev, pridruzhavashti: co };
+      });
+      trackEdit('pridruzhavashti');
     },
     [trackEdit]
   );
@@ -272,10 +348,7 @@ export default function ResultPage() {
     const html = generatePdfHtml(fields, dateStr);
     const opened = openPdfPreview(html);
     if (opened) {
-      showToast(
-        'success',
-        '✓ Изберете "Запази като PDF" в диалога за печат'
-      );
+      showToast('success', '✓ Преглед отворен — Запази като PDF от бутона');
     } else {
       showToast(
         'error',
@@ -306,8 +379,20 @@ export default function ResultPage() {
 
   const handlePrint = useCallback(() => {
     if (isLocked) return;
-    window.print();
-  }, [isLocked]);
+    const dateStr = new Date().toLocaleDateString('bg-BG', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+    const html = generatePdfHtml(fields, dateStr);
+    const opened = openPdfPreview(html, { autoPrint: true });
+    if (!opened) {
+      showToast(
+        'error',
+        'Изскачащият прозорец е блокиран — разрешете го за този сайт'
+      );
+    }
+  }, [fields, isLocked, showToast]);
 
   // ── Visible-section bookkeeping ──────────────────────────────
   const visibleSections = useMemo(() => {
@@ -554,13 +639,12 @@ export default function ResultPage() {
               osnovnaDiagnoza={fields.osnovna_diagnoza || ''}
               osnovnaMkb={fields.osnovna_mkb || ''}
               pridruzhavashti={fields.pridruzhavashti || []}
-              onOsnovnaDiagnozaChange={(v) =>
-                updateField('osnovna_diagnoza', v)
-              }
-              onOsnovnaMkbChange={(v) => updateField('osnovna_mkb', v)}
+              onOsnovnaDiagnozaChange={updateOsnovnaDiagnoza}
+              onOsnovnaMkbChange={updateOsnovnaMkb}
               onPridruzhavashtiChange={(v) =>
                 updateField('pridruzhavashti', v)
               }
+              onCoFieldChange={updateCoField}
               onOpenMkbForOsnovna={() => openMkbPicker({ kind: 'osnovna' })}
               onOpenMkbForCo={(i) => openMkbPicker({ kind: 'co', index: i })}
             />
@@ -926,6 +1010,7 @@ function DiagnosesSection({
   onOsnovnaDiagnozaChange,
   onOsnovnaMkbChange,
   onPridruzhavashtiChange,
+  onCoFieldChange,
   onOpenMkbForOsnovna,
   onOpenMkbForCo,
 }: {
@@ -935,18 +1020,12 @@ function DiagnosesSection({
   onOsnovnaDiagnozaChange: (v: string) => void;
   onOsnovnaMkbChange: (v: string) => void;
   onPridruzhavashtiChange: (v: ComorbidDiagnosis[]) => void;
+  onCoFieldChange: (index: number, key: 'diagnoza' | 'mkb', v: string) => void;
   onOpenMkbForOsnovna: () => void;
   onOpenMkbForCo: (index: number) => void;
 }) {
   const hasMain = osnovnaDiagnoza.trim().length > 0;
   const isEmpty = !hasMain && pridruzhavashti.length === 0;
-
-  function updateCo(i: number, patch: Partial<ComorbidDiagnosis>) {
-    const next = pridruzhavashti.map((d, idx) =>
-      idx === i ? { ...d, ...patch } : d
-    );
-    onPridruzhavashtiChange(next);
-  }
 
   function removeCo(i: number) {
     onPridruzhavashtiChange(pridruzhavashti.filter((_, idx) => idx !== i));
@@ -1016,8 +1095,8 @@ function DiagnosesSection({
             key={i}
             diagnoza={d.diagnoza}
             mkb={d.mkb}
-            onDiagnozaChange={(v) => updateCo(i, { diagnoza: v })}
-            onMkbChange={(v) => updateCo(i, { mkb: v })}
+            onDiagnozaChange={(v) => onCoFieldChange(i, 'diagnoza', v)}
+            onMkbChange={(v) => onCoFieldChange(i, 'mkb', v)}
             onRemove={() => removeCo(i)}
             onPickMkb={() => onOpenMkbForCo(i)}
           />

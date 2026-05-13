@@ -56,80 +56,23 @@ html, body {
   }
 }
 
-/* ── Print styles ──────────────────────────────────────────── */
+/* ── Print fallback ────────────────────────────────────────── */
+/* The main Печат / PDF workflow opens a clean preview window with its
+   own print styles. These rules only apply to Ctrl+P on the live result
+   page — keep the chrome out of the way but don't try to make it pretty. */
 
 @media print {
-  body {
-    background: white !important;
-    color: black;
-  }
-
-  /* Hide non-document chrome */
+  body { background: white !important; }
   header,
   nav,
   aside,
-  .no-print,
-  details > summary {
+  .no-print {
     display: none !important;
   }
-
-  /* Collapse 3-col grid to single column */
   .result-grid {
     display: block !important;
     padding: 0 !important;
-    gap: 0 !important;
   }
-
-  /* Expand transcript only if open */
-  details[open] > summary {
-    display: none !important;
-  }
-  details[open] > div {
-    margin-bottom: 16px;
-    page-break-inside: avoid;
-  }
-
-  /* Strip card styling — make it look like a plain document */
-  main > div > div,
-  main > div > div > div {
-    background: white !important;
-    border: none !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-    padding: 8px 0 !important;
-    margin-bottom: 16px !important;
-    page-break-inside: avoid;
-  }
-
-  /* Inputs render as plain text */
-  textarea,
-  input[type="text"] {
-    border: none !important;
-    background: transparent !important;
-    padding: 0 !important;
-    color: black !important;
-    font-family: inherit !important;
-    width: 100% !important;
-    resize: none !important;
-  }
-
-  /* Strong section headings */
-  h1, h2 {
-    color: black !important;
-    margin-top: 12px;
-    margin-bottom: 8px;
-  }
-
-  /* Don't break headings from their content */
-  h2 + * { page-break-before: avoid; }
-
-  /* No scroll on overflow content */
-  .overflow-y-auto,
-  .overflow-x-auto {
-    overflow: visible !important;
-  }
-
-  /* Page margins via @page */
   @page {
     margin: 18mm 16mm;
   }
