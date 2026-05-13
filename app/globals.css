@@ -1,15 +1,38 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand-primary: #B02494;
-  --color-brand-accent: #e03131;
-  --color-brand-bg: #f2f6fc;
-  --color-brand-text: #0d1a2e;
-  --color-brand-muted: #4a5d72;
-  --font-family-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  /* v13 burgundy palette */
+  --color-brand: #6B1A3D;
+  --color-brand-dark: #4F1330;
+  --color-brand-mid: #9B2256;
+  --color-brand-soft: #F0E0E8;
+  --color-brand-light: #F8EEF3;
+  --color-gold: #A88431;
+  --color-gold-soft: #F1E8D2;
+  --color-ok: #5A7A3C;
+  --color-ok-soft: #E5ECDA;
+  --color-red: #C0392B;
+  --color-bg: #F6F1EC;
+  --color-bg-card: #FFFFFF;
+  --color-text: #1F1418;
+  --color-text-muted: #5C4B52;
+  --color-text-hint: #8C7A82;
+  --color-border: #E8DED5;
+  --color-border-light: #F0E6DC;
+  --color-border-mid: #D9CCC1;
+
+  --gradient-brand: linear-gradient(135deg, #6B1A3D 0%, #9B2256 60%, #B8335A 100%);
+
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-cormorant), ui-serif, Georgia, serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
 }
 
-body {
-  background: var(--color-brand-bg);
-  color: var(--color-brand-text);
+* { box-sizing: border-box; }
+
+html, body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
