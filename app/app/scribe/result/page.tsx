@@ -20,6 +20,7 @@ import type {
 import { checkDrugSafety, type SafetyAlert } from '@/lib/drug-safety';
 import { loadMkb, getMkbDataSync, findByCode } from '@/lib/mkb10';
 import { loadIal } from '@/lib/ial-meds';
+import { findHighlights, type HighlightMatch } from '@/lib/vital-rules';
 import {
   formatPlainText,
   copyToClipboard,
@@ -233,6 +234,85 @@ export default function ResultPage() {
     () => safetyAlerts.filter((a) => a.severity === 'warning'),
     [safetyAlerts]
   );
+
+  // ── Vital-sign review counter ─────────────────────────────────
+  // Scan the free-text clinical fields for highlights (vitals out of range
+  // + uncertain transcription markers). Each entry: span + field key.
+  // Acknowledged spans (doctor clicked "Потвърди") are filtered out so the
+  // counter reflects only items still needing review.
+  const [acknowledged, setAcknowledged] = useState<Set<string>>(
+    () => new Set()
+  );
+
+  const acknowledgeSpan = useCallback(
+    (fieldKey: string, raw: string) => {
+      setAcknowledged((prev) => {
+        const next = new Set(prev);
+        next.add(`${fieldKey}::${raw}`);
+        return next;
+      });
+    },
+    []
+  );
+
+  const reviewItems = useMemo(() => {
+    const fieldsToScan: Array<keyof TranscribeFields> = [
+      'anamneza',
+      'obektivno',
+      'izsledvania',
+      'terapia',
+    ];
+    const items: Array<
+      HighlightMatch & { fieldKey: string; localIdx: number }
+    > = [];
+    for (const fk of fieldsToScan) {
+      const text = (fields[fk] as string) || '';
+      const matches = findHighlights(text);
+      // Match EditableField's filter: skip acknowledged. localIdx counts
+      // only visible (non-acknowledged) matches so DOM ids line up.
+      let visibleIdx = 0;
+      for (const m of matches) {
+        if (acknowledged.has(`${String(fk)}::${m.raw}`)) continue;
+        items.push({ ...m, fieldKey: String(fk), localIdx: visibleIdx });
+        visibleIdx++;
+      }
+    }
+    return items;
+  }, [
+    fields.anamneza,
+    fields.obektivno,
+    fields.izsledvania,
+    fields.terapia,
+    acknowledged,
+  ]);
+
+  const [reviewCursor, setReviewCursor] = useState(0);
+
+  // Clamp cursor when the items list shrinks (e.g. doctor edited out a vital)
+  useEffect(() => {
+    if (reviewCursor >= reviewItems.length && reviewItems.length > 0) {
+      setReviewCursor(0);
+    }
+  }, [reviewItems.length, reviewCursor]);
+
+  const goToNextReview = useCallback(() => {
+    if (reviewItems.length === 0) return;
+    const idx = reviewCursor % reviewItems.length;
+    const item = reviewItems[idx];
+    const spanId = `vital-${item.fieldKey}-${item.localIdx}`;
+    const el = document.getElementById(spanId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('flash-review');
+      setTimeout(() => el.classList.remove('flash-review'), 1500);
+    } else {
+      // Fallback — scroll to the section the span lives in
+      const sectEl = document.getElementById(`sec-${item.fieldKey}`);
+      if (sectEl)
+        sectEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    setReviewCursor(idx + 1);
+  }, [reviewItems, reviewCursor]);
 
   // Auto-dismiss therapy hint when name no longer in terapia text
   useEffect(() => {
@@ -470,6 +550,13 @@ export default function ResultPage() {
           onConfirm={confirmReview}
           onDismiss={() => setReviewPopupOpen(false)}
         />
+        {reviewItems.length > 0 && (
+          <ReviewCounter
+            total={reviewItems.length}
+            cursor={reviewCursor}
+            onNext={goToNextReview}
+          />
+        )}
         <div className="flex items-center gap-2">
           <TopbarBtn
             locked={isLocked}
@@ -652,26 +739,38 @@ export default function ResultPage() {
             <TextSection
               id="sec-anamneza"
               title="Анамнеза"
+              fieldKey="anamneza"
               value={fields.anamneza || ''}
               onChange={(v) => updateField('anamneza', v)}
+              acknowledged={acknowledged}
+              onAcknowledge={(raw) => acknowledgeSpan('anamneza', raw)}
             />
             <TextSection
               id="sec-obektivno"
               title="Обективно състояние"
+              fieldKey="obektivno"
               value={fields.obektivno || ''}
               onChange={(v) => updateField('obektivno', v)}
+              acknowledged={acknowledged}
+              onAcknowledge={(raw) => acknowledgeSpan('obektivno', raw)}
             />
             <TextSection
               id="sec-izsledvania"
               title="Изследвания"
+              fieldKey="izsledvania"
               value={fields.izsledvania || ''}
               onChange={(v) => updateField('izsledvania', v)}
+              acknowledged={acknowledged}
+              onAcknowledge={(raw) => acknowledgeSpan('izsledvania', raw)}
             />
             <TextSection
               id="sec-terapia"
               title="Терапия"
+              fieldKey="terapia"
               value={fields.terapia || ''}
               onChange={(v) => updateField('terapia', v)}
+              acknowledged={acknowledged}
+              onAcknowledge={(raw) => acknowledgeSpan('terapia', raw)}
             />
 
             {visibleSections['sec-izdadeni'] && (
@@ -864,6 +963,39 @@ function WarningChip({ alert }: { alert: SafetyAlert }) {
   );
 }
 
+function ReviewCounter({
+  total,
+  cursor,
+  onNext,
+}: {
+  total: number;
+  cursor: number;
+  onNext: () => void;
+}) {
+  // cursor === 0 means "haven't started"; otherwise show "current / total".
+  const showProgress = cursor > 0;
+  const display = showProgress
+    ? `${((cursor - 1) % total) + 1} / ${total}`
+    : `${total} за преглед`;
+  return (
+    <button
+      onClick={onNext}
+      title="Прескочи към следващото отбелязано показание"
+      className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition hover:opacity-90"
+      style={{
+        background: 'var(--color-gold-soft)',
+        color: 'var(--color-gold)',
+        borderColor: 'var(--color-gold)',
+        borderWidth: 1,
+      }}
+    >
+      <span>⚠</span>
+      <span>{display}</span>
+      <span style={{ fontSize: '14px' }}>▶</span>
+    </button>
+  );
+}
+
 function StatusBadge({
   status,
   popupOpen,
@@ -985,11 +1117,17 @@ function TextSection({
   title,
   value,
   onChange,
+  fieldKey,
+  acknowledged,
+  onAcknowledge,
 }: {
   id: string;
   title: string;
   value: string;
   onChange: (v: string) => void;
+  fieldKey?: string;
+  acknowledged?: Set<string>;
+  onAcknowledge?: (raw: string) => void;
 }) {
   return (
     <div
@@ -998,7 +1136,13 @@ function TextSection({
       style={{ borderColor: 'var(--color-border)' }}
     >
       <SectionHead title={title} />
-      <EditableField value={value} onChange={onChange} />
+      <EditableField
+        value={value}
+        onChange={onChange}
+        fieldKey={fieldKey}
+        acknowledged={acknowledged}
+        onAcknowledge={onAcknowledge}
+      />
     </div>
   );
 }
@@ -1025,7 +1169,6 @@ function DiagnosesSection({
   onOpenMkbForCo: (index: number) => void;
 }) {
   const hasMain = osnovnaDiagnoza.trim().length > 0;
-  const isEmpty = !hasMain && pridruzhavashti.length === 0;
 
   function removeCo(i: number) {
     onPridruzhavashtiChange(pridruzhavashti.filter((_, idx) => idx !== i));
@@ -1043,35 +1186,32 @@ function DiagnosesSection({
     >
       <SectionHead title="Диагнози МКБ-10" />
 
-      {isEmpty && (
+      <div
+        className="mb-4 pb-4 border-b"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
         <div
-          className="text-sm italic px-3 py-2 mb-3"
+          className="text-xs uppercase tracking-wider mb-2 font-medium"
           style={{ color: 'var(--color-text-hint)' }}
         >
-          Не е открита диагноза в транскрипта.
+          Основна диагноза
         </div>
-      )}
-
-      {hasMain && (
-        <div
-          className="mb-4 pb-4 border-b"
-          style={{ borderColor: 'var(--color-border)' }}
-        >
+        <DiagRow
+          diagnoza={osnovnaDiagnoza}
+          mkb={osnovnaMkb}
+          onDiagnozaChange={onOsnovnaDiagnozaChange}
+          onMkbChange={onOsnovnaMkbChange}
+          onPickMkb={onOpenMkbForOsnovna}
+        />
+        {!hasMain && (
           <div
-            className="text-xs uppercase tracking-wider mb-2 font-medium"
+            className="text-xs italic mt-2 px-1"
             style={{ color: 'var(--color-text-hint)' }}
           >
-            Основна диагноза
+            Не е открита в транскрипта — въведете или използвайте 🔍 за избор от МКБ-10.
           </div>
-          <DiagRow
-            diagnoza={osnovnaDiagnoza}
-            mkb={osnovnaMkb}
-            onDiagnozaChange={onOsnovnaDiagnozaChange}
-            onMkbChange={onOsnovnaMkbChange}
-            onPickMkb={onOpenMkbForOsnovna}
-          />
-        </div>
-      )}
+        )}
+      </div>
 
       <div
         className="text-xs uppercase tracking-wider mb-3 font-medium flex items-center justify-between"

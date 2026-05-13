@@ -5,6 +5,7 @@ import {
   loadIal,
   getIalDataSync,
   searchIal,
+  totalOptions,
   type IalEntry,
   type SearchHit,
 } from '@/lib/ial-meds';
@@ -27,7 +28,6 @@ export default function MedsPicker({
   const [expandedInn, setExpandedInn] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Reset state on open
   useEffect(() => {
     if (!isOpen) return;
     setQuery('');
@@ -36,7 +36,6 @@ export default function MedsPicker({
     return () => clearTimeout(t);
   }, [isOpen]);
 
-  // Lazy-load
   useEffect(() => {
     if (!isOpen || data) return;
     setLoadErr(null);
@@ -54,7 +53,6 @@ export default function MedsPicker({
     };
   }, [isOpen, data]);
 
-  // Esc to close
   useEffect(() => {
     if (!isOpen) return;
     function onKey(e: KeyboardEvent) {
@@ -64,13 +62,12 @@ export default function MedsPicker({
     return () => document.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
 
-  // Search hits (memoized). Empty query → top 30 by trade name count
-  // (rough popularity proxy).
+  // Empty query → most option-rich drugs first (rough usage proxy)
   const hits: SearchHit[] = useMemo(() => {
     if (!data) return [];
     if (!query.trim()) {
       return [...data]
-        .sort((a, b) => b.t.length - a.t.length)
+        .sort((a, b) => totalOptions(b) - totalOptions(a))
         .slice(0, 30)
         .map((entry) => ({ entry, matchKind: 'inn-prefix' as const }));
     }
@@ -98,7 +95,6 @@ export default function MedsPicker({
         style={{ background: 'var(--color-bg-card)', maxHeight: '85vh' }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div
           className="p-5 border-b flex items-center gap-3"
           style={{ borderColor: 'var(--color-border)' }}
@@ -115,8 +111,7 @@ export default function MedsPicker({
                 className="text-xs mt-0.5"
                 style={{ color: 'var(--color-text-hint)' }}
               >
-                {data.length.toLocaleString('bg-BG')} INN от ИАЛ ·
-                {' '}
+                {data.length.toLocaleString('bg-BG')} INN от ИАЛ ·{' '}
                 {data.filter((d) => !d.r).length} БЛП
               </div>
             )}
@@ -131,7 +126,6 @@ export default function MedsPicker({
           </button>
         </div>
 
-        {/* Search */}
         <div
           className="p-4 border-b"
           style={{ borderColor: 'var(--color-border)' }}
@@ -146,7 +140,7 @@ export default function MedsPicker({
             }}
             placeholder={
               data
-                ? 'Латиница или кирилица: Ибупрофен, Lisinopril, аспирин...'
+                ? 'Латиница или кирилица: Ибупрофен, Нурофен, Lisinopril...'
                 : 'Зарежда се ИАЛ регистър...'
             }
             disabled={!data}
@@ -158,19 +152,16 @@ export default function MedsPicker({
           />
           {data && (
             <div
-              className="text-xs mt-2 flex items-center justify-between"
+              className="text-xs mt-2"
               style={{ color: 'var(--color-text-muted)' }}
             >
-              <span>
-                {query.trim()
-                  ? `${hits.length} ${hits.length === 1 ? 'резултат' : 'резултата'}`
-                  : 'Най-често предписвани'}
-              </span>
+              {query.trim()
+                ? `${hits.length} ${hits.length === 1 ? 'резултат' : 'резултата'}`
+                : 'Най-често предписвани'}
             </div>
           )}
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto">
           {!data && !loadErr && <LoadingView />}
           {loadErr && (
@@ -183,7 +174,10 @@ export default function MedsPicker({
             />
           )}
           {data && hits.length === 0 && query.trim() && (
-            <EmptyResultsView query={query} />
+            <EmptyResultsView
+              query={query}
+              onAddManual={() => handlePickMed({ inn: query.trim() })}
+            />
           )}
           {data && hits.length > 0 && (
             <div className="p-2">
@@ -265,7 +259,13 @@ function ErrorView({
   );
 }
 
-function EmptyResultsView({ query }: { query: string }) {
+function EmptyResultsView({
+  query,
+  onAddManual,
+}: {
+  query: string;
+  onAddManual: () => void;
+}) {
   return (
     <div
       className="p-8 text-center text-sm"
@@ -273,12 +273,18 @@ function EmptyResultsView({ query }: { query: string }) {
     >
       Няма резултати за <strong>{query}</strong>
       <div
-        className="text-xs mt-2"
+        className="text-xs mt-2 mb-4"
         style={{ color: 'var(--color-text-hint)' }}
       >
-        Опитайте с друго изписване — например на латиница вместо кирилица
-        (Lisinopril вместо Лизиноприл)
+        Опитайте с друго изписване (латиница ↔ кирилица) или добавете ръчно:
       </div>
+      <button
+        onClick={onAddManual}
+        className="px-4 py-2 rounded-md text-sm text-white transition hover:opacity-90"
+        style={{ background: 'var(--color-brand)' }}
+      >
+        + Добави &quot;{query}&quot; ръчно
+      </button>
     </div>
   );
 }
@@ -320,7 +326,7 @@ function MedRow({
           >
             {entry.i}
             {entry.a ? ' · ' + entry.a : ''}
-            {matchKind === 'trade' ? ' · търговско име' : ''}
+            {matchKind === 'brand' ? ' · търговско име' : ''}
           </div>
         </div>
         <Badge rx={entry.r} />
@@ -332,9 +338,7 @@ function MedRow({
         </span>
       </button>
 
-      {expanded && (
-        <ExpandedForm entry={entry} onCommit={onCommit} />
-      )}
+      {expanded && <ExpandedForm entry={entry} onCommit={onCommit} />}
     </div>
   );
 }
@@ -346,16 +350,28 @@ function ExpandedForm({
   entry: IalEntry;
   onCommit: (med: Medication) => void;
 }) {
-  // Pre-select first form and dose (most common alphabetically)
-  const [form, setForm] = useState(entry.f[0] || '');
-  const [dose, setDose] = useState(entry.d[0] || '');
+  const forms = useMemo(() => Object.keys(entry.fd), [entry.fd]);
+  const [form, setForm] = useState<string>(forms[0] || '');
+  // Doses for the currently-selected form
+  const doses = useMemo(
+    () => (form ? entry.fd[form] || [] : []),
+    [entry.fd, form]
+  );
+  const [dose, setDose] = useState<string>(doses[0] || '');
+
+  // When form changes, reset dose to first option of new form
+  useEffect(() => {
+    setDose(doses[0] || '');
+  }, [form, doses]);
+
   const [regimen, setRegimen] = useState('');
 
   function commit() {
     onCommit({
-      inn: entry.b, // Bulgarian as primary display name
+      inn: entry.b, // Bulgarian as primary display
       dose: dose || undefined,
       regimen: regimen.trim() || undefined,
+      route: form || undefined,
     });
   }
 
@@ -364,70 +380,98 @@ function ExpandedForm({
       className="px-3 pb-3 pt-1 space-y-2 border-t"
       style={{ borderColor: 'var(--color-border)' }}
     >
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label
-            className="block text-[10px] uppercase tracking-wider mb-1 font-semibold"
-            style={{ color: 'var(--color-text-hint)' }}
-          >
-            Форма
-          </label>
-          {entry.f.length > 0 ? (
-            <select
-              value={form}
-              onChange={(e) => setForm(e.target.value)}
-              className="w-full px-2 py-1.5 rounded text-sm border outline-none bg-white"
-              style={{ borderColor: 'var(--color-border-mid)' }}
-            >
-              {entry.f.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              type="text"
-              value={form}
-              onChange={(e) => setForm(e.target.value)}
-              placeholder="например таблетки"
-              className="w-full px-2 py-1.5 rounded text-sm border outline-none"
-              style={{ borderColor: 'var(--color-border-mid)' }}
-            />
-          )}
+      {forms.length === 0 ? (
+        <div
+          className="text-xs italic py-2"
+          style={{ color: 'var(--color-text-hint)' }}
+        >
+          Няма данни за форма/доза от ИАЛ — въведете ръчно по-долу.
         </div>
-        <div>
-          <label
-            className="block text-[10px] uppercase tracking-wider mb-1 font-semibold"
-            style={{ color: 'var(--color-text-hint)' }}
-          >
-            Доза
-          </label>
-          {entry.d.length > 0 ? (
-            <select
-              value={dose}
-              onChange={(e) => setDose(e.target.value)}
-              className="w-full px-2 py-1.5 rounded text-sm border outline-none bg-white"
-              style={{ borderColor: 'var(--color-border-mid)' }}
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label
+              className="block text-[10px] uppercase tracking-wider mb-1 font-semibold"
+              style={{ color: 'var(--color-text-hint)' }}
             >
-              {entry.d.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              type="text"
-              value={dose}
-              onChange={(e) => setDose(e.target.value)}
-              placeholder="например 500 mg"
-              className="w-full px-2 py-1.5 rounded text-sm border outline-none"
-              style={{ borderColor: 'var(--color-border-mid)' }}
-            />
-          )}
+              Форма
+              {forms.length > 1 && (
+                <span
+                  className="ml-1 normal-case font-normal"
+                  style={{ color: 'var(--color-text-hint)' }}
+                >
+                  ({forms.length})
+                </span>
+              )}
+            </label>
+            {forms.length === 1 ? (
+              <div
+                className="px-2 py-1.5 rounded text-sm border bg-white"
+                style={{
+                  borderColor: 'var(--color-border-light)',
+                  color: 'var(--color-text)',
+                }}
+              >
+                {forms[0]}
+              </div>
+            ) : (
+              <select
+                value={form}
+                onChange={(e) => setForm(e.target.value)}
+                className="w-full px-2 py-1.5 rounded text-sm border outline-none bg-white"
+                style={{ borderColor: 'var(--color-border-mid)' }}
+              >
+                {forms.map((f) => (
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div>
+            <label
+              className="block text-[10px] uppercase tracking-wider mb-1 font-semibold"
+              style={{ color: 'var(--color-text-hint)' }}
+            >
+              Доза
+              {doses.length > 1 && (
+                <span
+                  className="ml-1 normal-case font-normal"
+                  style={{ color: 'var(--color-text-hint)' }}
+                >
+                  ({doses.length})
+                </span>
+              )}
+            </label>
+            {doses.length === 1 ? (
+              <div
+                className="px-2 py-1.5 rounded text-sm border bg-white truncate"
+                style={{
+                  borderColor: 'var(--color-border-light)',
+                  color: 'var(--color-text)',
+                }}
+                title={doses[0]}
+              >
+                {doses[0]}
+              </div>
+            ) : (
+              <select
+                value={dose}
+                onChange={(e) => setDose(e.target.value)}
+                className="w-full px-2 py-1.5 rounded text-sm border outline-none bg-white"
+                style={{ borderColor: 'var(--color-border-mid)' }}
+              >
+                {doses.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div>
         <label

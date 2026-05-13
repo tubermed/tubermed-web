@@ -56,11 +56,25 @@ html, body {
   }
 }
 
-/* ── Print fallback ────────────────────────────────────────── */
-/* The main Печат / PDF workflow opens a clean preview window with its
-   own print styles. These rules only apply to Ctrl+P on the live result
-   page — keep the chrome out of the way but don't try to make it pretty. */
+/* ── Review highlight flash on navigation ─────────────────── */
 
+@keyframes flash-review {
+  0%, 100% {
+    background: var(--color-gold-soft);
+    transform: scale(1);
+  }
+  35% {
+    background: var(--color-gold);
+    color: white;
+    transform: scale(1.06);
+  }
+}
+
+.vital-mark.flash-review {
+  animation: flash-review 0.7s ease 2;
+}
+
+/* ── Print fallback ────────────────────────────────────────── */
 @media print {
   body { background: white !important; }
   header,
@@ -71,6 +85,13 @@ html, body {
   }
   .result-grid {
     display: block !important;
+    padding: 0 !important;
+  }
+  /* Strip review highlight from print */
+  .vital-mark {
+    background: transparent !important;
+    color: inherit !important;
+    border: none !important;
     padding: 0 !important;
   }
   @page {
