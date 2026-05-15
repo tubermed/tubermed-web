@@ -236,7 +236,23 @@ export interface OpenPreviewOpts {
 export function openPdfPreview(html: string, opts?: OpenPreviewOpts): boolean {
   const win = window.open('', '_blank', 'width=900,height=900');
   if (!win) return false;
-  win.document.write(html);
+
+  // Inject two things into the HTML before writing:
+  //  1. `afterprint` listener that closes the window when the print dialog
+  //     dismisses (save OR cancel). Prevents the lingering preview window.
+  //  2. If autoPrint is on, hide the in-page action bar so nothing flashes
+  //     on screen before the print dialog opens.
+  const closeScript =
+    "<script>window.addEventListener('afterprint',function(){setTimeout(function(){try{window.close()}catch(_){}},150)});</script>";
+  const hideActionsCss = opts?.autoPrint
+    ? '<style>.actions{display:none !important}</style>'
+    : '';
+
+  const finalHtml = html
+    .replace('</head>', hideActionsCss + '</head>')
+    .replace('</body>', closeScript + '</body>');
+
+  win.document.write(finalHtml);
   win.document.close();
 
   if (opts?.autoPrint) {
