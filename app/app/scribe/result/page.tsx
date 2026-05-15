@@ -110,8 +110,10 @@ export default function ResultPage() {
   // ── Edit tracking (debounced) ─────────────────────────────────
   const flushEdit = useCallback(() => {
     if (!original) return;
+    // Send the edited field name for analytics + the full fields object
+    // for backend data sync.
     const field = pendingEditField.current ?? undefined;
-    api.editConsultation(original.consultationId, field).catch((err) => {
+    api.editConsultation(original.consultationId, field, fields).catch((err) => {
       if (err instanceof ApiError) {
         console.warn('[edit-track] ' + err.status + ' ' + err.message);
       }

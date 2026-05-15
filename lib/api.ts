@@ -98,10 +98,14 @@ export const api = {
       body: fd,
     });
   },
-  editConsultation: (consultationId: string, fields: TranscribeFields) =>
+  editConsultation: (
+    consultationId: string,
+    field?: string,
+    fields?: TranscribeFields
+  ) =>
     request<{ ok: boolean }>(`/api/consultations/${consultationId}/edit`, {
       method: 'POST',
-      body: JSON.stringify({ fields }),
+      body: JSON.stringify({ field, fields }),
     }),
 };
 
