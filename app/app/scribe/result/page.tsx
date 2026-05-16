@@ -8,6 +8,7 @@ import Stepper from '@/components/Stepper';
 import EditableField from '@/components/EditableField';
 import MkbPicker from '@/components/MkbPicker';
 import MedsPanel from '@/components/MedsPanel';
+import RevealEgnButton from '@/components/RevealEgnButton';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import { api, ApiError, getSession } from '@/lib/api';
 import type { DoctorInfo } from '@/lib/api';
@@ -16,7 +17,9 @@ import type {
   TranscribeFields,
   ComorbidDiagnosis,
   Medication,
+  PendingVisit,
 } from '@/lib/types';
+import { ageFromBirthDate } from '@/lib/age';
 import { checkDrugSafety, type SafetyAlert } from '@/lib/drug-safety';
 import { loadMkb, getMkbDataSync, findByCode } from '@/lib/mkb10';
 import { loadIal } from '@/lib/ial-meds';
@@ -30,7 +33,8 @@ import {
   downloadWord,
 } from '@/lib/exporters';
 
-const RESULT_STORAGE_KEY = 'tuber_last_result';
+const RESULT_STORAGE_KEY  = 'tuber_last_result';
+const PENDING_VISIT_KEY   = 'tuber_pending_visit';
 
 type ReviewStatus = 'pending' | 'confirmed';
 
@@ -58,6 +62,7 @@ type MkbTarget = { kind: 'osnovna' } | { kind: 'co'; index: number };
 export default function ResultPage() {
   const router = useRouter();
   const [doctor, setDoctor] = useState<DoctorInfo | null>(null);
+  const [pendingVisit, setPendingVisit] = useState<PendingVisit | null>(null);
   const [original, setOriginal] = useState<TranscribeResult | null>(null);
   const [fields, setFields] = useState<TranscribeFields>({});
   const [reviewStatus, setReviewStatus] = useState<ReviewStatus>('pending');
@@ -96,6 +101,15 @@ export default function ResultPage() {
       setFields({ ...parsed.fields });
     } catch {
       router.replace('/app/scribe');
+    }
+
+    // Optional patient context (present when the recording came from /app/new-visit).
+    // Legacy recordings won't have it — render falls back gracefully.
+    try {
+      const pv = sessionStorage.getItem(PENDING_VISIT_KEY);
+      if (pv) setPendingVisit(JSON.parse(pv) as PendingVisit);
+    } catch {
+      /* malformed — render without patient header */
     }
   }, [router]);
 
@@ -513,7 +527,17 @@ export default function ResultPage() {
   return (
     <div className="min-h-screen flex flex-col">
       <AppHeader doctor={doctor} />
-      <Stepper active="result" />
+      <Stepper
+        steps={[
+          { label: 'Вход',     sublabel: 'Пациент' },
+          { label: 'Запис',    sublabel: 'Консултация' },
+          { label: 'Обработка', sublabel: 'AI анализ' },
+          { label: 'Резултат', sublabel: 'Документ' },
+        ]}
+        current={3}
+      />
+
+      {pendingVisit && <PatientHeaderStrip pending={pendingVisit} />}
 
       {/* Critical safety banner — full width */}
       {criticals.length > 0 && (
@@ -1319,4 +1343,69 @@ function DiagRow({
       )}
     </div>
   );
+}
+
+// Patient header strip — sits between the Stepper and the safety banner.
+// Renders only when /app/new-visit staged the visit; legacy recordings skip it.
+function PatientHeaderStrip({ pending }: { pending: PendingVisit }) {
+  const p = pending.patient;
+  const name = [p.first_name, p.middle_name, p.last_name].filter(Boolean).join(' ');
+  const age  = ageFromBirthDate(p.birth_date);
+  const genderLabel = p.gender === 'male'   ? 'мъж'
+                    : p.gender === 'female' ? 'жена'
+                    : p.gender === 'other'  ? 'друг'
+                    : null;
+  return (
+    <div
+      className="px-6 py-3 border-b no-print"
+      style={{ background: 'var(--color-bg-card)', borderColor: 'var(--color-border)' }}
+    >
+      <div className="max-w-6xl mx-auto flex flex-wrap items-center gap-x-4 gap-y-1">
+        <span
+          className="text-lg font-medium font-[family-name:var(--font-cormorant)]"
+          style={{ color: 'var(--color-brand-dark)' }}
+        >
+          {name || 'Пациент'}
+        </span>
+        {age !== null && (
+          <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+            {age} г.
+          </span>
+        )}
+        {genderLabel && (
+          <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+            · {genderLabel}
+          </span>
+        )}
+        {p.national_id_type !== 'none' && (
+          <>
+            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>·</span>
+            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+              {p.national_id_type === 'egn' ? 'ЕГН' : p.national_id_type === 'lnch' ? 'ЛНЧ' : 'ID'}:
+            </span>
+            <RevealEgnButton patientId={p.id} last4={p.national_id_last4} />
+          </>
+        )}
+        {pending.visit_metadata.visit_type && (
+          <span
+            className="ml-auto text-[10px] uppercase tracking-wider px-2 py-0.5 rounded"
+            style={{ background: 'var(--color-brand-soft)', color: 'var(--color-brand)' }}
+          >
+            {visitTypeLabel(pending.visit_metadata.visit_type)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function visitTypeLabel(t: string): string {
+  switch (t) {
+    case 'first':      return 'Първичен';
+    case 'followup':   return 'Контролен';
+    case 'urgent':     return 'Спешен';
+    case 'preventive': return 'Профилактичен';
+    case 'remote':     return 'Дистанционен';
+    default:           return t;
+  }
 }

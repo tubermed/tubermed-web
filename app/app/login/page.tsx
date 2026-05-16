@@ -23,7 +23,7 @@ export default function LoginPage() {
         pin: pin.trim(),
       });
       setSession({ token: res.token, doctor: res.doctor });
-      router.push("/app/scribe");
+      router.push("/app/new-visit");
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Грешка при вход";
       setError(msg);

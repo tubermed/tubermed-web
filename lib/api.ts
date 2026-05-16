@@ -1,6 +1,22 @@
 // Thin fetch wrapper for the Railway backend.
 
-import type { TranscribeResult, SessionInit, SessionStatus, TranscribeFields } from './types';
+import type {
+  TranscribeResult,
+  SessionInit,
+  SessionStatus,
+  TranscribeFields,
+  PatientSearchResponse,
+  PatientDetailResponse,
+  PatientSummary,
+  CreatePatientPayload,
+  CreatePatientSuccess,
+  DedupConflict,
+  UpdatePatientPayload,
+  RevealNationalIdResponse,
+  VisitStartPayload,
+  VisitStartResponse,
+  TodayResponse,
+} from './types';
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL!;
 const STORAGE_KEY = 'tuber_auth';
@@ -42,8 +58,11 @@ export function getToken(): string | null {
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  /** Parsed JSON body, if any. Useful for endpoints whose 4xx is data, not text. */
+  public readonly body: unknown;
+  constructor(public status: number, message: string, body?: unknown) {
     super(message);
+    this.body = body;
   }
 }
 
@@ -52,7 +71,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (options.body && !headers.has('Content-Type') && !(options.body instanceof FormData)) {
-    headers.set('Content-Type', 'application/json');
+    headers.set('Content-Type', 'application/json; charset=utf-8');
   }
 
   const res = await fetch(`${BACKEND}${path}`, { ...options, headers });
@@ -60,7 +79,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const data = text ? JSON.parse(text) : null;
 
   if (!res.ok) {
-    throw new ApiError(res.status, data?.error || `HTTP ${res.status}`);
+    const msg = (data && typeof data === 'object' && 'error' in data && typeof (data as { error: unknown }).error === 'string')
+      ? (data as { error: string }).error
+      : `HTTP ${res.status}`;
+    throw new ApiError(res.status, msg, data);
   }
   return data as T;
 }
@@ -78,6 +100,12 @@ export interface LoginResponse {
   doctor: DoctorInfo;
 }
 
+// Discriminated union for createPatient — the 409 dedup response is data,
+// not an exception. Callers render the DedupModal directly from the conflict.
+export type CreatePatientResult =
+  | { ok: true; data: CreatePatientSuccess }
+  | { ok: false; status: 409; dedup: DedupConflict };
+
 export const api = {
   health: () => request<{ status: string }>('/health'),
   login: (payload: LoginPayload) =>
@@ -86,16 +114,24 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   me: () => request<unknown>('/api/auth/me'),
-  createSession: () =>
-    request<SessionInit>('/api/sessions', { method: 'POST' }),
+
+  // ── Sessions / transcription (extended to forward consultation_id) ─────
+  createSession: (opts?: { consultationId?: string }) =>
+    request<SessionInit>('/api/sessions', {
+      method: 'POST',
+      body: JSON.stringify(opts?.consultationId ? { consultation_id: opts.consultationId } : {}),
+    }),
   getSessionStatus: (id: string) =>
     request<SessionStatus>(`/api/sessions/${id}/status`),
-  transcribe: (audio: Blob, filename = 'audio.webm') => {
+  transcribe: (audio: Blob, filename = 'audio.webm', opts?: { consultationId?: string }) => {
     const fd = new FormData();
     fd.append('audio', audio, filename);
+    const headers: Record<string, string> = {};
+    if (opts?.consultationId) headers['X-Consultation-Id'] = opts.consultationId;
     return request<TranscribeResult>('/api/transcribe', {
       method: 'POST',
       body: fd,
+      headers,
     });
   },
   editConsultation: (
@@ -107,6 +143,56 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ field, fields }),
     }),
+
+  // ── Patients ───────────────────────────────────────────────────────────
+  searchPatients: (q: string, limit = 10) => {
+    const u = new URLSearchParams();
+    if (q) u.set('q', q);
+    u.set('limit', String(limit));
+    return request<PatientSearchResponse>(`/api/patients?${u.toString()}`);
+  },
+  getPatient: (id: string) => request<PatientDetailResponse>(`/api/patients/${id}`),
+
+  // Returns a discriminated union: success or 409-dedup. Other errors still throw ApiError.
+  async createPatient(payload: CreatePatientPayload): Promise<CreatePatientResult> {
+    try {
+      const data = await request<CreatePatientSuccess>('/api/patients', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      return { ok: true, data };
+    } catch (err) {
+      if (
+        err instanceof ApiError &&
+        err.status === 409 &&
+        err.body &&
+        typeof err.body === 'object' &&
+        'possible_duplicates' in (err.body as Record<string, unknown>)
+      ) {
+        return { ok: false, status: 409, dedup: err.body as DedupConflict };
+      }
+      throw err;
+    }
+  },
+  updatePatient: (id: string, payload: UpdatePatientPayload) =>
+    request<{ patient: PatientSummary }>(`/api/patients/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  revealNationalId: (patientId: string) =>
+    request<RevealNationalIdResponse>(`/api/patients/${patientId}/national-id`),
+
+  // ── Visit staging ──────────────────────────────────────────────────────
+  startVisit: (payload: VisitStartPayload) =>
+    request<VisitStartResponse>('/api/visits/start', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  abandonVisit: (consultationId: string) =>
+    request<{ ok: true }>(`/api/visits/${consultationId}/abandon`, { method: 'POST' }),
+
+  // ── Today's consultations (right rail) ─────────────────────────────────
+  consultationsToday: () => request<TodayResponse>('/api/consultations/today'),
 };
 
 export function wsUrl(sessionId: string): string {

@@ -21,6 +21,14 @@
   --color-border-light: #F0E6DC;
   --color-border-mid: #D9CCC1;
 
+  /* Workspace shell (dark-navy left rail) */
+  --color-nav-bg: #161A2C;
+  --color-nav-bg-elev: #1F2438;
+  --color-nav-text: #E8E1D6;
+  --color-nav-text-muted: #8A8FA8;
+  --color-nav-border: #262B40;
+  --color-nav-active: #6B1A3D;
+
   --gradient-brand: linear-gradient(135deg, #6B1A3D 0%, #9B2256 60%, #B8335A 100%);
 
   --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;

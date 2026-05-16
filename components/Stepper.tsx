@@ -1,17 +1,20 @@
 'use client';
 
-export type StepperPhase = 'login' | 'record' | 'processing' | 'result';
+// Single parametrized stepper. Each step optionally carries a `sublabel` —
+// when omitted, the sublabel line is not rendered (used by the 3-step new-visit
+// flow); when present, it renders as today (used by the 4-step record/result flow).
+export interface StepperStep {
+  label: string;
+  sublabel?: string;
+}
 
-const STEPS: Array<{ phase: StepperPhase; num: number; label: string; sublabel: string }> = [
-  { phase: 'login', num: 1, label: 'Вход', sublabel: 'Пациент' },
-  { phase: 'record', num: 2, label: 'Запис', sublabel: 'Консултация' },
-  { phase: 'processing', num: 3, label: 'Обработка', sublabel: 'AI анализ' },
-  { phase: 'result', num: 4, label: 'Резултат', sublabel: 'Документ' },
-];
+interface StepperProps {
+  steps: StepperStep[];
+  /** Zero-based index of the active step. */
+  current: number;
+}
 
-export default function Stepper({ active }: { active: StepperPhase }) {
-  const activeIdx = STEPS.findIndex((s) => s.phase === active);
-
+export default function Stepper({ steps, current }: StepperProps) {
   return (
     <div
       className="flex items-center gap-2 px-6 py-3 border-b print:hidden"
@@ -20,11 +23,11 @@ export default function Stepper({ active }: { active: StepperPhase }) {
         borderColor: 'var(--color-border)',
       }}
     >
-      {STEPS.map((step, i) => {
-        const isActive = i === activeIdx;
-        const isDone = i < activeIdx;
+      {steps.map((step, i) => {
+        const isActive = i === current;
+        const isDone   = i <  current;
         return (
-          <div key={step.phase} className="flex items-center gap-2 flex-1">
+          <div key={i} className="flex items-center gap-2 flex-1">
             <div
               className="flex-1 flex items-center gap-3 px-4 py-2.5 rounded-lg border transition-all"
               style={{
@@ -56,7 +59,7 @@ export default function Stepper({ active }: { active: StepperPhase }) {
                     : 'var(--color-text-hint)',
                 }}
               >
-                {step.num}
+                {i + 1}
               </span>
               <span className="flex flex-col min-w-0">
                 <span
@@ -71,27 +74,29 @@ export default function Stepper({ active }: { active: StepperPhase }) {
                 >
                   {step.label}
                 </span>
-                <span
-                  className="text-[10px] uppercase tracking-widest"
-                  style={{
-                    color: isActive
-                      ? 'rgba(255,255,255,0.7)'
-                      : 'var(--color-text-hint)',
-                  }}
-                >
-                  {step.sublabel}
-                </span>
+                {step.sublabel && (
+                  <span
+                    className="text-[10px] uppercase tracking-widest"
+                    style={{
+                      color: isActive
+                        ? 'rgba(255,255,255,0.7)'
+                        : 'var(--color-text-hint)',
+                    }}
+                  >
+                    {step.sublabel}
+                  </span>
+                )}
               </span>
             </div>
-            {i < STEPS.length - 1 && (
+            {i < steps.length - 1 && (
               <span
                 className="w-4 h-px flex-shrink-0"
                 style={{
                   background:
-                    i < activeIdx
+                    i < current
                       ? 'var(--color-brand)'
                       : 'var(--color-border-mid)',
-                  opacity: i < activeIdx ? 0.35 : 1,
+                  opacity: i < current ? 0.35 : 1,
                 }}
               />
             )}

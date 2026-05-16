@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 import AppHeader from '@/components/AppHeader';
 import {
@@ -16,23 +16,46 @@ import type {
   TranscribeResult,
   SessionInit,
   WsMessage,
+  PendingVisit,
 } from '@/lib/types';
 
 type Mode = 'phone' | 'pc';
 type View = 'record' | 'processing';
 
-const RESULT_STORAGE_KEY = 'tuber_last_result';
+const RESULT_STORAGE_KEY  = 'tuber_last_result';
+const PENDING_VISIT_KEY   = 'tuber_pending_visit';
 
+// useSearchParams() must live inside a Suspense boundary in Next.js 16.
 export default function ScribePage() {
+  return (
+    <Suspense fallback={<BootSplash />}>
+      <ScribePageInner />
+    </Suspense>
+  );
+}
+
+function BootSplash() {
+  return (
+    <main className="min-h-screen flex items-center justify-center" style={{ color: 'var(--color-text-muted)' }}>
+      Зареждане…
+    </main>
+  );
+}
+
+function ScribePageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [doctor, setDoctor] = useState<DoctorInfo | null>(null);
   const [mode, setMode] = useState<Mode>('phone');
   const [view, setView] = useState<View>('record');
   const [error, setError] = useState<string | null>(null);
   const [procMain, setProcMain] = useState('Обработва се...');
   const [procSub, setProcSub] = useState('Моля изчакайте');
+  const [consultationId, setConsultationId] = useState<string | null>(null);
 
-  // ── Auth gate
+  // ── Auth + visit-staging gate ──────────────────────────────────────────
+  // Requires both a session AND a matching tuber_pending_visit in sessionStorage.
+  // No cold-start recovery — if anything is missing, return to /app/new-visit.
   useEffect(() => {
     const session = getSession();
     if (!session) {
@@ -40,13 +63,35 @@ export default function ScribePage() {
       return;
     }
     setDoctor(session.doctor);
+
+    const visitId = searchParams.get('visit');
+    if (!visitId) {
+      router.replace('/app/new-visit');
+      return;
+    }
+
+    let pending: PendingVisit | null = null;
+    try {
+      const raw = sessionStorage.getItem(PENDING_VISIT_KEY);
+      if (raw) pending = JSON.parse(raw) as PendingVisit;
+    } catch {
+      /* malformed — treat as absent */
+    }
+    if (!pending || pending.consultation_id !== visitId) {
+      sessionStorage.removeItem(PENDING_VISIT_KEY);
+      router.replace('/app/new-visit');
+      return;
+    }
+
+    setConsultationId(visitId);
+
     api.me().catch((err) => {
       if (err instanceof ApiError && err.status === 401) {
         clearSession();
         router.replace('/app/login');
       }
     });
-  }, [router]);
+  }, [router, searchParams]);
 
   const onResult = useCallback(
     (result: TranscribeResult) => {
@@ -94,6 +139,7 @@ export default function ScribePage() {
               {mode === 'phone' && (
                 <PhoneMode
                   active={mode === 'phone'}
+                  consultationId={consultationId}
                   onProcessing={() =>
                     goToProcessing('AI анализира...', 'Транскрипция и извличане')
                   }
@@ -104,6 +150,7 @@ export default function ScribePage() {
 
               {mode === 'pc' && (
                 <PcMode
+                  consultationId={consultationId}
                   onProcessing={() =>
                     goToProcessing('Транскрипция...', 'Изпраща се аудиото')
                   }
@@ -232,11 +279,13 @@ function Spinner() {
 
 function PhoneMode({
   active,
+  consultationId,
   onProcessing,
   onResult,
   onError,
 }: {
   active: boolean;
+  consultationId: string | null;
   onProcessing: () => void;
   onResult: (r: TranscribeResult) => void;
   onError: (msg: string) => void;
@@ -278,7 +327,7 @@ function PhoneMode({
     async function init() {
       teardown();
       try {
-        const s = await api.createSession();
+        const s = await api.createSession(consultationId ? { consultationId } : undefined);
         if (cancelledRef.current) return;
         setSession(s);
         setPhoneConnected(false);
@@ -364,7 +413,7 @@ function PhoneMode({
       cancelledRef.current = true;
       teardown();
     };
-  }, [active, onProcessing, onResult, onError, teardown]);
+  }, [active, consultationId, onProcessing, onResult, onError, teardown]);
 
   if (phoneConnected) {
     return (
@@ -448,12 +497,14 @@ function PhoneMode({
 const WAVE_BARS = 32;
 
 function PcMode({
+  consultationId,
   onProcessing,
   onResult,
   onError,
   onAuthError,
   onBackToIdle,
 }: {
+  consultationId: string | null;
   onProcessing: () => void;
   onResult: (r: TranscribeResult) => void;
   onError: (msg: string) => void;
@@ -586,7 +637,11 @@ function PcMode({
 
     try {
       onProcessing();
-      const result = await api.transcribe(blob);
+      const result = await api.transcribe(
+        blob,
+        'audio.webm',
+        consultationId ? { consultationId } : undefined,
+      );
       onResult(result);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -598,7 +653,7 @@ function PcMode({
         'Грешка: ' + (err instanceof Error ? err.message : 'неизвестна')
       );
     }
-  }, [stopWaveform, onProcessing, onResult, onAuthError, onBackToIdle, onError]);
+  }, [stopWaveform, consultationId, onProcessing, onResult, onAuthError, onBackToIdle, onError]);
 
   useEffect(() => {
     return () => {
