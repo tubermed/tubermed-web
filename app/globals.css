@@ -54,7 +54,12 @@ html, body {
   padding: 24px;
 }
 
-@media (max-width: 1024px) {
+/* Container query keyed off <main> in AppShell (which carries
+   container-type: inline-size). Triggers when the available main-area width
+   drops below 1024px — i.e. viewport ≲ 1276px once the 252px sidebar is
+   accounted for — so the right rail collapses correctly in the mid-range
+   band that the old viewport-based @media query missed. */
+@container (max-width: 1024px) {
   .result-grid {
     grid-template-columns: 1fr;
     padding: 16px;

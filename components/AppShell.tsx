@@ -20,7 +20,12 @@ export default function AppShell({ doctor, sidebarLocked = false, children }: Ap
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--color-bg)' }}>
       <ClinicSidebar doctor={doctor} items={NAV_ITEMS} locked={sidebarLocked} />
-      <main className="flex-1 flex flex-col min-w-0">{children}</main>
+      {/* container-type: inline-size lets descendants run @container queries
+          keyed off main-area width — needed so /app/scribe/result's right-rail
+          breakpoint accounts for the sidebar instead of raw viewport width. */}
+      <main className="flex-1 flex flex-col min-w-0" style={{ containerType: 'inline-size' }}>
+        {children}
+      </main>
     </div>
   );
 }
