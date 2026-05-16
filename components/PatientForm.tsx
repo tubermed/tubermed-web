@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { dobFromEgn, genderFromEgn, isValidEgnFormat } from '@/lib/egn';
+import { useCallback, useMemo, useState } from 'react';
+import { dobFromEgn, genderFromEgn } from '@/lib/egn';
 import { ageFromBirthDate } from '@/lib/age';
 import ChipInput from './ChipInput';
 import MkbPicker from './MkbPicker';
@@ -117,23 +117,21 @@ export default function PatientForm({
     [state, onChange]
   );
 
-  // Live-derive DOB+gender from ЕГН when the doctor types a complete one
-  useEffect(() => {
-    if (state.national_id_type !== 'egn') return;
-    if (!isValidEgnFormat(state.national_id)) return;
-    const dob = dobFromEgn(state.national_id);
-    const g   = genderFromEgn(state.national_id);
-    if (dob && !state.birth_date) set('birth_date', dob);
-    if (g && !state.gender)       set('gender', g);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.national_id, state.national_id_type]);
+  // Atomic multi-field setter — needed so ЕГН-driven derivation can update
+  // national_id + birth_date + gender in a single React update. Calling `set`
+  // three times in the same tick clobbers because each call closes over the
+  // pre-update `state`.
+  const setMany = useCallback(
+    (partial: Partial<PatientFormState>) => onChange({ ...state, ...partial }),
+    [state, onChange]
+  );
 
   const age = useMemo(() => ageFromBirthDate(state.birth_date), [state.birth_date]);
   const canSubmit = state.first_name.trim() && state.last_name.trim();
 
   return (
     <div className="flex flex-col gap-6">
-      <IdentificationSection state={state} set={set} age={age} />
+      <IdentificationSection state={state} set={set} setMany={setMany} age={age} />
       <ClinicalContextSection state={state} set={set} />
       <VisitTypeSection state={state} set={set} />
       <ChiefComplaintSection state={state} set={set} />
@@ -210,7 +208,41 @@ function inputStyle(): React.CSSProperties {
   return { background: 'white', border: '1px solid var(--color-border-mid)', color: 'var(--color-text)' };
 }
 
-function IdentificationSection({ state, set, age }: { state: PatientFormState; set: SetFn; age: number | null }) {
+function IdentificationSection({
+  state, set, setMany, age,
+}: {
+  state: PatientFormState;
+  set: SetFn;
+  setMany: (partial: Partial<PatientFormState>) => void;
+  age: number | null;
+}) {
+  // Validity derivation — runs every render so we never display stale flags.
+  const isEgn       = state.national_id_type === 'egn';
+  const ten         = state.national_id.length === 10;
+  const derivedDob  = isEgn && ten ? dobFromEgn(state.national_id) : null;
+  const egnInvalid  = isEgn && ten && derivedDob === null;
+  const egnValid    = isEgn && ten && derivedDob !== null;
+
+  // Handles every keystroke on the ЕГН input. For type='egn' specifically:
+  // re-derives DOB + gender on every change. When DOB can't be parsed (length
+  // < 10 OR digits 1–6 aren't a real calendar date), both birth_date and
+  // gender are cleared in the same React update so we never display a gender
+  // derived from a garbage ЕГН.
+  function handleNationalIdChange(raw: string) {
+    const cleaned = raw.replace(/\s/g, '');
+    if (state.national_id_type !== 'egn') {
+      setMany({ national_id: cleaned });
+      return;
+    }
+    const dob = cleaned.length === 10 ? dobFromEgn(cleaned) : null;
+    if (dob === null) {
+      setMany({ national_id: cleaned, birth_date: '', gender: '' });
+    } else {
+      const g = genderFromEgn(cleaned) ?? '';
+      setMany({ national_id: cleaned, birth_date: dob, gender: g });
+    }
+  }
+
   return (
     <SectionCard title="Идентификация">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -244,16 +276,35 @@ function IdentificationSection({ state, set, age }: { state: PatientFormState; s
 
         <label className="md:col-span-1">
           <FieldLabel>{state.national_id_type === 'egn' ? 'ЕГН' : state.national_id_type === 'lnch' ? 'ЛНЧ' : 'Идентификатор'}</FieldLabel>
-          <input
-            className={`${inputClass()} font-[family-name:var(--font-jetbrains)] tracking-wider`}
-            style={inputStyle()}
-            value={state.national_id}
-            onChange={(e) => set('national_id', e.target.value.replace(/\s/g, ''))}
-            disabled={state.national_id_type === 'none'}
-            inputMode={state.national_id_type === 'egn' || state.national_id_type === 'lnch' ? 'numeric' : 'text'}
-            maxLength={state.national_id_type === 'egn' || state.national_id_type === 'lnch' ? 10 : undefined}
-            placeholder={state.national_id_type === 'none' ? '—' : '10 цифри'}
-          />
+          <span className="relative block">
+            <input
+              className={`${inputClass()} font-[family-name:var(--font-jetbrains)] tracking-wider pr-7`}
+              style={{
+                ...inputStyle(),
+                borderColor: egnInvalid ? 'var(--color-red)' : 'var(--color-border-mid)',
+              }}
+              value={state.national_id}
+              onChange={(e) => handleNationalIdChange(e.target.value)}
+              disabled={state.national_id_type === 'none'}
+              inputMode={state.national_id_type === 'egn' || state.national_id_type === 'lnch' ? 'numeric' : 'text'}
+              maxLength={state.national_id_type === 'egn' || state.national_id_type === 'lnch' ? 10 : undefined}
+              placeholder={state.national_id_type === 'none' ? '—' : '10 цифри'}
+              aria-invalid={egnInvalid || undefined}
+            />
+            {egnValid && (
+              <span
+                aria-hidden
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-sm"
+                style={{ color: 'var(--color-ok)' }}
+                title="Валидно ЕГН"
+              >✓</span>
+            )}
+          </span>
+          {egnInvalid && (
+            <span className="block text-xs mt-1" style={{ color: 'var(--color-red)' }} role="alert">
+              Невалидно ЕГН — датата на раждане не може да бъде извлечена.
+            </span>
+          )}
         </label>
 
         <div className="grid grid-cols-2 gap-3 md:col-span-1">

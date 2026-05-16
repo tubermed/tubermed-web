@@ -3,7 +3,9 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
-import AppHeader from '@/components/AppHeader';
+import AppShell from '@/components/AppShell';
+import Stepper from '@/components/Stepper';
+import { SCRIBE_FLOW_STEPS } from '@/lib/flow';
 import {
   api,
   ApiError,
@@ -52,6 +54,12 @@ function ScribePageInner() {
   const [procMain, setProcMain] = useState('Обработва се...');
   const [procSub, setProcSub] = useState('Моля изчакайте');
   const [consultationId, setConsultationId] = useState<string | null>(null);
+  // PC-side recording active flag — bubbled up from PcMode so the sidebar
+  // can be locked while the doctor is mid-recording. Phone-side "in progress"
+  // naturally maps to view === 'processing' (PC isn't recording anything).
+  const [pcRecording, setPcRecording] = useState(false);
+  const navLocked      = pcRecording || view === 'processing';
+  const stepperCurrent = view === 'processing' ? 2 : 1;
 
   // ── Auth + visit-staging gate ──────────────────────────────────────────
   // Requires both a session AND a matching tuber_pending_visit in sessionStorage.
@@ -119,10 +127,9 @@ function ScribePageInner() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <AppHeader doctor={doctor} />
-
-      <main className="flex-1 px-6 py-8">
+    <AppShell doctor={doctor} sidebarLocked={navLocked}>
+      <Stepper steps={SCRIBE_FLOW_STEPS} current={stepperCurrent} />
+      <div className="flex-1 px-6 py-8">
         <div className="max-w-2xl mx-auto">
           {error && (
             <ErrorBanner message={error} onClose={() => setError(null)} />
@@ -151,6 +158,7 @@ function ScribePageInner() {
               {mode === 'pc' && (
                 <PcMode
                   consultationId={consultationId}
+                  onRecordingChange={setPcRecording}
                   onProcessing={() =>
                     goToProcessing('Транскрипция...', 'Изпраща се аудиото')
                   }
@@ -166,8 +174,8 @@ function ScribePageInner() {
             </>
           )}
         </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }
 
@@ -498,6 +506,7 @@ const WAVE_BARS = 32;
 
 function PcMode({
   consultationId,
+  onRecordingChange,
   onProcessing,
   onResult,
   onError,
@@ -505,6 +514,8 @@ function PcMode({
   onBackToIdle,
 }: {
   consultationId: string | null;
+  /** Bubbles the local recording state up so the page can lock the sidebar. */
+  onRecordingChange: (active: boolean) => void;
   onProcessing: () => void;
   onResult: (r: TranscribeResult) => void;
   onError: (msg: string) => void;
@@ -604,6 +615,7 @@ function PcMode({
       mr.start(500);
       mrRef.current = mr;
       setRecording(true);
+      onRecordingChange(true);
       setSeconds(0);
       startWaveform(stream);
       timerRef.current = setInterval(() => {
@@ -615,11 +627,12 @@ function PcMode({
           (e instanceof Error ? e.message : 'неизвестна грешка')
       );
     }
-  }, [startWaveform, onError]);
+  }, [startWaveform, onError, onRecordingChange]);
 
   const stopRecording = useCallback(async () => {
     if (!mrRef.current) return;
     setRecording(false);
+    onRecordingChange(false);
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -653,7 +666,7 @@ function PcMode({
         'Грешка: ' + (err instanceof Error ? err.message : 'неизвестна')
       );
     }
-  }, [stopWaveform, consultationId, onProcessing, onResult, onAuthError, onBackToIdle, onError]);
+  }, [stopWaveform, consultationId, onProcessing, onResult, onAuthError, onBackToIdle, onError, onRecordingChange]);
 
   useEffect(() => {
     return () => {
@@ -662,9 +675,10 @@ function PcMode({
       if (mrRef.current && mrRef.current.state !== 'inactive') {
         mrRef.current.stop();
         mrRef.current.stream.getTracks().forEach((t) => t.stop());
+        onRecordingChange(false);
       }
     };
-  }, [stopWaveform]);
+  }, [stopWaveform, onRecordingChange]);
 
   const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
   const ss = String(seconds % 60).padStart(2, '0');

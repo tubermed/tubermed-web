@@ -18,9 +18,13 @@ interface ClinicSidebarProps {
   /** Slug of the clinic shown in the switcher card. Today this is just decorative. */
   clinicName?: string;
   items: NavItem[];
+  /** When true, every nav item AND the logout button become non-interactive.
+   *  Used while a recording is in progress on /app/scribe so the doctor can't
+   *  accidentally navigate away and lose the recording. */
+  locked?: boolean;
 }
 
-export default function ClinicSidebar({ doctor, clinicName, items }: ClinicSidebarProps) {
+export default function ClinicSidebar({ doctor, clinicName, items, locked = false }: ClinicSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const displayName = doctor?.name?.replace(/^д-р\s*/i, '') ?? '';
@@ -67,16 +71,17 @@ export default function ClinicSidebar({ doctor, clinicName, items }: ClinicSideb
       {/* Nav items */}
       <nav className="px-3 flex flex-col gap-0.5 flex-1 overflow-y-auto">
         {items.map((item) => {
-          const isActive = item.href ? pathname === item.href || pathname.startsWith(item.href + '/') : false;
+          const isActive   = item.href ? pathname === item.href || pathname.startsWith(item.href + '/') : false;
+          const itemLocked = locked || item.disabled;
           const baseStyle: React.CSSProperties = {
-            color: item.disabled
+            color: itemLocked
               ? 'var(--color-nav-text-muted)'
               : isActive
               ? 'white'
               : 'var(--color-nav-text)',
-            background: isActive ? 'var(--color-nav-active)' : 'transparent',
-            cursor: item.disabled ? 'not-allowed' : 'pointer',
-            opacity: item.disabled ? 0.55 : 1,
+            background: isActive && !locked ? 'var(--color-nav-active)' : 'transparent',
+            cursor: itemLocked ? 'not-allowed' : 'pointer',
+            opacity: itemLocked ? 0.55 : 1,
           };
           const inner = (
             <span className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium">
@@ -92,7 +97,7 @@ export default function ClinicSidebar({ doctor, clinicName, items }: ClinicSideb
               )}
             </span>
           );
-          if (item.disabled || !item.href) {
+          if (itemLocked || !item.href) {
             return (
               <div key={item.label} style={baseStyle} aria-disabled="true">
                 {inner}
@@ -127,8 +132,9 @@ export default function ClinicSidebar({ doctor, clinicName, items }: ClinicSideb
           </div>
           <button
             onClick={handleLogout}
-            className="text-xs underline-offset-2 hover:underline"
-            style={{ color: 'var(--color-nav-text-muted)' }}
+            disabled={locked}
+            className="text-xs underline-offset-2 hover:underline disabled:no-underline disabled:cursor-not-allowed"
+            style={{ color: 'var(--color-nav-text-muted)', opacity: locked ? 0.5 : 1 }}
           >
             Изход
           </button>

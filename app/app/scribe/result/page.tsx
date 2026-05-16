@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import AppHeader from '@/components/AppHeader';
+import AppShell from '@/components/AppShell';
 import Stepper from '@/components/Stepper';
+import { SCRIBE_FLOW_STEPS } from '@/lib/flow';
 import EditableField from '@/components/EditableField';
 import MkbPicker from '@/components/MkbPicker';
 import MedsPanel from '@/components/MedsPanel';
@@ -525,17 +526,8 @@ export default function ResultPage() {
   });
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <AppHeader doctor={doctor} />
-      <Stepper
-        steps={[
-          { label: 'Вход',     sublabel: 'Пациент' },
-          { label: 'Запис',    sublabel: 'Консултация' },
-          { label: 'Обработка', sublabel: 'AI анализ' },
-          { label: 'Резултат', sublabel: 'Документ' },
-        ]}
-        current={3}
-      />
+    <AppShell doctor={doctor}>
+      <Stepper steps={SCRIBE_FLOW_STEPS} current={3} />
 
       {pendingVisit && <PatientHeaderStrip pending={pendingVisit} />}
 
@@ -927,7 +919,7 @@ export default function ResultPage() {
       />
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
-    </div>
+    </AppShell>
   );
 }
 
