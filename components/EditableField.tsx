@@ -125,7 +125,7 @@ export default function EditableField({
             onSpanClick={(match, rect) => setPopover({ match, rect })}
           />
         ) : (
-          <em className="italic text-sm">{placeholder}</em>
+          <span className="text-sm">{placeholder}</span>
         )}
       </div>
       {popover && (

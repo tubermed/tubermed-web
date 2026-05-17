@@ -125,7 +125,7 @@ function fallbackCopy(text: string): boolean {
 function pdfSection(title: string, content: string): string {
   const v = fieldText(content);
   if (!v) return '';
-  return `<h2 style="font-family:Georgia,serif;font-style:italic;font-size:18pt;color:#6B1A3D;font-weight:500;margin:24px 0 6px;border-bottom:1px solid #E8DED5;padding-bottom:4px">${esc(title)}</h2>
+  return `<h2 style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14pt;color:#1F3A5F;font-weight:600;letter-spacing:-0.01em;margin:24px 0 6px;border-bottom:1px solid #DCE1E8;padding-bottom:4px">${esc(title)}</h2>
        <p style="margin:0;line-height:1.75;white-space:pre-wrap;font-size:11pt">${esc(v)}</p>`;
 }
 
@@ -133,12 +133,12 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string): string {
   let diagRows = '';
   if (f.osnovna_diagnoza && f.osnovna_diagnoza.trim()) {
     diagRows += `<tr><td><strong>${esc(f.osnovna_diagnoza)}</strong></td>
-       <td style="white-space:nowrap;font-family:monospace;color:#6B1A3D;font-weight:700">${esc(f.osnovna_mkb || '')}</td></tr>`;
+       <td style="white-space:nowrap;font-family:monospace;color:#1F3A5F;font-weight:700">${esc(f.osnovna_mkb || '')}</td></tr>`;
   }
   (f.pridruzhavashti || []).forEach((d) => {
     if (!d.diagnoza?.trim() && !d.mkb?.trim()) return;
     diagRows += `<tr><td>${esc(d.diagnoza || '')}</td>
-       <td style="white-space:nowrap;font-family:monospace;color:#6B1A3D">${esc(d.mkb || '')}</td></tr>`;
+       <td style="white-space:nowrap;font-family:monospace;color:#1F3A5F">${esc(d.mkb || '')}</td></tr>`;
   });
 
   let medsBlock = '';
@@ -149,31 +149,31 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string): string {
           .filter(Boolean)
           .join(' · ');
         return `<tr><td style="padding:4px 8px 4px 0"><strong>${esc(m.inn)}</strong></td>
-                  <td style="padding:4px 0;color:#5C4B52">${esc(parts)}</td></tr>`;
+                  <td style="padding:4px 0;color:#586472">${esc(parts)}</td></tr>`;
       })
       .join('');
-    medsBlock = `<h2 style="font-family:Georgia,serif;font-style:italic;font-size:18pt;color:#6B1A3D;font-weight:500;margin:24px 0 6px;border-bottom:1px solid #E8DED5;padding-bottom:4px">Медикаменти</h2>
+    medsBlock = `<h2 style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14pt;color:#1F3A5F;font-weight:600;letter-spacing:-0.01em;margin:24px 0 6px;border-bottom:1px solid #DCE1E8;padding-bottom:4px">Медикаменти</h2>
        <table>${rows}</table>`;
   }
 
   const izdadeniHeader =
     fieldText(f.napravlenia) || fieldText(f.naznacheni)
-      ? '<h2 style="font-family:Georgia,serif;font-style:italic;font-size:18pt;color:#6B1A3D;font-weight:500;margin:24px 0 6px;border-bottom:1px solid #E8DED5;padding-bottom:4px">Издадени документи</h2>'
+      ? `<h2 style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14pt;color:#1F3A5F;font-weight:600;letter-spacing:-0.01em;margin:24px 0 6px;border-bottom:1px solid #DCE1E8;padding-bottom:4px">Издадени документи</h2>`
       : '';
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
     <title>Амбулаторен лист — ${esc(dateStr)}</title>
     <style>
-      body{margin:0;padding:32px 48px;font-family:'Segoe UI',Arial,sans-serif;font-size:11pt;color:#1F1418;background:#FAFAFA}
-      h1{font-family:Georgia,serif;font-size:22pt;font-weight:500;margin:0 0 4px;color:#1F1418}
+      body{margin:0;padding:32px 48px;font-family:'Inter','Segoe UI',Arial,sans-serif;font-size:11pt;color:#1C2733;background:#F3F5F8}
+      h1{font-family:'Inter','Segoe UI',Arial,sans-serif;font-size:22pt;font-weight:600;letter-spacing:-0.01em;margin:0 0 4px;color:#1F3A5F}
       table{width:100%;border-collapse:collapse;margin-top:8px}
-      td{padding:5px 10px 5px 0;border-bottom:1px solid #f0e6dc;vertical-align:top}
+      td{padding:5px 10px 5px 0;border-bottom:1px solid #EDF0F4;vertical-align:top}
 
       /* In-preview action bar — only visible on screen, never on paper */
       .actions{
         position:sticky;top:0;z-index:10;
         display:flex;gap:8px;justify-content:flex-end;align-items:center;
-        background:#FFFFFF;border-bottom:1px solid #E8DED5;
+        background:#FFFFFF;border-bottom:1px solid #DCE1E8;
         margin:-32px -48px 24px;padding:12px 48px;
       }
       .actions button{
@@ -182,13 +182,13 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string): string {
         border:1px solid transparent;transition:opacity .15s,background .15s;
       }
       .actions button.primary{
-        background:#6B1A3D;color:#FFFFFF;border-color:#6B1A3D;
+        background:#1F3A5F;color:#FFFFFF;border-color:#1F3A5F;
       }
       .actions button.primary:hover{opacity:.9}
       .actions button.secondary{
-        background:transparent;color:#5C4B52;border-color:#D9CCC1;
+        background:transparent;color:#586472;border-color:#C2CAD4;
       }
-      .actions button.secondary:hover{background:#F6F1EC}
+      .actions button.secondary:hover{background:#EDF0F4}
 
       .doc{background:white;max-width:780px;margin:0 auto;padding:0}
 
@@ -206,13 +206,13 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string): string {
     <div class="doc">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
         <h1>Амбулаторен лист</h1>
-        <div style="text-align:right;font-size:10pt;color:#8C7A82">Дата: ${esc(dateStr)}</div>
+        <div style="text-align:right;font-size:10pt;color:#8893A1">Дата: ${esc(dateStr)}</div>
       </div>
-      <hr style="border:none;border-top:2px solid #6B1A3D;margin:0 0 20px">
+      <hr style="border:none;border-top:2px solid #1F3A5F;margin:0 0 20px">
 
       ${
         diagRows
-          ? `<h2 style="font-family:Georgia,serif;font-style:italic;font-size:18pt;color:#6B1A3D;font-weight:500;margin:0 0 6px;border-bottom:1px solid #E8DED5;padding-bottom:4px">Диагнози МКБ-10</h2>
+          ? `<h2 style="font-family:'Inter','Segoe UI',Arial,sans-serif;font-size:14pt;color:#1F3A5F;font-weight:600;letter-spacing:-0.01em;margin:0 0 6px;border-bottom:1px solid #DCE1E8;padding-bottom:4px">Диагнози МКБ-10</h2>
       <table>${diagRows}</table>`
           : ''
       }
@@ -282,7 +282,7 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string): string {
     pdRows += `<tr>
       <td style="padding:6px 10px;border:1px solid #ccc;width:50px;color:#555">${i + 1}.</td>
       <td style="padding:6px 10px;border:1px solid #ccc">${esc(d.diagnoza || '')}</td>
-      <td style="padding:6px 10px;border:1px solid #ccc;font-family:Courier New;color:#6B1A3D;white-space:nowrap">${esc(d.mkb || '')}</td>
+      <td style="padding:6px 10px;border:1px solid #ccc;font-family:Courier New;color:#1F3A5F;white-space:nowrap">${esc(d.mkb || '')}</td>
     </tr>`;
   });
 
@@ -293,7 +293,7 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string): string {
       .join(' · ');
     medsRows += `<tr>
       <td style="padding:6px 10px;border:1px solid #ccc"><strong>${esc(m.inn)}</strong></td>
-      <td style="padding:6px 10px;border:1px solid #ccc;color:#5C4B52">${esc(parts)}</td>
+      <td style="padding:6px 10px;border:1px solid #ccc;color:#586472">${esc(parts)}</td>
     </tr>`;
   });
 
@@ -309,9 +309,9 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string): string {
       xmlns='http://www.w3.org/TR/REC-html40'>
 <head><meta charset='UTF-8'>
 <style>
-  body { font-family: Arial, sans-serif; font-size: 11pt; margin: 2cm; color: #111; }
-  h1 { font-size: 14pt; text-align: center; border-bottom: 2px solid #6B1A3D; padding-bottom: 8px; margin-bottom: 20px; }
-  h2 { font-size: 10pt; text-transform: uppercase; letter-spacing: 1px; color: #6B1A3D; margin: 18px 0 6px; border-bottom: 1px solid #dde1e7; padding-bottom: 4px; }
+  body { font-family: 'Inter', 'Segoe UI', Arial, sans-serif; font-size: 11pt; margin: 2cm; color: #1C2733; }
+  h1 { font-size: 14pt; text-align: center; border-bottom: 2px solid #1F3A5F; padding-bottom: 8px; margin-bottom: 20px; }
+  h2 { font-size: 10pt; text-transform: uppercase; letter-spacing: 1px; color: #1F3A5F; margin: 18px 0 6px; border-bottom: 1px solid #dde1e7; padding-bottom: 4px; }
   p { line-height: 1.7; margin: 4px 0 10px; }
   table { border-collapse: collapse; width: 100%; margin-bottom: 10px; }
   .meta { font-size: 9pt; color: #888; text-align: right; margin-bottom: 20px; }
@@ -327,7 +327,7 @@ ${
 <table>
   <tr>
     <td style="padding:6px 10px;border:1px solid #ccc">${esc(f.osnovna_diagnoza)}</td>
-    <td style="padding:6px 10px;border:1px solid #ccc;font-family:Courier New;color:#6B1A3D;white-space:nowrap;width:80px">${esc(f.osnovna_mkb || '')}</td>
+    <td style="padding:6px 10px;border:1px solid #ccc;font-family:Courier New;color:#1F3A5F;white-space:nowrap;width:80px">${esc(f.osnovna_mkb || '')}</td>
   </tr>
 </table>`
     : ''

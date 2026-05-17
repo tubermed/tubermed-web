@@ -31,8 +31,8 @@ export default function PatientHeaderStrip({ pending }: PatientHeaderStripProps)
         {/* Row 1 — identity + ID + visit pill */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <span
-            className="text-lg font-medium font-[family-name:var(--font-cormorant)]"
-            style={{ color: 'var(--color-brand-dark)' }}
+            className="text-lg font-semibold"
+            style={{ color: 'var(--color-ink)' }}
           >
             {name}
           </span>
@@ -89,7 +89,6 @@ function ContextField({ label, items, emptyLabel }: { label: string; items: stri
         className="truncate"
         style={{
           color: empty ? 'var(--color-text-hint)' : 'var(--color-text-muted)',
-          fontStyle: empty ? 'italic' : 'normal',
         }}
       >
         {empty ? emptyLabel : items.join(', ')}

@@ -195,7 +195,7 @@ function ErrorBanner({
   return (
     <div
       className="mb-6 px-4 py-3 rounded-md flex items-start justify-between gap-3"
-      style={{ background: '#FDECEA', color: 'var(--color-red)' }}
+      style={{ background: 'var(--color-danger-soft)', color: 'var(--color-danger)' }}
     >
       <div className="text-sm">{message}</div>
       <button
@@ -472,7 +472,7 @@ function PhoneMode({
               background: 'white',
             }}
           >
-            <QRCodeSVG value={session.mobileUrl} size={188} fgColor="#2D1F4A" />
+            <QRCodeSVG value={session.mobileUrl} size={188} fgColor="#1C2B44" />
           </div>
           <div
             className="text-xs mt-4"

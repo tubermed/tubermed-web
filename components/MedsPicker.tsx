@@ -101,8 +101,8 @@ export default function MedsPicker({
         >
           <div className="flex-1 min-w-0">
             <div
-              className="font-medium text-base font-[family-name:var(--font-cormorant)]"
-              style={{ color: 'var(--color-text)' }}
+              className="font-semibold text-base"
+              style={{ color: 'var(--color-ink)' }}
             >
               Избор на лекарство
             </div>
@@ -382,7 +382,7 @@ function ExpandedForm({
     >
       {forms.length === 0 ? (
         <div
-          className="text-xs italic py-2"
+          className="text-xs py-2"
           style={{ color: 'var(--color-text-hint)' }}
         >
           Няма данни за форма/доза от ИАЛ — въведете ръчно по-долу.

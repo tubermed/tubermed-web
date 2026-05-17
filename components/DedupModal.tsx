@@ -29,7 +29,7 @@ export default function DedupModal({ conflict, onUseExisting, onForceCreate, onC
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(31, 20, 24, 0.55)' }}
+      style={{ background: 'rgba(27, 42, 65, 0.55)' }}
       onClick={onCancel}
     >
       <div
@@ -39,8 +39,8 @@ export default function DedupModal({ conflict, onUseExisting, onForceCreate, onC
       >
         <div className="p-5 border-b" style={{ borderColor: 'var(--color-border)' }}>
           <h2
-            className="text-lg font-semibold font-[family-name:var(--font-cormorant)]"
-            style={{ color: 'var(--color-brand-dark)' }}
+            className="text-lg font-semibold"
+            style={{ color: 'var(--color-ink)' }}
           >
             Възможни дубликати
           </h2>

@@ -31,13 +31,11 @@ export default function Stepper({ steps, current }: StepperProps) {
             <div
               className="flex-1 flex items-center gap-3 px-4 py-2.5 rounded-lg border transition-all"
               style={{
-                background: isActive ? 'var(--color-brand)' : 'transparent',
+                background: isActive ? 'var(--color-accent)' : 'transparent',
                 borderColor: isActive
-                  ? 'var(--color-brand)'
+                  ? 'var(--color-accent)'
                   : 'var(--color-border)',
-                boxShadow: isActive
-                  ? '0 3px 14px rgba(107,26,61,0.28)'
-                  : 'none',
+                boxShadow: isActive ? 'var(--shadow-card)' : 'none',
               }}
             >
               <span
@@ -63,7 +61,7 @@ export default function Stepper({ steps, current }: StepperProps) {
               </span>
               <span className="flex flex-col min-w-0">
                 <span
-                  className="text-base italic leading-tight font-[family-name:var(--font-cormorant)]"
+                  className="text-sm font-medium leading-tight"
                   style={{
                     color: isActive
                       ? 'white'

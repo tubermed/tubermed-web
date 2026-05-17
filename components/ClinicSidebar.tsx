@@ -55,8 +55,8 @@ export default function ClinicSidebar({ doctor, clinicName, items, locked = fals
           Клиника
         </div>
         <div
-          className="text-base leading-snug font-[family-name:var(--font-cormorant)]"
-          style={{ color: 'var(--color-nav-text)' }}
+          className="text-base font-medium leading-snug"
+          style={{ color: 'var(--color-nav-text-active)' }}
         >
           {clinicName ?? doctor?.clinic ?? 'МЦ „Св. Анна"'}
         </div>
@@ -90,7 +90,7 @@ export default function ClinicSidebar({ doctor, clinicName, items, locked = fals
               {item.badge && (
                 <span
                   className="px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider font-semibold"
-                  style={{ background: 'var(--color-gold)', color: '#1A1410' }}
+                  style={{ background: 'var(--color-warn-soft)', color: 'var(--color-warn)' }}
                 >
                   {item.badge}
                 </span>

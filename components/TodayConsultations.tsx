@@ -46,8 +46,8 @@ export default function TodayConsultations({ refreshKey, currentConsultationId }
             График
           </div>
           <div
-            className="text-sm font-medium font-[family-name:var(--font-cormorant)]"
-            style={{ color: 'var(--color-text)' }}
+            className="text-sm font-semibold"
+            style={{ color: 'var(--color-ink)' }}
           >
             {dateLabel}
           </div>
@@ -128,7 +128,7 @@ function StatusPill({ tone, children }: { tone: 'pending' | 'active' | 'done' | 
     pending: { bg: 'var(--color-gold-soft)', fg: 'var(--color-gold)' },
     active:  { bg: 'var(--color-brand-soft)', fg: 'var(--color-brand)' },
     done:    { bg: 'var(--color-ok-soft)',   fg: 'var(--color-ok)' },
-    error:   { bg: '#FDECEA',                fg: 'var(--color-red)' },
+    error:   { bg: 'var(--color-danger-soft)', fg: 'var(--color-danger)' },
   };
   const c = palette[tone];
   return (

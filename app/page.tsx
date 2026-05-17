@@ -21,15 +21,15 @@ function Nav() {
     <nav
       className="sticky top-0 z-50 backdrop-blur-md border-b"
       style={{
-        background: 'rgba(246, 241, 236, 0.85)',
+        background: 'rgba(255, 255, 255, 0.85)',
         borderColor: 'var(--color-border)',
       }}
     >
       <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
         <Link
           href="/"
-          className="text-2xl font-semibold font-[family-name:var(--font-cormorant)]"
-          style={{ color: 'var(--color-brand)' }}
+          className="text-xl font-semibold"
+          style={{ color: 'var(--color-ink)', letterSpacing: '-0.01em' }}
         >
           TuberMed
         </Link>
@@ -50,8 +50,11 @@ function Nav() {
           </a>
           <Link
             href="/app/login"
-            className="text-sm px-4 py-2 rounded-md text-white font-medium transition hover:opacity-90"
-            style={{ background: 'var(--gradient-brand)' }}
+            className="text-sm px-4 py-2 text-white font-medium transition hover:opacity-90"
+            style={{
+              background: 'var(--color-accent)',
+              borderRadius: 'var(--radius-md)',
+            }}
           >
             Вход
           </Link>
@@ -70,22 +73,22 @@ function Hero() {
         <span
           className="inline-block text-xs uppercase tracking-widest mb-6 px-3 py-1 rounded-full"
           style={{
-            background: 'var(--color-brand-soft)',
-            color: 'var(--color-brand)',
+            background: 'var(--color-accent-soft)',
+            color: 'var(--color-accent)',
           }}
         >
           AI Медицински скрайб · България
         </span>
 
         <h1
-          className="text-5xl md:text-7xl font-semibold mb-6 leading-[1.1] font-[family-name:var(--font-cormorant)]"
-          style={{ color: 'var(--color-brand)' }}
+          className="text-5xl md:text-7xl font-semibold mb-6 leading-[1.1]"
+          style={{ color: 'var(--color-ink)', letterSpacing: '-0.02em' }}
         >
           От разговор до амбулаторен лист
           <br />
-          <em className="italic" style={{ color: 'var(--color-brand-mid)' }}>
+          <span style={{ color: 'var(--color-accent)' }}>
             за секунди.
-          </em>
+          </span>
         </h1>
 
         <p
@@ -99,17 +102,21 @@ function Hero() {
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Link
             href="/app/login"
-            className="px-7 py-3.5 rounded-md text-white font-medium transition hover:opacity-90"
-            style={{ background: 'var(--gradient-brand)' }}
+            className="px-7 py-3.5 text-white font-medium transition hover:opacity-90"
+            style={{
+              background: 'var(--color-accent)',
+              borderRadius: 'var(--radius-md)',
+            }}
           >
             Вход за лекари →
           </Link>
           <a
             href="mailto:contact@tubermed.com?subject=Заявка за достъп до TuberMed"
-            className="px-7 py-3.5 rounded-md font-medium border transition hover:bg-white"
+            className="px-7 py-3.5 font-medium border transition hover:bg-white"
             style={{
               borderColor: 'var(--color-border-mid)',
               color: 'var(--color-text)',
+              borderRadius: 'var(--radius-md)',
             }}
           >
             Заявка за достъп
@@ -154,8 +161,8 @@ function HowItWorks() {
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-16">
           <h2
-            className="text-4xl md:text-5xl font-semibold mb-4 font-[family-name:var(--font-cormorant)]"
-            style={{ color: 'var(--color-brand)' }}
+            className="text-4xl md:text-5xl font-semibold mb-4"
+            style={{ color: 'var(--color-ink)', letterSpacing: '-0.02em' }}
           >
             Как работи
           </h2>
@@ -171,14 +178,14 @@ function HowItWorks() {
           {steps.map((s) => (
             <div key={s.num} className="text-left">
               <div
-                className="text-sm font-[family-name:var(--font-jetbrains)] mb-3"
-                style={{ color: 'var(--color-gold)' }}
+                className="text-sm font-medium mb-3 font-[family-name:var(--font-jetbrains)]"
+                style={{ color: 'var(--color-accent)' }}
               >
                 {s.num}
               </div>
               <h3
-                className="text-2xl font-medium mb-3 font-[family-name:var(--font-cormorant)]"
-                style={{ color: 'var(--color-text)' }}
+                className="text-2xl font-semibold mb-3"
+                style={{ color: 'var(--color-ink)', letterSpacing: '-0.01em' }}
               >
                 {s.title}
               </h3>
@@ -223,8 +230,8 @@ function WhyTuberMed() {
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-16">
           <h2
-            className="text-4xl md:text-5xl font-semibold mb-4 font-[family-name:var(--font-cormorant)]"
-            style={{ color: 'var(--color-brand)' }}
+            className="text-4xl md:text-5xl font-semibold mb-4"
+            style={{ color: 'var(--color-ink)', letterSpacing: '-0.02em' }}
           >
             Защо TuberMed
           </h2>
@@ -241,14 +248,14 @@ function WhyTuberMed() {
             <div key={p.title}>
               <div className="flex items-baseline gap-3 mb-2">
                 <span
-                  className="text-lg font-[family-name:var(--font-cormorant)]"
-                  style={{ color: 'var(--color-gold)' }}
+                  className="text-lg"
+                  style={{ color: 'var(--color-accent)' }}
                 >
                   ◆
                 </span>
                 <h3
-                  className="text-xl font-medium"
-                  style={{ color: 'var(--color-text)' }}
+                  className="text-xl font-semibold"
+                  style={{ color: 'var(--color-ink)' }}
                 >
                   {p.title}
                 </h3>
@@ -277,8 +284,8 @@ function Pricing() {
     >
       <div className="max-w-3xl mx-auto text-center">
         <h2
-          className="text-4xl md:text-5xl font-semibold mb-4 font-[family-name:var(--font-cormorant)]"
-          style={{ color: 'var(--color-brand)' }}
+          className="text-4xl md:text-5xl font-semibold mb-4"
+          style={{ color: 'var(--color-ink)', letterSpacing: '-0.02em' }}
         >
           Цени
         </h2>
@@ -290,10 +297,11 @@ function Pricing() {
         </p>
         <a
           href="mailto:contact@tubermed.com?subject=Запитване за цени"
-          className="inline-block px-7 py-3.5 rounded-md font-medium border transition hover:bg-white"
+          className="inline-block px-7 py-3.5 font-medium border transition hover:bg-white"
           style={{
             borderColor: 'var(--color-border-mid)',
             color: 'var(--color-text)',
+            borderRadius: 'var(--radius-md)',
           }}
         >
           Свържи се с нас
@@ -309,19 +317,26 @@ function FinalCta() {
   return (
     <section
       className="px-6 py-28"
-      style={{ background: 'var(--gradient-brand)' }}
+      style={{ background: 'var(--color-nav-bg)' }}
     >
       <div className="max-w-3xl mx-auto text-center">
-        <h2 className="text-4xl md:text-5xl font-semibold mb-6 text-white font-[family-name:var(--font-cormorant)] italic">
+        <h2
+          className="text-4xl md:text-5xl font-semibold mb-6 text-white"
+          style={{ letterSpacing: '-0.02em' }}
+        >
           Готови ли сте да върнете часовете си обратно?
         </h2>
-        <p className="text-base mb-10 text-white/85 max-w-xl mx-auto">
+        <p className="text-base mb-10 text-white/80 max-w-xl mx-auto">
           Спрете да пишете амбулаторни листове ръчно. Започнете да преглеждате готови.
         </p>
         <a
           href="mailto:contact@tubermed.com?subject=Заявка за достъп до TuberMed"
-          className="inline-block px-8 py-4 rounded-md font-medium transition hover:opacity-90"
-          style={{ background: 'white', color: 'var(--color-brand)' }}
+          className="inline-block px-8 py-4 font-medium transition hover:opacity-90"
+          style={{
+            background: 'var(--color-accent)',
+            color: 'white',
+            borderRadius: 'var(--radius-md)',
+          }}
         >
           Заявка за достъп →
         </a>
@@ -341,8 +356,8 @@ function Footer() {
       <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <span
-            className="text-xl font-semibold font-[family-name:var(--font-cormorant)]"
-            style={{ color: 'var(--color-brand)' }}
+            className="text-lg font-semibold"
+            style={{ color: 'var(--color-ink)', letterSpacing: '-0.01em' }}
           >
             TuberMed
           </span>

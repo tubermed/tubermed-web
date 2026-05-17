@@ -1,47 +1,108 @@
 @import "tailwindcss";
 
 @theme {
-  /* v13 burgundy palette */
-  --color-brand: #6B1A3D;
-  --color-brand-dark: #4F1330;
-  --color-brand-mid: #9B2256;
-  --color-brand-soft: #F0E0E8;
-  --color-brand-light: #F8EEF3;
-  --color-gold: #A88431;
-  --color-gold-soft: #F1E8D2;
-  --color-ok: #5A7A3C;
-  --color-ok-soft: #E5ECDA;
-  --color-red: #C0392B;
-  --color-bg: #F6F1EC;
-  --color-bg-card: #FFFFFF;
-  --color-text: #1F1418;
-  --color-text-muted: #5C4B52;
-  --color-text-hint: #8C7A82;
-  --color-border: #E8DED5;
-  --color-border-light: #F0E6DC;
-  --color-border-mid: #D9CCC1;
+  /* ─────────────────────────────────────────────────────────────
+     Clinical blue-grey design system.
+     The legacy --color-* names are kept so existing components
+     keep compiling; their VALUES are remapped onto the new
+     palette (steel-blue accent, navy brand ink, near-white surfaces).
+     ───────────────────────────────────────────────────────────── */
 
-  /* Workspace shell (dark-navy left rail) */
-  --color-nav-bg: #161A2C;
-  --color-nav-bg-elev: #1F2438;
-  --color-nav-text: #E8E1D6;
-  --color-nav-text-muted: #8A8FA8;
-  --color-nav-border: #262B40;
-  --color-nav-active: #6B1A3D;
+  /* Primary accent (steel blue, sampled from the logo mark) */
+  --color-accent:        #3A6BA5;
+  --color-accent-hover:  #305A8C;
+  --color-accent-soft:   #E5ECF4;
 
-  --gradient-brand: linear-gradient(135deg, #6B1A3D 0%, #9B2256 60%, #B8335A 100%);
+  /* Brand ink — navy wordmark color, used for headings/links on light surfaces */
+  --color-ink:           #1F3A5F;
 
-  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
-  --font-serif: var(--font-cormorant), ui-serif, Georgia, serif;
-  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+  /* Surfaces */
+  --color-bg-app:        #F3F5F8;
+  --color-bg-surface:    #FFFFFF;
+  --color-bg-subtle:     #EDF0F4;
+
+  /* Text */
+  --color-text-primary:   #1C2733;
+  --color-text-secondary: #586472;
+  --color-text-muted-new: #8893A1;
+
+  /* Borders */
+  --color-border-soft:    #DCE1E8;
+  --color-border-strong:  #C2CAD4;
+
+  /* Semantic clinical signals — distinct hue family from the accent */
+  --color-ok:        #2E7D5B;
+  --color-ok-soft:   #E3F0EA;
+  --color-warn:      #B7791F;
+  --color-warn-soft: #F7EDDA;
+  --color-danger:      #C0392B;
+  --color-danger-soft: #F6E4E1;
+
+  /* ── Legacy token names (kept as aliases — values remapped) ── */
+  /* Brand → steel-blue accent + navy ink */
+  --color-brand:       #3A6BA5;
+  --color-brand-dark:  #1F3A5F;
+  --color-brand-mid:   #305A8C;
+  --color-brand-soft:  #E5ECF4;
+  --color-brand-light: #EDF2F8;
+
+  /* Gold → warn (sole consumer is the inline "review" highlight) */
+  --color-gold:      #B7791F;
+  --color-gold-soft: #F7EDDA;
+
+  /* OK/red kept as aliases on the new palette */
+  --color-red:      #C0392B;
+  --color-red-soft: #F6E4E1;
+
+  /* Surfaces (legacy) */
+  --color-bg:        #F3F5F8;
+  --color-bg-card:   #FFFFFF;
+
+  /* Text (legacy) */
+  --color-text:       #1C2733;
+  --color-text-muted: #586472;
+  --color-text-hint:  #8893A1;
+
+  /* Borders (legacy) */
+  --color-border:       #DCE1E8;
+  --color-border-light: #EDF0F4;
+  --color-border-mid:   #C2CAD4;
+
+  /* Navy rail */
+  --color-nav-bg:         #1C2B44;
+  --color-nav-bg-elev:    #253754;
+  --color-nav-text:       #AAB6C6;
+  --color-nav-text-muted: #8893A1;
+  --color-nav-border:     #253754;
+  --color-nav-active:     #2C436A;
+  --color-nav-text-active:#FFFFFF;
+
+  /* No gradients in clinical UI — keep var defined as flat accent fallback
+     so any straggling consumer doesn't break, but the value is flat. */
+  --gradient-brand: var(--color-accent);
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Shadows */
+  --shadow-card: 0 1px 2px rgba(27, 42, 65, 0.06), 0 1px 3px rgba(27, 42, 65, 0.08);
+  --shadow-pop:  0 4px 16px rgba(27, 42, 65, 0.12);
+
+  /* Typography — single family across the product */
+  --font-ui:    var(--font-inter), ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --font-sans:  var(--font-ui);
+  --font-mono:  var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 * { box-sizing: border-box; }
 
 html, body {
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: var(--font-sans);
+  background: var(--color-bg-app);
+  color: var(--color-text-primary);
+  font-family: var(--font-ui);
+  font-style: normal;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -54,11 +115,6 @@ html, body {
   padding: 24px;
 }
 
-/* Container query keyed off <main> in AppShell (which carries
-   container-type: inline-size). Triggers when the available main-area width
-   drops below 1024px — i.e. viewport ≲ 1276px once the 252px sidebar is
-   accounted for — so the right rail collapses correctly in the mid-range
-   band that the old viewport-based @media query missed. */
 @container (max-width: 1024px) {
   .result-grid {
     grid-template-columns: 1fr;
@@ -73,11 +129,11 @@ html, body {
 
 @keyframes flash-review {
   0%, 100% {
-    background: var(--color-gold-soft);
+    background: var(--color-warn-soft);
     transform: scale(1);
   }
   35% {
-    background: var(--color-gold);
+    background: var(--color-warn);
     color: white;
     transform: scale(1.06);
   }
@@ -100,7 +156,6 @@ html, body {
     display: block !important;
     padding: 0 !important;
   }
-  /* Strip review highlight from print */
   .vital-mark {
     background: transparent !important;
     color: inherit !important;

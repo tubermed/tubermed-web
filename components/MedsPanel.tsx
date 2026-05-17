@@ -88,7 +88,7 @@ export default function MedsPanel({
               <div
                 key={i}
                 className="flex items-start gap-2 px-2 py-1.5 rounded-md text-[11px] leading-tight"
-                style={{ background: '#FDECEA', color: 'var(--color-red)' }}
+                style={{ background: 'var(--color-danger-soft)', color: 'var(--color-danger)' }}
               >
                 <span className="flex-shrink-0">🚨</span>
                 <div>
@@ -104,7 +104,7 @@ export default function MedsPanel({
 
         {meds.length === 0 && (
           <div
-            className="text-xs italic py-2 mb-2"
+            className="text-xs py-2 mb-2"
             style={{ color: 'var(--color-text-hint)' }}
           >
             AI не откри медикаменти.
@@ -209,8 +209,8 @@ function MedChip({
     <div
       className="flex items-start gap-2 px-2.5 py-2 rounded-md border group"
       style={{
-        background: triggered ? '#FDECEA' : 'var(--color-bg-card)',
-        borderColor: triggered ? 'var(--color-red)' : 'var(--color-border)',
+        background: triggered ? 'var(--color-danger-soft)' : 'var(--color-bg-card)',
+        borderColor: triggered ? 'var(--color-danger)' : 'var(--color-border)',
       }}
     >
       <div className="flex-1 min-w-0">

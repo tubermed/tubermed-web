@@ -534,7 +534,7 @@ export default function ResultPage() {
       {criticals.length > 0 && (
         <div
           className="px-6 py-4 border-b no-print"
-          style={{ background: '#FDECEA', borderColor: '#E5BCB6' }}
+          style={{ background: 'var(--color-danger-soft)', borderColor: 'var(--color-danger)' }}
         >
           <div className="max-w-6xl mx-auto">
             <div
@@ -725,8 +725,8 @@ export default function ResultPage() {
             style={{ borderColor: 'var(--color-border)' }}
           >
             <h1
-              className="text-3xl font-semibold font-[family-name:var(--font-cormorant)]"
-              style={{ color: 'var(--color-brand)' }}
+              className="text-3xl font-semibold"
+              style={{ color: 'var(--color-ink)', letterSpacing: '-0.01em' }}
             >
               Амбулаторен лист
             </h1>
@@ -822,7 +822,7 @@ export default function ResultPage() {
 
             {fields._disclaimer && (
               <div
-                className="text-xs italic px-3 py-2 rounded no-print"
+                className="text-xs px-3 py-2 rounded no-print"
                 style={{
                   color: 'var(--color-text-hint)',
                   background: 'var(--color-bg-card)',
@@ -1110,8 +1110,8 @@ function TopbarBtn({
 function SectionHead({ title }: { title: string }) {
   return (
     <h2
-      className="text-xl font-medium mb-4 font-[family-name:var(--font-cormorant)]"
-      style={{ color: 'var(--color-brand)' }}
+      className="text-xl font-semibold mb-4"
+      style={{ color: 'var(--color-ink)' }}
     >
       {title}
     </h2>
@@ -1222,7 +1222,7 @@ function DiagnosesSection({
         />
         {!hasMain && (
           <div
-            className="text-xs italic mt-2 px-1"
+            className="text-xs mt-2 px-1"
             style={{ color: 'var(--color-text-hint)' }}
           >
             Не е открита в транскрипта — въведете или използвайте 🔍 за избор от МКБ-10.
@@ -1260,7 +1260,7 @@ function DiagnosesSection({
         ))}
         {pridruzhavashti.length === 0 && (
           <div
-            className="text-sm italic px-3 py-1"
+            className="text-sm px-3 py-1"
             style={{ color: 'var(--color-text-hint)' }}
           >
             Няма придружаващи заболявания.

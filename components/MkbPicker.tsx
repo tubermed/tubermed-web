@@ -136,8 +136,8 @@ export default function MkbPicker({
           )}
           <div className="flex-1 min-w-0">
             <div
-              className="font-medium text-base font-[family-name:var(--font-cormorant)]"
-              style={{ color: 'var(--color-text)' }}
+              className="font-semibold text-base"
+              style={{ color: 'var(--color-ink)' }}
             >
               {title || 'Избор на МКБ-10 код'}
             </div>
