@@ -6,7 +6,15 @@ export function isValidEgnFormat(plain: string): boolean {
   return /^\d{10}$/.test(plain);
 }
 
-// Returns ISO date 'YYYY-MM-DD' or null if the encoded date is invalid.
+// Returns ISO date 'YYYY-MM-DD' for the encoded birth date, or null when
+// the ЕГН can't be a real birth date for a living patient:
+//   - format wrong (handled by isValidEgnFormat)
+//   - digits 1–6 don't form a real calendar day (e.g. month 52 → dec, OK;
+//     month 13 → invalid)
+//   - decoded date is in the future (can't be born tomorrow)
+// "Today" uses Europe/Sofia local date — same convention the backend uses for
+// consultations_today — so a baby registered first thing in the morning isn't
+// flagged just because UTC hasn't ticked over yet.
 export function dobFromEgn(plain: string): string | null {
   if (!isValidEgnFormat(plain)) return null;
   let yy = parseInt(plain.slice(0, 2), 10);
@@ -22,7 +30,11 @@ export function dobFromEgn(plain: string): string | null {
     dob.getUTCMonth() !== mm - 1 ||
     dob.getUTCDate() !== dd
   ) return null;
-  return dob.toISOString().slice(0, 10);
+  const iso = dob.toISOString().slice(0, 10);
+  // Future-date guard — ISO strings collate chronologically so > is safe.
+  const todaySofia = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Sofia' }).format(new Date());
+  if (iso > todaySofia) return null;
+  return iso;
 }
 
 // 9th digit even → male, odd → female. Matches Bulgarian ЕГН convention.

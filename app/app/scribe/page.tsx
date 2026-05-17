@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 import AppShell from '@/components/AppShell';
 import Stepper from '@/components/Stepper';
+import PatientHeaderStrip from '@/components/PatientHeaderStrip';
 import { SCRIBE_FLOW_STEPS } from '@/lib/flow';
 import {
   api,
@@ -54,6 +55,7 @@ function ScribePageInner() {
   const [procMain, setProcMain] = useState('Обработва се...');
   const [procSub, setProcSub] = useState('Моля изчакайте');
   const [consultationId, setConsultationId] = useState<string | null>(null);
+  const [pendingVisit, setPendingVisit] = useState<PendingVisit | null>(null);
   // PC-side recording active flag — bubbled up from PcMode so the sidebar
   // can be locked while the doctor is mid-recording. Phone-side "in progress"
   // naturally maps to view === 'processing' (PC isn't recording anything).
@@ -92,6 +94,7 @@ function ScribePageInner() {
     }
 
     setConsultationId(visitId);
+    setPendingVisit(pending);   // ← persist patient context so the strip can render
 
     api.me().catch((err) => {
       if (err instanceof ApiError && err.status === 401) {
@@ -129,6 +132,7 @@ function ScribePageInner() {
   return (
     <AppShell doctor={doctor} sidebarLocked={navLocked}>
       <Stepper steps={SCRIBE_FLOW_STEPS} current={stepperCurrent} />
+      {pendingVisit && <PatientHeaderStrip pending={pendingVisit} />}
       <div className="flex-1 px-6 py-8">
         <div className="max-w-2xl mx-auto">
           {error && (
