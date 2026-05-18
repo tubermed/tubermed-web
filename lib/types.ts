@@ -226,4 +226,20 @@ export interface PendingVisit {
     visit_type: VisitType | null;
     template: Template;
   };
+  // Filled in once the doctor records patient consent on /app/scribe.
+  // Survives a tab refresh so the ConsentModal does not nag a doctor who
+  // already consented in this session. The backend keeps the authoritative
+  // timestamp on consultations.consent_to_record_at — this is a UI hint.
+  consent_to_record_at?: string | null;
+}
+
+// Response from POST /api/consultations/:id/consent.
+// First call: idempotent=false with a freshly-stamped timestamp.
+// Subsequent calls: idempotent=true with the SAME timestamp — the first
+// consent instant is the legal record and is never overwritten.
+export interface ConsentResponse {
+  ok: true;
+  consent_to_record: true;
+  consent_to_record_at: string;   // ISO-8601 / TIMESTAMPTZ — render in Europe/Sofia on display
+  idempotent: boolean;
 }

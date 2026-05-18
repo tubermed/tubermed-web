@@ -16,6 +16,7 @@ import type {
   VisitStartPayload,
   VisitStartResponse,
   TodayResponse,
+  ConsentResponse,
 } from './types';
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL!;
@@ -193,7 +194,32 @@ export const api = {
 
   // ── Today's consultations (right rail) ─────────────────────────────────
   consultationsToday: () => request<TodayResponse>('/api/consultations/today'),
+
+  // ── Consent ────────────────────────────────────────────────────────────
+  // Records the patient's verbal consent against the consultation. The
+  // backend is idempotent — calling twice returns the original timestamp.
+  // No body needed; JWT identifies the doctor and the URL identifies the row.
+  recordConsent: (consultationId: string) =>
+    request<ConsentResponse>(`/api/consultations/${consultationId}/consent`, {
+      method: 'POST',
+    }),
 };
+
+/**
+ * Distinguish "transcription blocked because consent isn't recorded" from
+ * other 4xx outcomes (e.g. 409 wrong-status, generic 403 mismatch). The
+ * backend's consent-block path always returns HTTP 403 and a Bulgarian
+ * message containing "съгласие" (the Cyrillic stem for "consent"); other
+ * 403 / 4xx outcomes use different messages (e.g. "Сесията не съответства
+ * на консултацията", "Невалиден статус: …"). Matching on status + the
+ * "съгласие" substring cleanly separates the missing-consent case so the
+ * UI can surface ConsentModal instead of a raw error toast.
+ */
+export function isMissingConsentError(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return false;
+  if (err.status !== 403) return false;
+  return err.message.includes('съгласие');
+}
 
 export function wsUrl(sessionId: string): string {
   const token = getToken();

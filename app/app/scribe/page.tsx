@@ -12,6 +12,7 @@ import {
   ApiError,
   clearSession,
   getSession,
+  isMissingConsentError,
   wsUrl,
   type DoctorInfo,
 } from '@/lib/api';
@@ -20,7 +21,10 @@ import type {
   SessionInit,
   WsMessage,
   PendingVisit,
+  ConsentResponse,
 } from '@/lib/types';
+import ConsentModal from '@/components/ConsentModal';
+import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 
 type Mode = 'phone' | 'pc';
 type View = 'record' | 'processing';
@@ -63,6 +67,19 @@ function ScribePageInner() {
   const navLocked      = pcRecording || view === 'processing';
   const stepperCurrent = view === 'processing' ? 2 : 1;
 
+  // ── Consent gate state ─────────────────────────────────────────────────
+  // True once the patient consent timestamp is on file for THIS consultation.
+  // Seeded from sessionStorage (the PendingVisit object survives a tab
+  // refresh) so a doctor who already consented does not see the modal again.
+  const [consentRecorded, setConsentRecorded] = useState(false);
+  const [consentModalOpen, setConsentModalOpen] = useState(false);
+  // requestConsent() returns a Promise that resolves once consent is on file.
+  // Gate 2 (PcMode pre-transcribe and the 403-missing-consent retry path)
+  // awaits this promise so the audio submission blocks behind the modal.
+  const consentResolverRef = useRef<(() => void) | null>(null);
+  const [toast, setToast] = useState<ToastData | null>(null);
+  const toastIdRef = useRef(0);
+
   // ── Auth + visit-staging gate ──────────────────────────────────────────
   // Requires both a session AND a matching tuber_pending_visit in sessionStorage.
   // No cold-start recovery — if anything is missing, return to /app/new-visit.
@@ -95,6 +112,10 @@ function ScribePageInner() {
 
     setConsultationId(visitId);
     setPendingVisit(pending);   // ← persist patient context so the strip can render
+    // If we previously recorded consent on this consultation (and the tab
+    // was refreshed), the PendingVisit object carries the timestamp. Seed
+    // local state so Gate 1 does not nag the doctor again.
+    if (pending.consent_to_record_at) setConsentRecorded(true);
 
     api.me().catch((err) => {
       if (err instanceof ApiError && err.status === 401) {
@@ -103,6 +124,61 @@ function ScribePageInner() {
       }
     });
   }, [router, searchParams]);
+
+  // ── Gate 1 — auto-open the modal once we know the consultation and consent
+  // is missing. Re-fires only when consultationId or consentRecorded changes,
+  // so the modal does not pop back after a successful onConsented.
+  useEffect(() => {
+    if (!consultationId) return;
+    if (consentRecorded) return;
+    setConsentModalOpen(true);
+  }, [consultationId, consentRecorded]);
+
+  const showToast = useCallback((kind: ToastKind, message: string) => {
+    toastIdRef.current += 1;
+    setToast({ kind, message, id: toastIdRef.current });
+  }, []);
+
+  // Imperative request used by Gate 2. Resolves immediately if consent is
+  // already on file; otherwise opens the modal and resolves when the doctor
+  // confirms (handleConsented fires the resolver).
+  const requestConsent = useCallback((): Promise<void> => {
+    if (consentRecorded) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      consentResolverRef.current = resolve;
+      setConsentModalOpen(true);
+    });
+  }, [consentRecorded]);
+
+  const handleConsented = useCallback(
+    (response: ConsentResponse) => {
+      setConsentRecorded(true);
+      setConsentModalOpen(false);
+      // Persist on the PendingVisit so a refresh in this tab does not re-prompt.
+      // The backend keeps the authoritative timestamp; this is a UI hint.
+      try {
+        const raw = sessionStorage.getItem(PENDING_VISIT_KEY);
+        if (raw) {
+          const pv = JSON.parse(raw) as PendingVisit;
+          pv.consent_to_record_at = response.consent_to_record_at;
+          sessionStorage.setItem(PENDING_VISIT_KEY, JSON.stringify(pv));
+        }
+      } catch {
+        /* sessionStorage unavailable — keep in-memory state only */
+      }
+      // Resolve any pending requestConsent() promise (Gate 2).
+      if (consentResolverRef.current) {
+        consentResolverRef.current();
+        consentResolverRef.current = null;
+      }
+    },
+    []
+  );
+
+  const handleConsentError = useCallback(
+    (message: string) => showToast('error', message),
+    [showToast]
+  );
 
   const onResult = useCallback(
     (result: TranscribeResult) => {
@@ -173,12 +249,23 @@ function ScribePageInner() {
                     router.replace('/app/login');
                   }}
                   onBackToIdle={() => setView('record')}
+                  requestConsent={requestConsent}
                 />
               )}
             </>
           )}
         </div>
       </div>
+
+      {consultationId && (
+        <ConsentModal
+          consultationId={consultationId}
+          open={consentModalOpen}
+          onConsented={handleConsented}
+          onError={handleConsentError}
+        />
+      )}
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
     </AppShell>
   );
 }
@@ -516,6 +603,7 @@ function PcMode({
   onError,
   onAuthError,
   onBackToIdle,
+  requestConsent,
 }: {
   consultationId: string | null;
   /** Bubbles the local recording state up so the page can lock the sidebar. */
@@ -525,6 +613,11 @@ function PcMode({
   onError: (msg: string) => void;
   onAuthError: () => void;
   onBackToIdle: () => void;
+  /** Gate 2: resolves once consent is on file. PcMode awaits this BEFORE
+   *  posting audio so a Gate 1 bypass cannot leak audio to the backend, and
+   *  re-invokes it inside the catch block when the backend itself responds
+   *  with the missing-consent 403 (defense in depth). */
+  requestConsent: () => Promise<void>;
 }) {
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -652,25 +745,57 @@ function PcMode({
     });
     mrRef.current = null;
 
-    try {
-      onProcessing();
-      const result = await api.transcribe(
+    // Gate 2 (pre-submit): await consent BEFORE the audio leaves the browser.
+    // If consent is already on file this resolves immediately; otherwise it
+    // opens the ConsentModal and resolves once the doctor confirms.
+    await requestConsent();
+
+    const submit = (): Promise<TranscribeResult> =>
+      api.transcribe(
         blob,
         'audio.webm',
         consultationId ? { consultationId } : undefined,
       );
+
+    try {
+      onProcessing();
+      const result = await submit();
       onResult(result);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         onAuthError();
         return;
       }
+      // Gate 2 (post-403 fallback): the backend refused for missing consent
+      // despite our pre-submit check (stale tab / multi-tab race / consent
+      // wiped server-side). Re-open the SAME modal, then retry once.
+      // isMissingConsentError distinguishes this 403 from other 4xx outcomes
+      // (e.g. 409 wrong-status, 403 consultation_mismatch) by the Bulgarian
+      // "съгласие" stem in the error body — see lib/api.ts for the rule.
+      if (isMissingConsentError(err)) {
+        try {
+          await requestConsent();
+          const result = await submit();
+          onResult(result);
+          return;
+        } catch (retryErr) {
+          if (retryErr instanceof ApiError && retryErr.status === 401) {
+            onAuthError();
+            return;
+          }
+          onBackToIdle();
+          onError(
+            'Грешка: ' + (retryErr instanceof Error ? retryErr.message : 'неизвестна')
+          );
+          return;
+        }
+      }
       onBackToIdle();
       onError(
         'Грешка: ' + (err instanceof Error ? err.message : 'неизвестна')
       );
     }
-  }, [stopWaveform, consultationId, onProcessing, onResult, onAuthError, onBackToIdle, onError, onRecordingChange]);
+  }, [stopWaveform, consultationId, onProcessing, onResult, onAuthError, onBackToIdle, onError, onRecordingChange, requestConsent]);
 
   useEffect(() => {
     return () => {
