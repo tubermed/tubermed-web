@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import WorkspaceTopBar from '@/components/WorkspaceTopBar';
+import { SCRIBE_FLOW_STEPS } from '@/lib/flow';
 import PatientSearch from '@/components/PatientSearch';
 import PatientForm, {
   EMPTY_FORM,
@@ -201,11 +202,7 @@ export default function NewVisitPage() {
     <>
       <WorkspaceTopBar
         breadcrumb={breadcrumb}
-        steps={[
-          { label: 'Вход' },
-          { label: 'Запис' },
-          { label: 'Преглед' },
-        ]}
+        steps={SCRIBE_FLOW_STEPS}
         current={0}
         doctorInitials={doctorInitials}
         searchSlot={

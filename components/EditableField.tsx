@@ -24,8 +24,16 @@ export default function EditableField({
   acknowledged,
   onAcknowledge,
 }: EditableFieldProps) {
+  // Defensive coercion. Some callers pass `undefined` at runtime even though
+  // the prop is typed `string` (e.g. an extracted field that came back
+  // missing, or a medication sub-field normalized to undefined). Treat
+  // anything non-string as empty so `.trim()` / `.slice()` / `findHighlights`
+  // never throw. Empty values still render the placeholder (and the
+  // missing-field flag from MedField in MedsPanel).
+  const safeValue = typeof value === 'string' ? value : '';
+
   const [editing, setEditing] = useState(false);
-  const [local, setLocal] = useState(value);
+  const [local, setLocal] = useState(safeValue);
   const [pendingCaret, setPendingCaret] = useState<number | null>(null);
   const [popover, setPopover] = useState<{
     match: HighlightMatch;
@@ -34,8 +42,8 @@ export default function EditableField({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
-    setLocal(value);
-  }, [value]);
+    setLocal(safeValue);
+  }, [safeValue]);
 
   useEffect(() => {
     if (editing && textareaRef.current) {
@@ -52,8 +60,8 @@ export default function EditableField({
   }, [editing, pendingCaret]);
 
   const allMatches = useMemo(
-    () => (highlightVitals ? findHighlights(value) : []),
-    [value, highlightVitals]
+    () => (highlightVitals ? findHighlights(safeValue) : []),
+    [safeValue, highlightVitals]
   );
 
   // Filter out acknowledged matches (doctor confirmed they're fine for patient)
@@ -66,7 +74,7 @@ export default function EditableField({
 
   function commit() {
     setEditing(false);
-    if (local !== value) onChange(local);
+    if (local !== safeValue) onChange(local);
   }
 
   function openEditAt(pos: number) {
@@ -105,7 +113,7 @@ export default function EditableField({
     );
   }
 
-  const hasContent = value.trim().length > 0;
+  const hasContent = safeValue.trim().length > 0;
   return (
     <>
       <div
@@ -119,7 +127,7 @@ export default function EditableField({
       >
         {hasContent ? (
           <RenderWithSpans
-            value={value}
+            value={safeValue}
             matches={matches}
             fieldKey={fieldKey}
             onSpanClick={(match, rect) => setPopover({ match, rect })}

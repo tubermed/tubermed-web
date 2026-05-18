@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Medication } from '@/lib/types';
 import type { SafetyAlert } from '@/lib/drug-safety';
 import { getIalDataSync, loadIal } from '@/lib/ial-meds';
 import MedsPicker from './MedsPicker';
+import { copyToClipboard } from '@/lib/exporters';
 
 interface MedsPanelProps {
   meds: Medication[];
@@ -13,6 +14,19 @@ interface MedsPanelProps {
   inlineCriticals: SafetyAlert[];
   lastRemovedName: string | null;
   onClearRemovedHint: () => void;
+  /** True when the doctor hasn't confirmed the review yet — gates the
+   *  copy-all button. The row click → edit flow stays available either way. */
+  isLocked: boolean;
+  /** Toast callback shared with the rest of /app/scribe/result. */
+  notifyCopy: (ok: boolean) => void;
+}
+
+const NOT_SPECIFIED = 'не е посочена';
+
+function isMissingField(v: string | undefined): boolean {
+  if (!v) return true;
+  const t = v.trim();
+  return !t || t.toLowerCase() === NOT_SPECIFIED;
 }
 
 export default function MedsPanel({
@@ -22,8 +36,12 @@ export default function MedsPanel({
   inlineCriticals,
   lastRemovedName,
   onClearRemovedHint,
+  isLocked,
+  notifyCopy,
 }: MedsPanelProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  // null → append mode; number → editing that index (replace on confirm)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [ialReady, setIalReady] = useState(!!getIalDataSync());
 
   // Watch for IAL load so Rx/БЛП badges update on existing cards
@@ -42,17 +60,52 @@ export default function MedsPanel({
     };
   }, [ialReady]);
 
-  function addMed(m: Medication) {
-    onChange([...meds, m]);
+  function openForAdd() {
+    setEditingIndex(null);
+    setPickerOpen(true);
+  }
+
+  function openForEdit(i: number) {
+    setEditingIndex(i);
+    setPickerOpen(true);
+  }
+
+  function closePicker() {
+    setPickerOpen(false);
+    setEditingIndex(null);
+  }
+
+  // Picker emits a Medication. Parent owns the decision: append when
+  // editingIndex is null, replace-at-index otherwise. The replacement is
+  // unconditional — even if the doctor chose a different INN in the menu,
+  // it overwrites the row that was tapped.
+  function handlePick(med: Medication) {
+    if (editingIndex === null) {
+      onChange([...meds, med]);
+    } else {
+      const idx = editingIndex;
+      onChange(meds.map((m, i) => (i === idx ? med : m)));
+    }
+    closePicker();
   }
 
   function removeAt(i: number) {
     onChange(meds.filter((_, idx) => idx !== i));
   }
 
+  const copyAllText = useMemo(() => buildCopyAllText(meds), [meds]);
+
+  async function copyAllMeds() {
+    if (isLocked || !copyAllText) return;
+    const ok = await copyToClipboard(copyAllText);
+    notifyCopy(ok);
+  }
+
   const showTherapyHint =
     !!lastRemovedName &&
     terapiaText.toLowerCase().includes(lastRemovedName.toLowerCase());
+
+  const editingMed = editingIndex !== null ? meds[editingIndex] : undefined;
 
   return (
     <>
@@ -113,14 +166,40 @@ export default function MedsPanel({
 
         <div className="space-y-1.5 mb-3">
           {meds.map((m, i) => (
-            <MedChip
-              key={i + ':' + m.inn}
+            <MedRow
+              key={i}
               med={m}
-              onRemove={() => removeAt(i)}
               triggered={isMedTriggered(m, inlineCriticals)}
+              onClick={() => openForEdit(i)}
+              onRemove={() => removeAt(i)}
+              isLocked={isLocked}
+              notifyCopy={notifyCopy}
             />
           ))}
         </div>
+
+        {meds.length > 0 && (
+          <button
+            type="button"
+            onClick={copyAllMeds}
+            disabled={isLocked || !copyAllText}
+            aria-disabled={isLocked || !copyAllText}
+            title={
+              isLocked
+                ? 'Достъпно след потвърждаване на прегледа'
+                : 'Копирай всички медикаменти, по един на ред'
+            }
+            className="w-full mb-3 py-2 rounded-md text-xs font-medium border transition hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+            style={{
+              borderColor: 'var(--color-border-mid)',
+              color: 'var(--color-text-muted)',
+              background: 'white',
+            }}
+          >
+            <span aria-hidden="true">{isLocked ? '🔒' : '⧉'}</span>
+            <span>Копирай медикаментите</span>
+          </button>
+        )}
 
         {showTherapyHint && (
           <div
@@ -155,7 +234,7 @@ export default function MedsPanel({
         )}
 
         <button
-          onClick={() => setPickerOpen(true)}
+          onClick={openForAdd}
           className="w-full py-2 rounded-md text-xs font-medium border-2 border-dashed transition hover:bg-[var(--color-brand-light)]"
           style={{
             borderColor: 'var(--color-border-mid)',
@@ -168,11 +247,44 @@ export default function MedsPanel({
 
       <MedsPicker
         isOpen={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onPick={addMed}
+        onClose={closePicker}
+        onPick={handlePick}
+        initialMed={editingMed}
       />
     </>
   );
+}
+
+// Build the plain-text payload for "Копирай медикаментите".
+// One line per medication. Format: `{inn} - {route} от {dose}, {regimen} за {duration}`
+// with empty fields (including the literal "не е посочена") dropped so the
+// line stays grammatical. Never auto-fills.
+export function formatMedLine(m: Medication): string {
+  const inn = (m.inn || '').trim();
+  if (!inn) return '';
+  const route = isMissingField(m.route) ? '' : (m.route as string).trim();
+  const dose = isMissingField(m.dose) ? '' : (m.dose as string).trim();
+  const regimen = isMissingField(m.regimen)
+    ? ''
+    : (m.regimen as string).trim();
+  const duration = isMissingField(m.duration)
+    ? ''
+    : (m.duration as string).trim();
+
+  let descriptor = '';
+  if (route && dose) descriptor = `${route} от ${dose}`;
+  else if (route) descriptor = route;
+  else if (dose) descriptor = dose;
+
+  let line = inn;
+  if (descriptor) line += ` - ${descriptor}`;
+  if (regimen) line += `, ${regimen}`;
+  if (duration) line += ` за ${duration}`;
+  return line;
+}
+
+function buildCopyAllText(meds: Medication[]): string {
+  return meds.map(formatMedLine).filter(Boolean).join('\n');
 }
 
 // Returns the Rx/БЛП status of a named drug if found in the IAL register.
@@ -195,69 +307,151 @@ function isMedTriggered(med: Medication, criticals: SafetyAlert[]): boolean {
   );
 }
 
-function MedChip({
+function MedRow({
   med,
-  onRemove,
   triggered,
+  onClick,
+  onRemove,
+  isLocked,
+  notifyCopy,
 }: {
   med: Medication;
-  onRemove: () => void;
   triggered: boolean;
+  /** Whole row is the edit affordance — fires unless the remove × or copy
+   *  button was hit (both stop propagation). */
+  onClick: () => void;
+  onRemove: () => void;
+  /** Disables the per-row copy until the review is confirmed. */
+  isLocked: boolean;
+  /** Shared Toast callback — true = success, false = failure. */
+  notifyCopy: (ok: boolean) => void;
 }) {
   const rx = lookupRx(med.inn);
+  const copyText = formatMedLine(med);
+
+  async function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (isLocked || !copyText) return;
+    const ok = await copyToClipboard(copyText);
+    notifyCopy(ok);
+  }
+
+  function handleRemove(e: React.MouseEvent) {
+    e.stopPropagation();
+    onRemove();
+  }
+
   return (
     <div
-      className="flex items-start gap-2 px-2.5 py-2 rounded-md border group"
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      title="Кликни за редакция"
+      className="flex items-stretch gap-2 px-2.5 py-2 rounded-md border cursor-pointer group transition hover:bg-[var(--color-brand-light)] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
       style={{
         background: triggered ? 'var(--color-danger-soft)' : 'var(--color-bg-card)',
         borderColor: triggered ? 'var(--color-danger)' : 'var(--color-border)',
       }}
     >
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 self-center">
         <div
-          className="text-sm font-medium leading-tight truncate"
+          className="flex items-center gap-1.5 min-w-0"
           style={{
             color: triggered ? 'var(--color-red)' : 'var(--color-text)',
           }}
         >
-          {triggered && <span className="mr-1">🚨</span>}
-          {med.inn}
-        </div>
-        {(med.dose || med.regimen) && (
-          <div
-            className="text-[11px] mt-0.5"
+          <span
+            className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
             style={{
-              color: triggered
-                ? 'var(--color-red)'
-                : 'var(--color-text-muted)',
+              background: rx ? 'var(--color-brand)' : 'var(--color-ok-soft)',
+              color: rx ? 'white' : 'var(--color-ok)',
             }}
+            title={rx ? 'Изисква рецепта' : 'Без лекарско предписание'}
           >
-            {[med.dose, med.regimen, med.route, med.duration]
-              .filter(Boolean)
-              .join(' · ')}
+            {rx ? 'Rx' : 'БЛП'}
+          </span>
+          <div className="text-sm font-medium leading-tight truncate min-w-0">
+            {triggered && <span className="mr-1">🚨</span>}
+            {med.inn || (
+              <span style={{ color: 'var(--color-gold)' }}>
+                ⚠ {NOT_SPECIFIED}
+              </span>
+            )}
           </div>
-        )}
-      </div>
-      <div className="flex items-center gap-1.5 flex-shrink-0">
-        <span
-          className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-          style={{
-            background: rx ? 'var(--color-brand)' : 'var(--color-ok-soft)',
-            color: rx ? 'white' : 'var(--color-ok)',
-          }}
-          title={rx ? 'Изисква рецепта' : 'Без лекарско предписание'}
+        </div>
+        <div
+          className="text-[11px] mt-0.5 leading-snug"
+          style={{ color: 'var(--color-text-muted)' }}
         >
-          {rx ? 'Rx' : 'БЛП'}
-        </span>
+          <Slot value={med.dose} />
+          <Sep />
+          <Slot value={med.regimen} />
+          <Sep />
+          <Slot value={med.route} />
+          <Sep />
+          <Slot value={med.duration} />
+        </div>
+      </div>
+      <div className="flex flex-col items-center justify-center gap-1 flex-shrink-0">
         <button
-          onClick={onRemove}
+          type="button"
+          onClick={handleCopy}
+          disabled={isLocked || !copyText}
+          aria-disabled={isLocked || !copyText}
+          aria-label="Копирай медикамента"
+          title={
+            isLocked
+              ? 'Достъпно след потвърждаване на прегледа'
+              : 'Копирай реда'
+          }
+          className="w-9 h-9 rounded-md border flex items-center justify-center text-base transition hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{
+            borderColor: 'var(--color-border-mid)',
+            color: 'var(--color-text-muted)',
+            background: 'white',
+          }}
+        >
+          <span aria-hidden="true">
+            {isLocked ? '🔒' : '⧉'}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={handleRemove}
           aria-label="Премахни"
-          className="w-6 h-6 rounded flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition"
-          style={{ color: 'var(--color-text-hint)' }}
+          title="Премахни медикамента"
+          className="w-9 h-9 rounded-md flex items-center justify-center text-2xl leading-none transition hover:bg-[var(--color-danger-soft)]"
+          style={{ color: 'var(--color-text-muted)' }}
         >
           ×
         </button>
       </div>
     </div>
+  );
+}
+
+function Slot({ value }: { value: string | undefined }) {
+  if (isMissingField(value)) {
+    return (
+      <span
+        style={{ color: 'var(--color-gold)', fontWeight: 600 }}
+        title="липсва — попълни"
+      >
+        ⚠ {NOT_SPECIFIED}
+      </span>
+    );
+  }
+  return <span>{(value || '').trim()}</span>;
+}
+
+function Sep() {
+  return (
+    <span style={{ color: 'var(--color-border-mid)' }}> · </span>
   );
 }

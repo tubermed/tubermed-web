@@ -32,9 +32,36 @@ import {
   generateWordHtml,
   downloadWord,
 } from '@/lib/exporters';
+import CopyButton from '@/components/CopyButton';
 
 const RESULT_STORAGE_KEY  = 'tuber_last_result';
 const PENDING_VISIT_KEY   = 'tuber_pending_visit';
+
+// Extraction returns the literal Bulgarian phrase "не е посочена" when the
+// doctor didn't specify a med field. Treat it as empty so the editable row
+// renders the missing-field flag instead of literal text the doctor would
+// have to delete before typing. Hard requirement: never auto-fill defaults.
+const NOT_SPECIFIED = 'не е посочена';
+
+function normalizeMedField(v: string | undefined): string | undefined {
+  if (!v) return undefined;
+  const t = v.trim();
+  if (!t || t.toLowerCase() === NOT_SPECIFIED) return undefined;
+  return v;
+}
+
+function normalizeMedications(
+  list: Medication[] | undefined
+): Medication[] {
+  if (!list) return [];
+  return list.map((m) => ({
+    inn: m.inn,
+    dose: normalizeMedField(m.dose),
+    regimen: normalizeMedField(m.regimen),
+    route: normalizeMedField(m.route),
+    duration: normalizeMedField(m.duration),
+  }));
+}
 
 type ReviewStatus = 'pending' | 'confirmed';
 
@@ -98,7 +125,12 @@ export default function ResultPage() {
     try {
       const parsed = JSON.parse(raw) as TranscribeResult;
       setOriginal(parsed);
-      setFields({ ...parsed.fields });
+      setFields({
+        ...parsed.fields,
+        medications_list: normalizeMedications(
+          parsed.fields.medications_list
+        ),
+      });
     } catch {
       router.replace('/app/scribe');
     }
@@ -421,6 +453,18 @@ export default function ResultPage() {
     toastIdRef.current += 1;
     setToast({ kind, message, id: toastIdRef.current });
   }, []);
+
+  // Shared callback for per-section CopyButtons — reuses the same Bulgarian
+  // strings as the topbar full-document copy so the affordance feels uniform.
+  const notifyCopy = useCallback(
+    (ok: boolean) => {
+      showToast(
+        ok ? 'success' : 'error',
+        ok ? '✓ Копирано в клипборда' : 'Копирането не е възможно в този браузър'
+      );
+    },
+    [showToast]
+  );
 
   // ── Export handlers ──────────────────────────────────────────
   const handleCopy = useCallback(async () => {
@@ -751,6 +795,8 @@ export default function ResultPage() {
               onCoFieldChange={updateCoField}
               onOpenMkbForOsnovna={() => openMkbPicker({ kind: 'osnovna' })}
               onOpenMkbForCo={(i) => openMkbPicker({ kind: 'co', index: i })}
+              isLocked={isLocked}
+              notifyCopy={notifyCopy}
             />
 
             <TextSection
@@ -761,6 +807,13 @@ export default function ResultPage() {
               onChange={(v) => updateField('anamneza', v)}
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('anamneza', raw)}
+              headerRight={
+                <CopyButton
+                  text={fields.anamneza || ''}
+                  disabled={isLocked}
+                  onResult={notifyCopy}
+                />
+              }
             />
             <TextSection
               id="sec-obektivno"
@@ -770,6 +823,13 @@ export default function ResultPage() {
               onChange={(v) => updateField('obektivno', v)}
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('obektivno', raw)}
+              headerRight={
+                <CopyButton
+                  text={fields.obektivno || ''}
+                  disabled={isLocked}
+                  onResult={notifyCopy}
+                />
+              }
             />
             <TextSection
               id="sec-izsledvania"
@@ -779,6 +839,13 @@ export default function ResultPage() {
               onChange={(v) => updateField('izsledvania', v)}
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('izsledvania', raw)}
+              headerRight={
+                <CopyButton
+                  text={fields.izsledvania || ''}
+                  disabled={isLocked}
+                  onResult={notifyCopy}
+                />
+              }
             />
             <TextSection
               id="sec-terapia"
@@ -788,6 +855,13 @@ export default function ResultPage() {
               onChange={(v) => updateField('terapia', v)}
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('terapia', raw)}
+              headerRight={
+                <CopyButton
+                  text={fields.terapia || ''}
+                  disabled={isLocked}
+                  onResult={notifyCopy}
+                />
+              }
             />
 
             {visibleSections['sec-izdadeni'] && (
@@ -846,6 +920,8 @@ export default function ResultPage() {
               inlineCriticals={criticals}
               lastRemovedName={lastRemovedMedName}
               onClearRemovedHint={() => setLastRemovedMedName(null)}
+              isLocked={isLocked}
+              notifyCopy={notifyCopy}
             />
 
             {warnings.length > 0 && (
@@ -1107,7 +1183,26 @@ function TopbarBtn({
   );
 }
 
-function SectionHead({ title }: { title: string }) {
+function SectionHead({
+  title,
+  actions,
+}: {
+  title: string;
+  actions?: React.ReactNode;
+}) {
+  if (actions) {
+    return (
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <h2
+          className="text-xl font-semibold"
+          style={{ color: 'var(--color-ink)' }}
+        >
+          {title}
+        </h2>
+        <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>
+      </div>
+    );
+  }
   return (
     <h2
       className="text-xl font-semibold mb-4"
@@ -1137,6 +1232,7 @@ function TextSection({
   fieldKey,
   acknowledged,
   onAcknowledge,
+  headerRight,
 }: {
   id: string;
   title: string;
@@ -1145,6 +1241,7 @@ function TextSection({
   fieldKey?: string;
   acknowledged?: Set<string>;
   onAcknowledge?: (raw: string) => void;
+  headerRight?: React.ReactNode;
 }) {
   return (
     <div
@@ -1152,7 +1249,7 @@ function TextSection({
       className="bg-white rounded-2xl border p-6 scroll-mt-24"
       style={{ borderColor: 'var(--color-border)' }}
     >
-      <SectionHead title={title} />
+      <SectionHead title={title} actions={headerRight} />
       <EditableField
         value={value}
         onChange={onChange}
@@ -1174,6 +1271,8 @@ function DiagnosesSection({
   onCoFieldChange,
   onOpenMkbForOsnovna,
   onOpenMkbForCo,
+  isLocked,
+  notifyCopy,
 }: {
   osnovnaDiagnoza: string;
   osnovnaMkb: string;
@@ -1184,6 +1283,8 @@ function DiagnosesSection({
   onCoFieldChange: (index: number, key: 'diagnoza' | 'mkb', v: string) => void;
   onOpenMkbForOsnovna: () => void;
   onOpenMkbForCo: (index: number) => void;
+  isLocked: boolean;
+  notifyCopy: (ok: boolean) => void;
 }) {
   const hasMain = osnovnaDiagnoza.trim().length > 0;
 
@@ -1219,6 +1320,16 @@ function DiagnosesSection({
           onDiagnozaChange={onOsnovnaDiagnozaChange}
           onMkbChange={onOsnovnaMkbChange}
           onPickMkb={onOpenMkbForOsnovna}
+          copySlot={
+            osnovnaMkb.trim() ? (
+              <CopyButton
+                text={osnovnaMkb.trim()}
+                disabled={isLocked}
+                onResult={notifyCopy}
+                label="МКБ"
+              />
+            ) : null
+          }
         />
         {!hasMain && (
           <div
@@ -1256,6 +1367,16 @@ function DiagnosesSection({
             onMkbChange={(v) => onCoFieldChange(i, 'mkb', v)}
             onRemove={() => removeCo(i)}
             onPickMkb={() => onOpenMkbForCo(i)}
+            copySlot={
+              d.mkb && d.mkb.trim() ? (
+                <CopyButton
+                  text={d.mkb.trim()}
+                  disabled={isLocked}
+                  onResult={notifyCopy}
+                  label="МКБ"
+                />
+              ) : null
+            }
           />
         ))}
         {pridruzhavashti.length === 0 && (
@@ -1278,6 +1399,7 @@ function DiagRow({
   onMkbChange,
   onRemove,
   onPickMkb,
+  copySlot,
 }: {
   diagnoza: string;
   mkb: string;
@@ -1285,6 +1407,9 @@ function DiagRow({
   onMkbChange: (v: string) => void;
   onRemove?: () => void;
   onPickMkb: () => void;
+  /** Optional per-row CopyButton — rendered right after the МКБ input.
+   *  Parent decides whether to render based on whether the code is non-empty. */
+  copySlot?: React.ReactNode;
 }) {
   return (
     <div className="flex items-center gap-2">
@@ -1322,6 +1447,7 @@ function DiagRow({
           🔍
         </button>
       </div>
+      {copySlot}
       {onRemove && (
         <button
           onClick={onRemove}

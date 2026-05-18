@@ -14,27 +14,59 @@ import type { Medication } from '@/lib/types';
 interface MedsPickerProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Emits a Medication. The parent decides whether to append (when opened
+   *  from "+ Добави медикамент") or replace at a known index (when opened
+   *  by tapping an existing row). The picker itself is index-unaware. */
   onPick: (med: Medication) => void;
+  /** When set, the picker opens in edit mode: the search query is preset to
+   *  the medication's INN, a matching IAL row is auto-expanded with its
+   *  form / dose / regimen / duration pre-filled, and the modal title flips
+   *  to "Редакция на лекарство". Leaving this undefined preserves the
+   *  append-only behaviour used by the "+ Добави медикамент" button. */
+  initialMed?: Medication;
+}
+
+const NOT_SPECIFIED = 'не е посочена';
+
+/** Treat empty + the literal "не е посочена" as missing, returning '' so
+ *  controlled inputs start empty instead of forcing the doctor to delete
+ *  the server-placeholder text before typing. */
+function sanitizeInitial(v: string | undefined): string {
+  if (!v) return '';
+  const t = v.trim();
+  if (!t || t.toLowerCase() === NOT_SPECIFIED) return '';
+  return v;
+}
+
+interface InitialFormValues {
+  form: string;
+  dose: string;
+  regimen: string;
+  duration: string;
 }
 
 export default function MedsPicker({
   isOpen,
   onClose,
   onPick,
+  initialMed,
 }: MedsPickerProps) {
+  const isEditing = !!initialMed;
   const [query, setQuery] = useState('');
   const [data, setData] = useState<IalEntry[] | null>(getIalDataSync());
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [expandedInn, setExpandedInn] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Reset on open. In edit mode, preset the query to the med's INN so the
+  // matching IAL row surfaces immediately and auto-expands below.
   useEffect(() => {
     if (!isOpen) return;
-    setQuery('');
+    setQuery(sanitizeInitial(initialMed?.inn) || '');
     setExpandedInn(null);
     const t = setTimeout(() => inputRef.current?.focus(), 50);
     return () => clearTimeout(t);
-  }, [isOpen]);
+  }, [isOpen, initialMed]);
 
   useEffect(() => {
     if (!isOpen || data) return;
@@ -52,6 +84,18 @@ export default function MedsPicker({
       cancelled = true;
     };
   }, [isOpen, data]);
+
+  // Auto-expand matching IAL entry in edit mode so the doctor lands directly
+  // on a pre-filled form.
+  useEffect(() => {
+    if (!isOpen || !isEditing || !data || !initialMed) return;
+    const lower = (initialMed.inn || '').trim().toLowerCase();
+    if (!lower) return;
+    const match = data.find(
+      (e) => e.b.toLowerCase() === lower || e.i.toLowerCase() === lower
+    );
+    if (match) setExpandedInn(match.i);
+  }, [isOpen, isEditing, data, initialMed]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -82,7 +126,40 @@ export default function MedsPicker({
     [onPick, onClose]
   );
 
+  // Initial form values for ExpandedForm. Only seeded when the row being
+  // expanded matches initialMed — picking a different drug in edit mode
+  // intentionally starts that drug's form blank (with the doctor's typed
+  // regimen/duration being theirs to enter).
+  const initialFormValues: InitialFormValues | undefined = useMemo(() => {
+    if (!isEditing || !initialMed) return undefined;
+    return {
+      form: sanitizeInitial(initialMed.route),
+      dose: sanitizeInitial(initialMed.dose),
+      regimen: sanitizeInitial(initialMed.regimen),
+      duration: sanitizeInitial(initialMed.duration),
+    };
+  }, [isEditing, initialMed]);
+
+  function matchesInitial(entry: IalEntry): boolean {
+    if (!isEditing || !initialMed) return false;
+    const lower = (initialMed.inn || '').trim().toLowerCase();
+    if (!lower) return false;
+    return (
+      entry.b.toLowerCase() === lower || entry.i.toLowerCase() === lower
+    );
+  }
+
   if (!isOpen) return null;
+
+  // No IAL hit while editing → fall back to a full manual edit form so the
+  // doctor doesn't lose dose/regimen/route/duration when their drug isn't
+  // in the IAL register.
+  const showManualEdit =
+    isEditing &&
+    !!initialMed &&
+    !!data &&
+    hits.length === 0 &&
+    query.trim().length > 0;
 
   return (
     <div
@@ -104,7 +181,7 @@ export default function MedsPicker({
               className="font-semibold text-base"
               style={{ color: 'var(--color-ink)' }}
             >
-              Избор на лекарство
+              {isEditing ? 'Редакция на лекарство' : 'Избор на лекарство'}
             </div>
             {data && (
               <div
@@ -173,7 +250,14 @@ export default function MedsPicker({
               }}
             />
           )}
-          {data && hits.length === 0 && query.trim() && (
+          {showManualEdit && initialMed && (
+            <ManualEditForm
+              initialMed={initialMed}
+              query={query}
+              onCommit={handlePickMed}
+            />
+          )}
+          {data && hits.length === 0 && query.trim() && !showManualEdit && (
             <EmptyResultsView
               query={query}
               onAddManual={() => handlePickMed({ inn: query.trim() })}
@@ -181,20 +265,26 @@ export default function MedsPicker({
           )}
           {data && hits.length > 0 && (
             <div className="p-2">
-              {hits.map((hit) => (
-                <MedRow
-                  key={hit.entry.i}
-                  entry={hit.entry}
-                  matchKind={hit.matchKind}
-                  expanded={expandedInn === hit.entry.i}
-                  onToggleExpand={() =>
-                    setExpandedInn(
-                      expandedInn === hit.entry.i ? null : hit.entry.i
-                    )
-                  }
-                  onCommit={handlePickMed}
-                />
-              ))}
+              {hits.map((hit) => {
+                const seedThisRow = matchesInitial(hit.entry);
+                return (
+                  <MedRow
+                    key={hit.entry.i}
+                    entry={hit.entry}
+                    matchKind={hit.matchKind}
+                    expanded={expandedInn === hit.entry.i}
+                    onToggleExpand={() =>
+                      setExpandedInn(
+                        expandedInn === hit.entry.i ? null : hit.entry.i
+                      )
+                    }
+                    onCommit={handlePickMed}
+                    initialValues={
+                      seedThisRow ? initialFormValues : undefined
+                    }
+                  />
+                );
+              })}
             </div>
           )}
         </div>
@@ -289,18 +379,164 @@ function EmptyResultsView({
   );
 }
 
+/** Free-form edit pane shown when the doctor is editing a medication whose
+ *  INN isn't in the IAL register. Preserves every field — switching the
+ *  search query in this state doesn't drop dose/regimen/route/duration. */
+function ManualEditForm({
+  initialMed,
+  query,
+  onCommit,
+}: {
+  initialMed: Medication;
+  query: string;
+  onCommit: (med: Medication) => void;
+}) {
+  const seedInn = sanitizeInitial(initialMed.inn) || query.trim();
+  const [inn, setInn] = useState(seedInn);
+  const [form, setForm] = useState(sanitizeInitial(initialMed.route));
+  const [dose, setDose] = useState(sanitizeInitial(initialMed.dose));
+  const [regimen, setRegimen] = useState(
+    sanitizeInitial(initialMed.regimen)
+  );
+  const [duration, setDuration] = useState(
+    sanitizeInitial(initialMed.duration)
+  );
+
+  // Keep INN synced with the search input until the doctor has typed in it
+  // themselves. After mount the doctor's edits stick — we only re-seed when
+  // initialMed itself changes (i.e. picker reopened for a different row).
+  useEffect(() => {
+    setInn(sanitizeInitial(initialMed.inn) || query.trim());
+    setForm(sanitizeInitial(initialMed.route));
+    setDose(sanitizeInitial(initialMed.dose));
+    setRegimen(sanitizeInitial(initialMed.regimen));
+    setDuration(sanitizeInitial(initialMed.duration));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMed]);
+
+  function commit() {
+    const innVal = inn.trim();
+    if (!innVal) return;
+    onCommit({
+      inn: innVal,
+      dose: dose.trim() || undefined,
+      regimen: regimen.trim() || undefined,
+      route: form.trim() || undefined,
+      duration: duration.trim() || undefined,
+    });
+  }
+
+  return (
+    <div className="p-4 space-y-3">
+      <div
+        className="text-xs"
+        style={{ color: 'var(--color-text-hint)' }}
+      >
+        Лекарството не е в ИАЛ регистъра — редактирай ръчно.
+      </div>
+      <FieldRow label="Лекарство (INN)">
+        <input
+          type="text"
+          value={inn}
+          onChange={(e) => setInn(e.target.value)}
+          className="w-full px-2 py-1.5 rounded text-sm border outline-none bg-white"
+          style={{ borderColor: 'var(--color-border-mid)' }}
+        />
+      </FieldRow>
+      <div className="grid grid-cols-2 gap-2">
+        <FieldRow label="Форма / Път">
+          <input
+            type="text"
+            value={form}
+            onChange={(e) => setForm(e.target.value)}
+            placeholder="напр. таблетки, р.о."
+            className="w-full px-2 py-1.5 rounded text-sm border outline-none bg-white"
+            style={{ borderColor: 'var(--color-border-mid)' }}
+          />
+        </FieldRow>
+        <FieldRow label="Доза">
+          <input
+            type="text"
+            value={dose}
+            onChange={(e) => setDose(e.target.value)}
+            placeholder="напр. 200 мг"
+            className="w-full px-2 py-1.5 rounded text-sm border outline-none bg-white"
+            style={{ borderColor: 'var(--color-border-mid)' }}
+          />
+        </FieldRow>
+      </div>
+      <FieldRow label="Прием">
+        <input
+          type="text"
+          value={regimen}
+          onChange={(e) => setRegimen(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+          }}
+          placeholder="напр. 1 т. 3 пъти дневно"
+          className="w-full px-2 py-1.5 rounded text-sm border outline-none bg-white"
+          style={{ borderColor: 'var(--color-border-mid)' }}
+        />
+      </FieldRow>
+      <FieldRow label="Продължителност">
+        <input
+          type="text"
+          value={duration}
+          onChange={(e) => setDuration(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+          }}
+          placeholder="напр. 7 дни"
+          className="w-full px-2 py-1.5 rounded text-sm border outline-none bg-white"
+          style={{ borderColor: 'var(--color-border-mid)' }}
+        />
+      </FieldRow>
+      <button
+        onClick={commit}
+        disabled={!inn.trim()}
+        className="w-full py-2 rounded-md text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+        style={{ background: 'var(--gradient-brand)' }}
+      >
+        + Добави в плана
+      </button>
+    </div>
+  );
+}
+
+function FieldRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label
+        className="block text-[10px] uppercase tracking-wider mb-1 font-semibold"
+        style={{ color: 'var(--color-text-hint)' }}
+      >
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
 function MedRow({
   entry,
   matchKind,
   expanded,
   onToggleExpand,
   onCommit,
+  initialValues,
 }: {
   entry: IalEntry;
   matchKind: SearchHit['matchKind'];
   expanded: boolean;
   onToggleExpand: () => void;
   onCommit: (med: Medication) => void;
+  initialValues?: InitialFormValues;
 }) {
   return (
     <div
@@ -338,7 +574,13 @@ function MedRow({
         </span>
       </button>
 
-      {expanded && <ExpandedForm entry={entry} onCommit={onCommit} />}
+      {expanded && (
+        <ExpandedForm
+          entry={entry}
+          onCommit={onCommit}
+          initialValues={initialValues}
+        />
+      )}
     </div>
   );
 }
@@ -346,25 +588,63 @@ function MedRow({
 function ExpandedForm({
   entry,
   onCommit,
+  initialValues,
 }: {
   entry: IalEntry;
   onCommit: (med: Medication) => void;
+  initialValues?: InitialFormValues;
 }) {
-  const forms = useMemo(() => Object.keys(entry.fd), [entry.fd]);
-  const [form, setForm] = useState<string>(forms[0] || '');
-  // Doses for the currently-selected form
-  const doses = useMemo(
-    () => (form ? entry.fd[form] || [] : []),
-    [entry.fd, form]
-  );
-  const [dose, setDose] = useState<string>(doses[0] || '');
+  // If the doctor's existing form/dose aren't in the IAL options, prepend
+  // them as additional choices so the selects can still represent the
+  // current value. Without this, an existing dose like "200 мг" might be
+  // missing from the dropdown for a form that only lists "400 мг" / "600 мг".
+  const forms = useMemo(() => {
+    const base = Object.keys(entry.fd);
+    const seed = initialValues?.form;
+    if (seed && !base.includes(seed)) return [seed, ...base];
+    return base;
+  }, [entry.fd, initialValues?.form]);
 
-  // When form changes, reset dose to first option of new form
+  const [form, setForm] = useState<string>(
+    initialValues?.form || forms[0] || ''
+  );
+
+  const doses = useMemo(() => {
+    const base = form ? entry.fd[form] || [] : [];
+    const seed = initialValues?.dose;
+    if (
+      seed &&
+      form === initialValues?.form &&
+      !base.includes(seed)
+    ) {
+      return [seed, ...base];
+    }
+    return base;
+  }, [entry.fd, form, initialValues?.dose, initialValues?.form]);
+
+  const [dose, setDose] = useState<string>(
+    initialValues?.dose || doses[0] || ''
+  );
+
+  // When form changes, reset dose to the first option of the new form —
+  // unless the seeded dose still fits the new form's option list.
   useEffect(() => {
-    setDose(doses[0] || '');
+    if (
+      initialValues?.dose &&
+      form === initialValues.form &&
+      doses.includes(initialValues.dose)
+    ) {
+      setDose(initialValues.dose);
+    } else {
+      setDose(doses[0] || '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form, doses]);
 
-  const [regimen, setRegimen] = useState('');
+  const [regimen, setRegimen] = useState(initialValues?.regimen || '');
+  const [duration, setDuration] = useState(
+    initialValues?.duration || ''
+  );
 
   function commit() {
     onCommit({
@@ -372,6 +652,7 @@ function ExpandedForm({
       dose: dose || undefined,
       regimen: regimen.trim() || undefined,
       route: form || undefined,
+      duration: duration.trim() || undefined,
     });
   }
 
@@ -455,6 +736,15 @@ function ExpandedForm({
               >
                 {doses[0]}
               </div>
+            ) : doses.length === 0 ? (
+              <input
+                type="text"
+                value={dose}
+                onChange={(e) => setDose(e.target.value)}
+                placeholder="напр. 200 мг"
+                className="w-full px-2 py-1.5 rounded text-sm border outline-none bg-white"
+                style={{ borderColor: 'var(--color-border-mid)' }}
+              />
             ) : (
               <select
                 value={dose}
@@ -487,7 +777,27 @@ function ExpandedForm({
           onKeyDown={(e) => {
             if (e.key === 'Enter') commit();
           }}
-          placeholder="например 1 т. 3 пъти дневно × 7 дни"
+          placeholder="например 1 т. 3 пъти дневно"
+          className="w-full px-2 py-1.5 rounded text-sm border outline-none"
+          style={{ borderColor: 'var(--color-border-mid)' }}
+        />
+      </div>
+
+      <div>
+        <label
+          className="block text-[10px] uppercase tracking-wider mb-1 font-semibold"
+          style={{ color: 'var(--color-text-hint)' }}
+        >
+          Продължителност
+        </label>
+        <input
+          type="text"
+          value={duration}
+          onChange={(e) => setDuration(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+          }}
+          placeholder="напр. 7 дни"
           className="w-full px-2 py-1.5 rounded text-sm border outline-none"
           style={{ borderColor: 'var(--color-border-mid)' }}
         />

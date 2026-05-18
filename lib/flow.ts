@@ -1,6 +1,6 @@
 // Single source of truth for the consultation-flow Stepper labels.
-// Used by /app/scribe (current = 1 or 2) and /app/scribe/result (current = 3).
-// /app/new-visit uses its own 3-step inline array.
+// Used by /app/new-visit (current = 0), /app/scribe (current = 1 or 2),
+// and /app/scribe/result (current = 3).
 
 import type { StepperStep } from '@/components/Stepper';
 
