@@ -19,6 +19,13 @@ interface MedsPanelProps {
   isLocked: boolean;
   /** Toast callback shared with the rest of /app/scribe/result. */
   notifyCopy: (ok: boolean) => void;
+  /** Fires once per successful copy click. The parent forwards to
+   *  api.logMedsCopied — one analytics event per click, fired immediately
+   *  rather than batched at export, so a doctor who copies meds and walks
+   *  away without exporting is still recorded. `medCount` is 1 for a
+   *  per-row copy and the total number of medications joined into the
+   *  buffer for the copy-all button. */
+  onMedsCopied?: (scope: 'single' | 'all', medCount: number) => void;
 }
 
 const NOT_SPECIFIED = 'не е посочена';
@@ -38,6 +45,7 @@ export default function MedsPanel({
   onClearRemovedHint,
   isLocked,
   notifyCopy,
+  onMedsCopied,
 }: MedsPanelProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   // null → append mode; number → editing that index (replace on confirm)
@@ -99,6 +107,9 @@ export default function MedsPanel({
     if (isLocked || !copyAllText) return;
     const ok = await copyToClipboard(copyAllText);
     notifyCopy(ok);
+    // Only count successful copies — failed clipboard writes shouldn't be
+    // billed as engagement.
+    if (ok && onMedsCopied) onMedsCopied('all', meds.length);
   }
 
   const showTherapyHint =
@@ -174,6 +185,7 @@ export default function MedsPanel({
               onRemove={() => removeAt(i)}
               isLocked={isLocked}
               notifyCopy={notifyCopy}
+              onCopied={onMedsCopied}
             />
           ))}
         </div>
@@ -314,6 +326,7 @@ function MedRow({
   onRemove,
   isLocked,
   notifyCopy,
+  onCopied,
 }: {
   med: Medication;
   triggered: boolean;
@@ -325,6 +338,8 @@ function MedRow({
   isLocked: boolean;
   /** Shared Toast callback — true = success, false = failure. */
   notifyCopy: (ok: boolean) => void;
+  /** Optional analytics hook — fires only on successful copy. */
+  onCopied?: (scope: 'single' | 'all', medCount: number) => void;
 }) {
   const rx = lookupRx(med.inn);
   const copyText = formatMedLine(med);
@@ -334,6 +349,7 @@ function MedRow({
     if (isLocked || !copyText) return;
     const ok = await copyToClipboard(copyText);
     notifyCopy(ok);
+    if (ok && onCopied) onCopied('single', 1);
   }
 
   function handleRemove(e: React.MouseEvent) {

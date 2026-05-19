@@ -19,6 +19,7 @@ import type {
   ComorbidDiagnosis,
   Medication,
   PendingVisit,
+  ExportSignalPayload,
 } from '@/lib/types';
 import { checkDrugSafety, type SafetyAlert } from '@/lib/drug-safety';
 import { loadMkb, getMkbDataSync, findByCode } from '@/lib/mkb10';
@@ -86,6 +87,29 @@ const NAV_ITEMS: NavItem[] = [
 
 type MkbTarget = { kind: 'osnovna' } | { kind: 'co'; index: number };
 
+// Single, simple measure used by all the chars_changed math on this page.
+// Defined once here so the per-edit value sent to /edit and the per-field
+// rollup sent to /export can never disagree.
+//
+// Rule: absolute difference in character LENGTH between the current value
+// and the AI-extracted original of the SAME field. Always >= 0. Behaves
+// well under undo — restoring a field to its original value yields 0,
+// without needing per-keystroke history.
+//
+// Nested fields (medications_list, pridruzhavashti) are serialized with
+// JSON.stringify; arrays of strings join via the same path. This is an
+// approximation — flipping an item's order or swapping a synonym of equal
+// length contributes 0 — but the user explicitly asked for "a basic
+// character diff count, keep it simple", and the alternative (real
+// structural diff) is over-engineering.
+function stringifyForDiff(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return JSON.stringify(value);
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
 export default function ResultPage() {
   const router = useRouter();
   const [doctor, setDoctor] = useState<DoctorInfo | null>(null);
@@ -106,6 +130,19 @@ export default function ResultPage() {
 
   const editTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingEditField = useRef<string | null>(null);
+  // chars_changed for the next debounced flush. Captured at the moment
+  // updateField runs (when we still have both old and new values).
+  const pendingCharsChangedRef = useRef<number>(0);
+  // Per-field running |current − original| char-length deltas. Map key is
+  // the field name (e.g. 'anamneza', 'osnovna_mkb', 'pridruzhavashti').
+  // Read at export time to compute total_chars_edited (sum) and
+  // fields_edited_count (size). Once a field is touched, it stays in the
+  // map even if its delta returns to 0 — so undoing every edit leaves
+  // fields_edited_count > 0 but total_chars_edited = 0.
+  const editedFieldsRef = useRef<Map<string, number>>(new Map());
+  // Guards the export signal — fire exactly once per consultation session
+  // so multiple format clicks (PDF then Word) don't double-count.
+  const exportSignalledRef = useRef(false);
   const isLocked = reviewStatus !== 'confirmed';
 
   // ── Bootstrap ────────────────────────────────────────────────
@@ -153,23 +190,55 @@ export default function ResultPage() {
     loadIal().catch(() => {});
   }, []);
 
+  // Per-field AI-original char-length snapshot. Frozen at bootstrap so an
+  // undo-to-original yields chars_changed=0 regardless of how many edits
+  // happened in between. Computed by Map<fieldKey, originalLength>.
+  const originalFieldLengths = useMemo(() => {
+    const m = new Map<string, number>();
+    if (!original) return m;
+    for (const [k, v] of Object.entries(original.fields)) {
+      m.set(k, stringifyForDiff(v).length);
+    }
+    return m;
+  }, [original]);
+
+  // Single point of truth for chars_changed math. Called by every field
+  // updater with the candidate new value BEFORE setFields is applied.
+  const computeCharsChanged = useCallback(
+    (fieldKey: string, newValue: unknown): number => {
+      const origLen = originalFieldLengths.get(fieldKey) ?? 0;
+      const newLen  = stringifyForDiff(newValue).length;
+      return Math.abs(newLen - origLen);
+    },
+    [originalFieldLengths]
+  );
+
   // ── Edit tracking (debounced) ─────────────────────────────────
   const flushEdit = useCallback(() => {
     if (!original) return;
-    // Send the edited field name for analytics + the full fields object
-    // for backend data sync.
-    const field = pendingEditField.current ?? undefined;
-    api.editConsultation(original.consultationId, field, fields).catch((err) => {
+    // Send the edited field name + chars_changed for analytics + the full
+    // fields object for backend data sync. The chars_changed value is the
+    // snapshot captured at the most recent trackEdit call within this
+    // debounce window — see pendingCharsChangedRef.
+    const field        = pendingEditField.current ?? undefined;
+    const charsChanged = pendingCharsChangedRef.current;
+    api.editConsultation(original.consultationId, field, fields, charsChanged).catch((err) => {
       if (err instanceof ApiError) {
         console.warn('[edit-track] ' + err.status + ' ' + err.message);
       }
     });
     pendingEditField.current = null;
-  }, [original]);
+    pendingCharsChangedRef.current = 0;
+  }, [original, fields]);
 
   const trackEdit = useCallback(
-    (fieldKey: string) => {
+    (fieldKey: string, charsChanged: number) => {
       pendingEditField.current = fieldKey;
+      pendingCharsChangedRef.current = charsChanged;
+      // Live per-field rollup map. Overwrite (not add) so the latest
+      // delta-from-original wins — that's what makes an undo bring the
+      // total back toward 0 instead of stacking.
+      editedFieldsRef.current.set(fieldKey, charsChanged);
       if (editTimerRef.current) clearTimeout(editTimerRef.current);
       editTimerRef.current = setTimeout(flushEdit, 1500);
       if (reviewStatus === 'confirmed') setReviewStatus('pending');
@@ -186,10 +255,11 @@ export default function ResultPage() {
   // ── Field updaters ───────────────────────────────────────────
   const updateField = useCallback(
     <K extends keyof TranscribeFields>(key: K, next: TranscribeFields[K]) => {
+      const charsChanged = computeCharsChanged(String(key), next);
       setFields((prev) => ({ ...prev, [key]: next }));
-      trackEdit(String(key));
+      trackEdit(String(key), charsChanged);
     },
-    [trackEdit]
+    [trackEdit, computeCharsChanged]
   );
 
   // Bidirectional sync helpers: when the doctor types a known МКБ code,
@@ -214,48 +284,61 @@ export default function ResultPage() {
   const updateOsnovnaMkb = useCallback(
     (v: string) => {
       const term = diagFromCode(v);
+      // chars_changed is computed against the PRIMARY field — the MKB code.
+      // If diagFromCode also auto-fills osnovna_diagnoza we don't double-bill.
+      const charsChanged = computeCharsChanged('osnovna_mkb', v);
       setFields((prev) => ({
         ...prev,
         osnovna_mkb: v,
         ...(term ? { osnovna_diagnoza: term } : {}),
       }));
-      trackEdit('osnovna_mkb');
+      trackEdit('osnovna_mkb', charsChanged);
     },
-    [trackEdit]
+    [trackEdit, computeCharsChanged]
   );
 
   const updateOsnovnaDiagnoza = useCallback(
     (v: string) => {
       const code = codeFromDiag(v);
+      const charsChanged = computeCharsChanged('osnovna_diagnoza', v);
       setFields((prev) => ({
         ...prev,
         osnovna_diagnoza: v,
         ...(code ? { osnovna_mkb: code } : {}),
       }));
-      trackEdit('osnovna_diagnoza');
+      trackEdit('osnovna_diagnoza', charsChanged);
     },
-    [trackEdit]
+    [trackEdit, computeCharsChanged]
   );
 
   const updateCoField = useCallback(
     (idx: number, key: 'diagnoza' | 'mkb', v: string) => {
+      // For the nested pridruzhavashti array, snapshot the post-update value
+      // and use it to compute chars_changed against the original JSON form.
+      // Bidirectional sync inside the closure means we have to build the
+      // candidate `next` array twice (once here for the diff, once in
+      // setFields). The duplication is small and isolated.
+      const prevList = fields.pridruzhavashti || [];
+      const current  = prevList[idx] || { diagnoza: '', mkb: '' };
+      const updated  = { ...current, [key]: v } as ComorbidDiagnosis;
+      if (key === 'mkb') {
+        const term = diagFromCode(v);
+        if (term) updated.diagnoza = term;
+      } else {
+        const code = codeFromDiag(v);
+        if (code) updated.mkb = code;
+      }
+      const nextList = prevList.map((d, i) => (i === idx ? updated : d));
+      const charsChanged = computeCharsChanged('pridruzhavashti', nextList);
+
       setFields((prev) => {
         const co = (prev.pridruzhavashti || []).slice();
-        const current = co[idx] || { diagnoza: '', mkb: '' };
-        const next = { ...current, [key]: v };
-        if (key === 'mkb') {
-          const term = diagFromCode(v);
-          if (term) next.diagnoza = term;
-        } else {
-          const code = codeFromDiag(v);
-          if (code) next.mkb = code;
-        }
-        co[idx] = next;
+        co[idx] = updated;
         return { ...prev, pridruzhavashti: co };
       });
-      trackEdit('pridruzhavashti');
+      trackEdit('pridruzhavashti', charsChanged);
     },
-    [trackEdit]
+    [trackEdit, computeCharsChanged, fields.pridruzhavashti]
   );
 
   // ── Meds change — detect removals to drive therapy hint ──────
@@ -428,24 +511,33 @@ export default function ResultPage() {
     (code: string, term: string) => {
       if (!mkbTarget) return;
       if (mkbTarget.kind === 'osnovna') {
+        // Two fields update at once — bill chars_changed against the MKB
+        // code (primary picker target). The diagnoza ride-along isn't
+        // double-counted as a separate field touch.
+        const charsChanged = computeCharsChanged('osnovna_mkb', code);
         setFields((prev) => ({
           ...prev,
           osnovna_mkb: code,
           osnovna_diagnoza: term,
         }));
-        trackEdit('osnovna_mkb');
+        trackEdit('osnovna_mkb', charsChanged);
       } else {
         const idx = mkbTarget.index;
+        const prevList = fields.pridruzhavashti || [];
+        const nextList = prevList.map((d, i) =>
+          i === idx ? { mkb: code, diagnoza: term } : d
+        );
+        const charsChanged = computeCharsChanged('pridruzhavashti', nextList);
         setFields((prev) => {
           const co = (prev.pridruzhavashti || []).map((d, i) =>
             i === idx ? { mkb: code, diagnoza: term } : d
           );
           return { ...prev, pridruzhavashti: co };
         });
-        trackEdit('pridruzhavashti');
+        trackEdit('pridruzhavashti', charsChanged);
       }
     },
-    [mkbTarget, trackEdit]
+    [mkbTarget, trackEdit, computeCharsChanged, fields.pridruzhavashti]
   );
 
   // ── Toast helper ─────────────────────────────────────────────
@@ -466,6 +558,32 @@ export default function ResultPage() {
     [showToast]
   );
 
+  // Build the rollup payload from the live accumulators and POST it to
+  // /api/consultations/:id/export. Idempotent on this page — exportSignalledRef
+  // guards repeated invocations so PDF then Word in the same session doesn't
+  // double-count. The actual document generation stays purely client-side;
+  // this call only records the lifecycle signal + persists the rollup.
+  const signalExport = useCallback(
+    (format: ExportSignalPayload['format']) => {
+      if (!original || exportSignalledRef.current) return;
+      exportSignalledRef.current = true;
+      // Sum the per-field char deltas captured in editedFieldsRef.
+      let totalChars = 0;
+      for (const n of editedFieldsRef.current.values()) totalChars += n;
+      const payload: ExportSignalPayload = {
+        format,
+        total_chars_edited:  totalChars,
+        fields_edited_count: editedFieldsRef.current.size,
+      };
+      api.exportConsultation(original.consultationId, payload).catch((err) => {
+        if (err instanceof ApiError) {
+          console.warn('[export-signal] ' + err.status + ' ' + err.message);
+        }
+      });
+    },
+    [original]
+  );
+
   // ── Export handlers ──────────────────────────────────────────
   const handleCopy = useCallback(async () => {
     if (isLocked) return;
@@ -473,10 +591,11 @@ export default function ResultPage() {
     const ok = await copyToClipboard(text);
     if (ok) {
       showToast('success', '✓ Копирано в клипборда');
+      signalExport('copy');
     } else {
       showToast('error', 'Копирането не е възможно в този браузър');
     }
-  }, [fields, isLocked, showToast]);
+  }, [fields, isLocked, showToast, signalExport]);
 
   const handlePdf = useCallback(() => {
     if (isLocked) return;
@@ -489,13 +608,14 @@ export default function ResultPage() {
     const opened = openPdfPreview(html);
     if (opened) {
       showToast('success', '✓ Преглед отворен — Запази като PDF от бутона');
+      signalExport('pdf');
     } else {
       showToast(
         'error',
         'Изскачащият прозорец е блокиран — разрешете го за този сайт'
       );
     }
-  }, [fields, isLocked, showToast]);
+  }, [fields, isLocked, showToast, signalExport]);
 
   const handleWord = useCallback(() => {
     if (isLocked) return;
@@ -512,10 +632,11 @@ export default function ResultPage() {
     try {
       downloadWord(html, filename);
       showToast('success', '✓ Word файлът е свален');
+      signalExport('docx');
     } catch {
       showToast('error', 'Грешка при генериране на Word файла');
     }
-  }, [fields, isLocked, showToast]);
+  }, [fields, isLocked, showToast, signalExport]);
 
   const handlePrint = useCallback(() => {
     if (isLocked) return;
@@ -526,13 +647,15 @@ export default function ResultPage() {
     });
     const html = generatePdfHtml(fields, dateStr);
     const opened = openPdfPreview(html, { autoPrint: true });
-    if (!opened) {
+    if (opened) {
+      signalExport('print');
+    } else {
       showToast(
         'error',
         'Изскачащият прозорец е блокиран — разрешете го за този сайт'
       );
     }
-  }, [fields, isLocked, showToast]);
+  }, [fields, isLocked, showToast, signalExport]);
 
   // ── Visible-section bookkeeping ──────────────────────────────
   const visibleSections = useMemo(() => {
@@ -922,6 +1045,17 @@ export default function ResultPage() {
               onClearRemovedHint={() => setLastRemovedMedName(null)}
               isLocked={isLocked}
               notifyCopy={notifyCopy}
+              onMedsCopied={(scope, medCount) => {
+                // Fire-and-forget — a failed network call must never affect
+                // the clipboard write that already succeeded.
+                if (!original) return;
+                api.logMedsCopied(original.consultationId, scope, medCount)
+                  .catch((err) => {
+                    if (err instanceof ApiError) {
+                      console.warn('[meds-copied] ' + err.status + ' ' + err.message);
+                    }
+                  });
+              }}
             />
 
             {warnings.length > 0 && (

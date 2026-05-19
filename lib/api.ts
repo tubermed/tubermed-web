@@ -17,6 +17,7 @@ import type {
   VisitStartResponse,
   TodayResponse,
   ConsentResponse,
+  ExportSignalPayload,
 } from './types';
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL!;
@@ -138,11 +139,48 @@ export const api = {
   editConsultation: (
     consultationId: string,
     field?: string,
-    fields?: TranscribeFields
+    fields?: TranscribeFields,
+    /** Per-edit character delta, included in the note_edited event metadata.
+     *  Always >= 0. The result page computes it as
+     *  |current_value.length − ai_original_value.length| so an undo brings
+     *  the count back toward 0 instead of inflating it. */
+    charsChanged?: number,
   ) =>
     request<{ ok: boolean }>(`/api/consultations/${consultationId}/edit`, {
       method: 'POST',
-      body: JSON.stringify({ field, fields }),
+      body: JSON.stringify({ field, fields, chars_changed: charsChanged }),
+    }),
+
+  /** Signals the backend that the doctor exported the note. Backend persists
+   *  the rollup counters to consultations and emits the note_exported event
+   *  (with med-copy counts in metadata). Frontend doesn't block on the call
+   *  — the export itself happens client-side, this just records the event. */
+  exportConsultation: (
+    consultationId: string,
+    payload: ExportSignalPayload,
+  ) =>
+    request<{ ok: boolean }>(`/api/consultations/${consultationId}/export`, {
+      method: 'POST',
+      body: JSON.stringify({
+        format:              payload.format,
+        total_chars_edited:  payload.total_chars_edited,
+        fields_edited_count: payload.fields_edited_count,
+      }),
+    }),
+
+  /** Fire-and-forget event for a successful meds-copy click. Callers should
+   *  `.catch()` the returned promise — a failed network call must never
+   *  block the local clipboard write that already succeeded. `scope` is
+   *  'single' for a per-row copy and 'all' for the "Копирай медикаментите"
+   *  button. `medCount` is 1 for 'single', the number of meds copied for 'all'. */
+  logMedsCopied: (
+    consultationId: string,
+    scope: 'single' | 'all',
+    medCount: number,
+  ) =>
+    request<{ ok: boolean }>(`/api/consultations/${consultationId}/meds-copied`, {
+      method: 'POST',
+      body: JSON.stringify({ scope, med_count: medCount }),
     }),
 
   // ── Patients ───────────────────────────────────────────────────────────

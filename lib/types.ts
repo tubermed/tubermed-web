@@ -233,6 +233,29 @@ export interface PendingVisit {
   consent_to_record_at?: string | null;
 }
 
+// Payload for POST /api/consultations/:id/export.
+// Per-consultation edit rollup computed in the result page as the doctor
+// edits, sent on export. The backend persists both counters to
+// consultations.total_chars_edited / .fields_edited_count (migration 003).
+//
+// Counter semantics (see app/app/scribe/result/page.tsx for the
+// accumulators):
+//   - total_chars_edited      sum across edited fields of
+//                              |final_value.length - ai_original.length|.
+//                              Undo-resistant: an edit that returns the
+//                              field to its AI-extracted value contributes 0.
+//   - fields_edited_count     count of DISTINCT field keys that received
+//                              at least one commit (does not decrease on undo).
+//
+// Medication-copy events are NOT carried here — they have their own route
+// (POST /api/consultations/:id/meds-copied) so copies on consultations
+// that never get exported are still captured.
+export interface ExportSignalPayload {
+  format: 'pdf' | 'docx' | 'copy' | 'print';
+  total_chars_edited: number;
+  fields_edited_count: number;
+}
+
 // Response from POST /api/consultations/:id/consent.
 // First call: idempotent=false with a freshly-stamped timestamp.
 // Subsequent calls: idempotent=true with the SAME timestamp — the first
