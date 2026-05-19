@@ -398,6 +398,30 @@ function PhoneMode({
   const expiryRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cancelledRef = useRef(false);
 
+  // Callbacks kept in refs so the init effect can depend ONLY on
+  // [active, consultationId, …refs] — parent re-renders that mint a new
+  // inline `onProcessing={() => …}` no longer re-fire teardown→createSession.
+  const onProcessingRef = useRef(onProcessing);
+  const onResultRef     = useRef(onResult);
+  const onErrorRef      = useRef(onError);
+  useEffect(() => { onProcessingRef.current = onProcessing; }, [onProcessing]);
+  useEffect(() => { onResultRef.current     = onResult;     }, [onResult]);
+  useEffect(() => { onErrorRef.current      = onError;      }, [onError]);
+
+  // Recovery-path bookkeeping.
+  // - sessionIdRef: stable handle for poll calls from any callback.
+  // - resolvedRef:  once the round trip has produced a result/error we stop
+  //                 reconnecting and stop polling, so a late-arriving WS
+  //                 message can't fire onResult twice.
+  // - reconnectAttemptsRef: capped reconnect counter (reset on each onopen).
+  const sessionIdRef         = useRef<string | null>(null);
+  const resolvedRef          = useRef(false);
+  const reconnectAttemptsRef = useRef(0);
+  // Pending reconnect timer from a prior onclose. Must be clearable by
+  // teardown — a timer that fires after init() has reset cancelledRef
+  // back to false would otherwise resurrect the dead session's socket.
+  const reconnectTimeoutRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const teardown = useCallback(() => {
     if (wsRef.current) {
       wsRef.current.close();
@@ -411,25 +435,166 @@ function PhoneMode({
       clearInterval(expiryRef.current);
       expiryRef.current = null;
     }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
   }, []);
 
+  // One-shot poll against /status. Returns true if the call resolved the
+  // round trip (delivered a result or error to the parent). Safe to call
+  // multiple times — resolvedRef guards re-entry.
+  const checkForResult = useCallback(async (): Promise<boolean> => {
+    const id = sessionIdRef.current;
+    if (!id || resolvedRef.current) return false;
+    try {
+      const d = await api.getSessionStatus(id);
+      if (d.status === 'processing') {
+        setPhoneConnected(true);
+        onProcessingRef.current();
+        return false;
+      }
+      if (d.status === 'done') {
+        resolvedRef.current = true;
+        onResultRef.current(d.result);
+        return true;
+      }
+      if (d.status === 'error') {
+        resolvedRef.current = true;
+        onErrorRef.current('Грешка: ' + (d.error_msg || 'неизвестна'));
+        return true;
+      }
+    } catch (e) {
+      // Terminal failures — session gone (404), token revoked (401), or
+      // expired (410). Stop polling/reconnecting and surface an error so
+      // the page does not spin forever. Other failures (transient 5xx /
+      // network blips) fall through and the caller retries.
+      if (e instanceof ApiError && (e.status === 404 || e.status === 401 || e.status === 410)) {
+        resolvedRef.current = true;
+        onErrorRef.current('Сесията изтече или не е намерена.');
+        return true;
+      }
+      /* transient — caller will retry via onclose / reconnect path */
+    }
+    return false;
+  }, []);
+
+  // Open (or reopen) the WebSocket for `id`. Used by initial connect and
+  // by reconnect attempts triggered from onclose. Every (re)connect runs
+  // a poll on open so a result that arrived during a gap can't be lost.
+  const openSocket = useCallback((id: string) => {
+    const ws = new WebSocket(wsUrl(id));
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      reconnectAttemptsRef.current = 0;
+      void checkForResult();
+    };
+
+    ws.onmessage = (evt) => {
+      try {
+        const msg: WsMessage = JSON.parse(evt.data);
+        if (msg.type === 'processing') {
+          setPhoneConnected(true);
+          onProcessingRef.current();
+        } else if (msg.type === 'result') {
+          if (resolvedRef.current) return;
+          resolvedRef.current = true;
+          onResultRef.current({
+            consultationId: msg.consultationId,
+            transcript:     msg.transcript,
+            fields:         msg.fields,
+          });
+        } else if (msg.type === 'error') {
+          if (resolvedRef.current) return;
+          resolvedRef.current = true;
+          onErrorRef.current('Грешка при обработка: ' + msg.message);
+        }
+      } catch {
+        /* ignore malformed messages */
+      }
+    };
+
+    ws.onerror = () => {
+      // Handshake-level failure. Don't act here — onclose follows and
+      // drives the unified recovery path (poll + reconnect/backoff).
+    };
+
+    ws.onclose = () => {
+      // cancelledRef MUST be checked first — init()'s reset sequence flips
+      // it true around teardown() so the dying socket's onclose short-circuits
+      // here and never schedules a reconnect against the dead session.
+      if (cancelledRef.current || resolvedRef.current) return;
+      // 1) Immediate poll — covers the case where the socket dropped AFTER
+      //    pushToSession had already fired (the result row is in the DB).
+      void checkForResult().then((done) => {
+        if (cancelledRef.current || resolvedRef.current || done) return;
+        // 2) Reconnect with capped exponential backoff (~0.5s, 1s, 2s).
+        if (reconnectAttemptsRef.current < 3) {
+          const delay = 500 * Math.pow(2, reconnectAttemptsRef.current);
+          reconnectAttemptsRef.current += 1;
+          // Stash the handle so teardown() can clear a pending reconnect
+          // before init() resurrects cancelledRef to false. Without this, a
+          // timer scheduled by a PRIOR onclose can fire after the new session
+          // is live and overwrite wsRef with the dead session's socket.
+          reconnectTimeoutRef.current = setTimeout(() => {
+            reconnectTimeoutRef.current = null;
+            if (cancelledRef.current || resolvedRef.current) return;
+            openSocket(id);
+          }, delay);
+          return;
+        }
+        // 3) Reconnects exhausted — fall back to slow polling so the page
+        //    can still recover whenever the backend finishes.
+        if (!pollRef.current) {
+          pollRef.current = setInterval(() => {
+            void checkForResult().then((d) => {
+              if (d && pollRef.current) {
+                clearInterval(pollRef.current);
+                pollRef.current = null;
+              }
+            });
+          }, 2500);
+        }
+      });
+    };
+  }, [checkForResult]);
+
   useEffect(() => {
-    if (!active) {
+    // Hard gate: never create a session until we know the consultationId.
+    // Eliminates the null→defined re-run that previously tore down
+    // session A and minted session B mid-QR-scan.
+    if (!active || !consultationId) {
       teardown();
       setSession(null);
       setPhoneConnected(false);
+      sessionIdRef.current         = null;
+      resolvedRef.current          = false;
+      reconnectAttemptsRef.current = 0;
       return;
     }
 
-    cancelledRef.current = false;
-
     async function init() {
+      // init() is the single entry point for a new session — first-time mount
+      // via the effect AND timer-driven QR-expiry re-init via tick(). Order
+      // is load-bearing — flip cancelledRef BEFORE teardown so the dying
+      // socket's onclose (and any reconnect setTimeout the prior session
+      // scheduled, now cleared by teardown) short-circuits and cannot
+      // schedule work against the dead session. Reset the per-session flags
+      // AFTER teardown, then flip cancelledRef back to false — the new
+      // session is live from here.
+      cancelledRef.current         = true;
       teardown();
+      cancelledRef.current         = false;
+      resolvedRef.current          = false;
+      reconnectAttemptsRef.current = 0;
       try {
-        const s = await api.createSession(consultationId ? { consultationId } : undefined);
+        // consultationId is guaranteed non-null inside this branch (gate above).
+        const s = await api.createSession({ consultationId: consultationId! });
         if (cancelledRef.current) return;
         setSession(s);
         setPhoneConnected(false);
+        sessionIdRef.current = s.sessionId;
 
         const expiresAt = new Date(s.expiresAt).getTime();
         const tick = () => {
@@ -445,60 +610,10 @@ function PhoneMode({
         tick();
         expiryRef.current = setInterval(tick, 1000);
 
-        // Open WebSocket
-        const ws = new WebSocket(wsUrl(s.sessionId));
-        wsRef.current = ws;
-
-        ws.onmessage = (evt) => {
-          try {
-            const msg: WsMessage = JSON.parse(evt.data);
-            if (msg.type === 'processing') {
-              setPhoneConnected(true);
-              onProcessing();
-            } else if (msg.type === 'result') {
-              onResult({
-                consultationId: msg.consultationId,
-                transcript: msg.transcript,
-                fields: msg.fields,
-              });
-            } else if (msg.type === 'error') {
-              onError('Грешка при обработка: ' + msg.message);
-            }
-          } catch {
-            /* ignore malformed messages */
-          }
-        };
-
-        ws.onerror = () => {
-          // Fall back to polling
-          if (pollRef.current) return;
-          pollRef.current = setInterval(async () => {
-            try {
-              const d = await api.getSessionStatus(s.sessionId);
-              if (d.status === 'processing') {
-                setPhoneConnected(true);
-                onProcessing();
-              } else if (d.status === 'done') {
-                if (pollRef.current) {
-                  clearInterval(pollRef.current);
-                  pollRef.current = null;
-                }
-                onResult(d.result);
-              } else if (d.status === 'error') {
-                if (pollRef.current) {
-                  clearInterval(pollRef.current);
-                  pollRef.current = null;
-                }
-                onError('Грешка: ' + (d.error_msg || 'неизвестна'));
-              }
-            } catch {
-              /* network blip, keep polling */
-            }
-          }, 2500);
-        };
+        openSocket(s.sessionId);
       } catch (e) {
         if (!cancelledRef.current) {
-          onError(
+          onErrorRef.current(
             'Грешка при създаване на сесия: ' +
               (e instanceof Error ? e.message : 'неизвестна')
           );
@@ -512,7 +627,7 @@ function PhoneMode({
       cancelledRef.current = true;
       teardown();
     };
-  }, [active, consultationId, onProcessing, onResult, onError, teardown]);
+  }, [active, consultationId, teardown, openSocket]);
 
   if (phoneConnected) {
     return (
