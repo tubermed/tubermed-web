@@ -266,3 +266,13 @@ export interface ConsentResponse {
   consent_to_record_at: string;   // ISO-8601 / TIMESTAMPTZ — render in Europe/Sofia on display
   idempotent: boolean;
 }
+
+// Mirrors POST /api/consultations/:id/approve. Backend is idempotent — first
+// timestamp wins, subsequent calls return `idempotent: true` with the original
+// `note_approved_at`. Required gate for /export (server returns 403 otherwise).
+export interface ApproveResponse {
+  ok: true;
+  note_approved: true;
+  note_approved_at: string;       // ISO-8601 / TIMESTAMPTZ
+  idempotent: boolean;
+}

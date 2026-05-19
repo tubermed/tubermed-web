@@ -488,10 +488,11 @@ export default function ResultPage() {
   }, [original, fields.napravlenia, fields.naznacheni]);
 
   // ── Review status flow ───────────────────────────────────────
-  const confirmReview = useCallback(() => {
-    setReviewStatus('confirmed');
-    setReviewPopupOpen(false);
-  }, []);
+  // `confirmReview` is defined below, AFTER `showToast`, because it needs
+  // `showToast` in its dep array — declaring it here would hit `const`
+  // TDZ when React evaluates the deps. See definition below the toast helper.
+  // Double-click guard ref lives here so the type narrows above the consumer.
+  const approvingRef = useRef(false);
 
   // ── MKB picker handlers ──────────────────────────────────────
   const openMkbPicker = useCallback((target: MkbTarget) => {
@@ -545,6 +546,35 @@ export default function ResultPage() {
     toastIdRef.current += 1;
     setToast({ kind, message, id: toastIdRef.current });
   }, []);
+
+  // ── Review confirmation (server-persisted) ────────────────────
+  // The doctor's approval MUST persist server-side before the UI unlocks —
+  // POST /:id/export hard-gates on note_approved=true. Until the approve
+  // call returns ok we keep reviewStatus !== 'confirmed' so isLocked stays
+  // true and the popup stays open, mirroring the server's view of the row.
+  // approvingRef guards against double-click firing the request twice or
+  // optimistic unlocking on the second click.
+  const confirmReview = useCallback(async () => {
+    if (!original) return;
+    if (approvingRef.current) return;
+    if (reviewStatus === 'confirmed') return;
+    approvingRef.current = true;
+    try {
+      await api.approveConsultation(original.consultationId);
+      setReviewStatus('confirmed');
+      setReviewPopupOpen(false);
+    } catch (err) {
+      showToast(
+        'error',
+        'Грешка при потвърждаване: ' +
+          (err instanceof Error ? err.message : 'неизвестна'),
+      );
+      // Intentionally NOT flipping reviewStatus and NOT closing the popup —
+      // the doctor stays locked until the approval persists on the server.
+    } finally {
+      approvingRef.current = false;
+    }
+  }, [original, reviewStatus, showToast]);
 
   // Shared callback for per-section CopyButtons — reuses the same Bulgarian
   // strings as the topbar full-document copy so the affordance feels uniform.

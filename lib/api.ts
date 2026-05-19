@@ -17,6 +17,7 @@ import type {
   VisitStartResponse,
   TodayResponse,
   ConsentResponse,
+  ApproveResponse,
   ExportSignalPayload,
 } from './types';
 
@@ -239,6 +240,18 @@ export const api = {
   // No body needed; JWT identifies the doctor and the URL identifies the row.
   recordConsent: (consultationId: string) =>
     request<ConsentResponse>(`/api/consultations/${consultationId}/consent`, {
+      method: 'POST',
+    }),
+
+  // ── Approve generated note ─────────────────────────────────────────────
+  // Records the doctor's review approval against the consultation. Mirrors
+  // recordConsent: idempotent on the backend (first timestamp wins). Required
+  // before /export will succeed — POST /:id/export refuses with 403 +
+  // export_blocked_no_approval otherwise. The caller (confirmReview on the
+  // result page) blocks the UI unlock until this resolves, so this is NOT
+  // fire-and-forget; rejections must surface to the doctor.
+  approveConsultation: (consultationId: string) =>
+    request<ApproveResponse>(`/api/consultations/${consultationId}/approve`, {
       method: 'POST',
     }),
 };
