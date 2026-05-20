@@ -246,8 +246,9 @@ export interface ConsultationDetail {
   exported_at: string | null;
   visit_type: VisitType | null;
   chief_complaint: string | null;
-  osnovna_diagnoza: string | null;
-  osnovna_mkb: string | null;
+  // Phase 2 Step D — osnovna_diagnoza / osnovna_mkb are no longer separate
+  // columns on consultations; read them from `note.osnovna_diagnoza` /
+  // `note.osnovna_mkb` (the JSONB extracted_fields).
   note: TranscribeFields | null;
 }
 

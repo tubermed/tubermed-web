@@ -559,8 +559,8 @@ function ReadOnlyNote({ detail }: { detail: ConsultationDetail }) {
       <ReadOnlySection title="Диагнози МКБ-10">
         <DiagnosisDisplay
           label="Основна диагноза"
-          diagnoza={note.osnovna_diagnoza || detail.osnovna_diagnoza || ''}
-          mkb={note.osnovna_mkb || detail.osnovna_mkb || ''}
+          diagnoza={note.osnovna_diagnoza || ''}
+          mkb={note.osnovna_mkb || ''}
         />
         {pridr && (
           <div className="mt-4">
