@@ -74,7 +74,6 @@ export type WsMessage =
 export type NationalIdType = 'egn' | 'lnch' | 'foreign' | 'none';
 export type Gender         = 'male' | 'female' | 'other' | 'unknown';
 export type VisitType      = 'first' | 'followup' | 'urgent' | 'preventive' | 'remote';
-export type Template       = 'general';
 export type Locale         = 'bg';
 export type InsuranceStatus = 'nzok' | 'private' | 'uninsured' | (string & {});
 
@@ -181,7 +180,6 @@ export interface VisitStartPayload {
   patient_id: string;
   chief_complaint?: string | null;
   visit_type?: VisitType | null;
-  template?: Template;
 }
 
 export interface VisitStartResponse {
@@ -266,7 +264,6 @@ export interface PendingVisit {
   visit_metadata: {
     chief_complaint: string | null;
     visit_type: VisitType | null;
-    template: Template;
   };
   // Filled in once the doctor records patient consent on /app/scribe.
   // Survives a tab refresh so the ConsentModal does not nag a doctor who

@@ -11,7 +11,6 @@ import type {
   NationalIdType,
   PatientSummary,
   VisitType,
-  Template,
   Locale,
 } from '@/lib/types';
 
@@ -36,7 +35,6 @@ export interface PatientFormState {
   chief_complaint: string;
 
   // Documentation
-  template: Template;
   language: Locale;
 }
 
@@ -53,7 +51,6 @@ export const EMPTY_FORM: PatientFormState = {
   chronic_conditions: [],
   visit_type: '',
   chief_complaint: '',
-  template: 'general',
   language: 'bg',
 };
 
@@ -71,7 +68,6 @@ export function fromPatient(p: PatientSummary): PatientFormState {
     chronic_conditions: [...p.chronic_conditions],
     visit_type:         '',
     chief_complaint:    '',
-    template:           'general',
     language:           'bg',
   };
 }
@@ -471,14 +467,6 @@ function DocumentationSection({ state, set }: { state: PatientFormState; set: Se
   return (
     <SectionCard title="Документация">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <label>
-          <FieldLabel>Шаблон</FieldLabel>
-          <select className={inputClass()} style={inputStyle()}
-                  value={state.template}
-                  onChange={(e) => set('template', e.target.value as Template)}>
-            <option value="general">Общ амбулаторен лист</option>
-          </select>
-        </label>
         <label>
           <FieldLabel>Език</FieldLabel>
           <select className={inputClass()} style={inputStyle()}

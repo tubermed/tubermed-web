@@ -131,7 +131,6 @@ export default function NewVisitPage() {
         patient_id: patient.id,
         chief_complaint: form.chief_complaint.trim() || null,
         visit_type: form.visit_type || null,
-        template: form.template,
       });
 
       const pending: PendingVisit = {
@@ -140,7 +139,6 @@ export default function NewVisitPage() {
         visit_metadata: {
           chief_complaint: form.chief_complaint.trim() || null,
           visit_type: form.visit_type || null,
-          template: form.template,
         },
       };
       sessionStorage.setItem(PENDING_VISIT_KEY, JSON.stringify(pending));
