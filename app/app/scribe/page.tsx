@@ -220,39 +220,53 @@ function ScribePageInner() {
           )}
 
           {view === 'record' && (
-            <>
-              <ModeTabs mode={mode} onChange={setMode} />
+            <ModeTabs mode={mode} onChange={setMode} />
+          )}
 
-              {mode === 'phone' && (
-                <PhoneMode
-                  active={mode === 'phone'}
-                  consultationId={consultationId}
-                  onProcessing={() =>
-                    goToProcessing('AI анализира...', 'Транскрипция и извличане')
-                  }
-                  onResult={onResult}
-                  onError={setError}
-                />
-              )}
+          {/* PhoneMode owns a long-lived WebSocket and the recovery
+              (reconnect + slow-poll) path against /api/sessions/:id/status.
+              If it unmounts the moment view flips to 'processing', the WS
+              is torn down by its useEffect cleanup and the later
+              pushToSession({type:'result',…}) lands on a dead socket with
+              no listener — the PC stays stuck on "AI анализира" forever
+              even though sessions.result is populated. So we render
+              PhoneMode whenever mode === 'phone' (across both views) and
+              just hide its UI when view !== 'record'. CSS-hide, not
+              unmount: keeps the recovery path alive across the
+              transition. PcMode has no live socket — its result delivery
+              rides on the `await api.transcribe(...)` closure inside
+              stopRecording, which survives an unmount — so it stays
+              inside the view==='record' block. */}
+          {mode === 'phone' && (
+            <div style={{ display: view === 'record' ? 'block' : 'none' }}>
+              <PhoneMode
+                active={mode === 'phone'}
+                consultationId={consultationId}
+                onProcessing={() =>
+                  goToProcessing('AI анализира...', 'Транскрипция и извличане')
+                }
+                onResult={onResult}
+                onError={setError}
+              />
+            </div>
+          )}
 
-              {mode === 'pc' && (
-                <PcMode
-                  consultationId={consultationId}
-                  onRecordingChange={setPcRecording}
-                  onProcessing={() =>
-                    goToProcessing('Транскрипция...', 'Изпраща се аудиото')
-                  }
-                  onResult={onResult}
-                  onError={setError}
-                  onAuthError={() => {
-                    clearSession();
-                    router.replace('/app/login');
-                  }}
-                  onBackToIdle={() => setView('record')}
-                  requestConsent={requestConsent}
-                />
-              )}
-            </>
+          {view === 'record' && mode === 'pc' && (
+            <PcMode
+              consultationId={consultationId}
+              onRecordingChange={setPcRecording}
+              onProcessing={() =>
+                goToProcessing('Транскрипция...', 'Изпраща се аудиото')
+              }
+              onResult={onResult}
+              onError={setError}
+              onAuthError={() => {
+                clearSession();
+                router.replace('/app/login');
+              }}
+              onBackToIdle={() => setView('record')}
+              requestConsent={requestConsent}
+            />
           )}
         </div>
       </div>

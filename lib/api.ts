@@ -19,6 +19,8 @@ import type {
   ConsentResponse,
   ApproveResponse,
   ExportSignalPayload,
+  ConsultationDetailResponse,
+  PatientConsultationsResponse,
 } from './types';
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL!;
@@ -221,6 +223,30 @@ export const api = {
     }),
   revealNationalId: (patientId: string) =>
     request<RevealNationalIdResponse>(`/api/patients/${patientId}/national-id`),
+
+  // ── Patient history (read-only viewer) ─────────────────────────────────
+  // GET /api/consultations/:id returns ONE consultation's filed note for
+  // the read-only history viewer. `note` is the doctor's final extracted_
+  // fields OR null (pending/error/abandoned). Org-scoped server-side.
+  getConsultation: (consultationId: string) =>
+    request<ConsultationDetailResponse>(`/api/consultations/${consultationId}`),
+
+  // GET /api/patients/:id/consultations — paginated visit summaries
+  // (newest first). Page size defaults to 10, server clamps to <=50.
+  // Returns total + has_more so the "Покажи още" button can be driven
+  // from a single endpoint for first-page and subsequent loads alike.
+  getPatientConsultations: (
+    patientId: string,
+    offset = 0,
+    limit = 10,
+  ) => {
+    const u = new URLSearchParams();
+    u.set('offset', String(offset));
+    u.set('limit', String(limit));
+    return request<PatientConsultationsResponse>(
+      `/api/patients/${patientId}/consultations?${u.toString()}`,
+    );
+  },
 
   // ── Visit staging ──────────────────────────────────────────────────────
   startVisit: (payload: VisitStartPayload) =>

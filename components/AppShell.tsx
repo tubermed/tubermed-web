@@ -36,7 +36,7 @@ export default function AppShell({ doctor, sidebarLocked = false, children }: Ap
 // design specified.
 const NAV_ITEMS: NavItem[] = [
   { label: 'Нов преглед', href: '/app/new-visit',                          icon: <NewVisitIcon /> },
-  { label: 'Пациенти',    href: undefined, disabled: true,                  icon: <PatientsIcon /> },
+  { label: 'Пациенти',    href: '/app/patients',                            icon: <PatientsIcon /> },
   { label: 'Шаблони',     href: undefined, disabled: true,                  icon: <TemplatesIcon /> },
   { label: 'График',      href: undefined, disabled: true, badge: 'скоро',  icon: <CalendarIcon /> },
   { label: 'AI записи',   href: undefined, disabled: true, badge: 'скоро',  icon: <SparkleIcon /> },

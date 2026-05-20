@@ -215,6 +215,48 @@ export interface TodayResponse {
   consultations: TodayConsultation[];
 }
 
+// ── Patient history (Phase 3) ────────────────────────────────────────────────
+// Lightweight summary returned by GET /api/patients/:id/consultations.
+// Deliberately a subset of LastVisitSummary so the paginated list payload
+// stays small — full note fetched on click via GET /api/consultations/:id.
+export interface PatientConsultationSummary {
+  id: string;
+  status: string;
+  created_at: string;
+  visit_type: VisitType | null;
+  osnovna_diagnoza: string | null;
+  chief_complaint: string | null;
+}
+
+export interface PatientConsultationsResponse {
+  consultations: PatientConsultationSummary[];
+  total: number;
+  has_more: boolean;
+  offset: number;
+  limit: number;
+}
+
+// Returned by GET /api/consultations/:id. `note` reuses TranscribeFields —
+// the same shape /api/transcribe produces and /edit overwrites — so the
+// read-only history viewer can share field-rendering with the result page.
+// `note: null` is the normal empty case for pending/error/abandoned visits.
+export interface ConsultationDetail {
+  id: string;
+  status: string;
+  created_at: string;
+  started_at: string | null;
+  exported_at: string | null;
+  visit_type: VisitType | null;
+  chief_complaint: string | null;
+  osnovna_diagnoza: string | null;
+  osnovna_mkb: string | null;
+  note: TranscribeFields | null;
+}
+
+export interface ConsultationDetailResponse {
+  consultation: ConsultationDetail;
+}
+
 // Stored in sessionStorage to carry patient context from /app/new-visit
 // through /app/scribe to /app/scribe/result. The page that finds this absent
 // on /app/scribe redirects back to /app/new-visit (no recovery path yet).
