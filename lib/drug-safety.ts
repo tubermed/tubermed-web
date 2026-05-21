@@ -17,6 +17,13 @@ export interface SafetyAlert {
   severity: Severity;
   message: string;
   triggers: string[];
+  /** Optional concrete remediation step shown as a sub-line under message.
+   *  Populated from backend Claude-generated alerts; frontend regex engine
+   *  leaves it undefined. */
+  action?: string;
+  /** Where this alert originated. Used for deduplication and (eventually)
+   *  analytics on which engine catches what. */
+  source?: 'backend' | 'frontend';
 }
 
 type AllergyRule = {
@@ -306,6 +313,7 @@ export function checkDrugSafety(f: TranscribeFields): SafetyAlert[] {
           severity: rule.severity,
           message: rule.message,
           triggers: rule.drugs.filter((d) => prescribedText.includes(d)),
+          source: 'frontend',
         });
       }
     } else if (rule.type === 'interaction') {
@@ -318,6 +326,7 @@ export function checkDrugSafety(f: TranscribeFields): SafetyAlert[] {
           triggers: [...rule.drugs1, ...rule.drugs2].filter((d) =>
             prescribedText.includes(d)
           ),
+          source: 'frontend',
         });
       }
     } else if (rule.type === 'drug-diag') {
@@ -328,9 +337,94 @@ export function checkDrugSafety(f: TranscribeFields): SafetyAlert[] {
           severity: rule.severity,
           message: rule.message,
           triggers: rule.drugs1.filter((d) => prescribedText.includes(d)),
+          source: 'frontend',
         });
       }
     }
   }
   return alerts;
+}
+
+// ── Backend ↔ frontend merge ────────────────────────────────────────
+// Backend Claude-generated alerts live in fields.med_alerts and are the
+// preferred source — they're context-aware and explain WHY the alert fires.
+// Frontend regex rules are a safety net for cases backend missed (e.g.
+// drug-name typos like "дикофенак" vs "диклофенак" that survive Soniox).
+//
+// Strategy: take all backend alerts, then add frontend alerts whose triggers
+// don't already appear in any backend alert. Deduplication is shallow on
+// purpose — for safety code, a duplicate alert is better than a missed one.
+
+interface BackendAlert {
+  drug?: string;
+  severity?: string;
+  reason?: string;
+  action?: string;
+}
+
+function normalizeBackendSeverity(s: string | undefined): Severity {
+  // Backend prompt emits 'CRITICAL' | 'WARNING' (uppercase per STEP 3 contract).
+  // Frontend type is lowercase. Default to 'warning' for any unknown — safer
+  // to flag than to silently drop.
+  if (typeof s === 'string' && s.toUpperCase() === 'CRITICAL') return 'critical';
+  return 'warning';
+}
+
+function adaptBackendAlert(a: BackendAlert): SafetyAlert | null {
+  // Drop entries with neither a drug nor a reason — nothing useful to show.
+  const drug = (a.drug || '').trim();
+  const reason = (a.reason || '').trim();
+  if (!drug && !reason) return null;
+  const message = reason || `Внимание: ${drug}`;
+  return {
+    severity: normalizeBackendSeverity(a.severity),
+    message,
+    triggers: drug ? [drug.toLowerCase()] : [],
+    action: a.action?.trim() || undefined,
+    source: 'backend',
+  };
+}
+
+/**
+ * Build the doctor-facing alert list by merging backend Claude alerts
+ * (preferred) with frontend regex alerts (safety net for typos / cases
+ * Claude missed).
+ *
+ * Dedup rule: a frontend alert is suppressed only when its trigger drug
+ * already appears (case-insensitive substring match either direction) in
+ * a backend alert's triggers. Different drugs from the same rule still
+ * surface — never silently swallow a frontend hit on a drug the backend
+ * didn't mention.
+ */
+export function mergeBackendAlerts(
+  backendAlerts: unknown,
+  fields: TranscribeFields
+): SafetyAlert[] {
+  const backend: SafetyAlert[] = Array.isArray(backendAlerts)
+    ? (backendAlerts as BackendAlert[])
+        .map(adaptBackendAlert)
+        .filter((a): a is SafetyAlert => a !== null)
+    : [];
+
+  const frontend = checkDrugSafety(fields);
+
+  const backendDrugs = new Set(
+    backend.flatMap((a) => a.triggers).map((t) => t.toLowerCase())
+  );
+
+  const frontendDeduped = frontend.filter((fa) => {
+    // Suppress only if EVERY trigger of this frontend alert is already
+    // covered by some backend trigger (or its substring). Conservative —
+    // partial overlap still surfaces.
+    if (fa.triggers.length === 0) return true;
+    return !fa.triggers.every((t) => {
+      const lt = t.toLowerCase();
+      for (const bt of backendDrugs) {
+        if (bt.includes(lt) || lt.includes(bt)) return true;
+      }
+      return false;
+    });
+  });
+
+  return [...backend, ...frontendDeduped];
 }

@@ -160,6 +160,17 @@ export default function MedsPanel({
                     Внимание
                   </div>
                   <div className="mt-0.5">{a.message}</div>
+                  {a.action && (
+                    <div
+                      className="mt-1 pt-1 text-[10.5px] leading-snug border-t"
+                      style={{
+                        borderColor: 'currentColor',
+                        opacity: 0.85,
+                      }}
+                    >
+                      <span className="font-medium">Действие:</span> {a.action}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

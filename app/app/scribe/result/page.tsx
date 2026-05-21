@@ -21,7 +21,7 @@ import type {
   PendingVisit,
   ExportSignalPayload,
 } from '@/lib/types';
-import { checkDrugSafety, type SafetyAlert } from '@/lib/drug-safety';
+import { mergeBackendAlerts, type SafetyAlert } from '@/lib/drug-safety';
 import { loadMkb, getMkbDataSync, findByCode } from '@/lib/mkb10';
 import { loadIal } from '@/lib/ial-meds';
 import { findHighlights, type HighlightMatch } from '@/lib/vital-rules';
@@ -356,7 +356,13 @@ export default function ResultPage() {
   );
 
   // ── Safety alerts (derived from fields) ──────────────────────
-  const safetyAlerts = useMemo(() => checkDrugSafety(fields), [fields]);
+  // Merge backend Claude-generated alerts (preferred — context-aware, with
+  // reason + action) with frontend regex alerts (safety net for cases the
+  // backend missed, e.g. drug-name typos). See lib/drug-safety.ts.
+  const safetyAlerts = useMemo(
+    () => mergeBackendAlerts(fields.med_alerts, fields),
+    [fields]
+  );
   const criticals = useMemo(
     () => safetyAlerts.filter((a) => a.severity === 'critical'),
     [safetyAlerts]
@@ -1215,6 +1221,17 @@ function WarningChip({ alert }: { alert: SafetyAlert }) {
           Предупреждение
         </div>
         {alert.message}
+        {alert.action && (
+          <div
+            className="mt-1 pt-1 text-[11px] leading-snug border-t"
+            style={{
+              borderColor: 'var(--color-gold)',
+              opacity: 0.85,
+            }}
+          >
+            <span className="font-medium">Действие:</span> {alert.action}
+          </div>
+        )}
       </div>
     </div>
   );
