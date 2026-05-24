@@ -306,6 +306,13 @@ export function checkDrugSafety(f: TranscribeFields): SafetyAlert[] {
 
   for (const rule of RULES) {
     if (rule.type === 'allergy') {
+      // Guardrail: drug names appear in `anamneza` as CURRENT therapy, not
+      // as allergies. Require an explicit allergy/intolerance stem in
+      // allergyText before any allergy match is allowed to fire. The
+      // `alergii` field (when populated by extraction) typically carries
+      // such terms; bare drug-name mention in anamneza alone must not
+      // imply allergy.
+      if (!/алерг|непоносим|intoleran/i.test(allergyText)) continue;
       const allergyHit = rule.allergy.some((k) => allergyText.includes(k));
       const drugHit = rule.drugs.some((k) => prescribedText.includes(k));
       if (allergyHit && drugHit) {
