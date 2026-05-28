@@ -35,14 +35,14 @@ export default function PatientSearch({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const wrapRef  = useRef<HTMLDivElement | null>(null);
 
-  // Debounced search
+  // Debounced search. Only the async callback calls setState — allowed under
+  // React 19's react-hooks/set-state-in-effect. Immediate UI feedback
+  // (spinner-on, clear-on-empty) lives in the input onChange + handlePick
+  // handlers, so this effect body performs NO synchronous setState. Behavior
+  // (timing, stale guard, spinner, results/hint/match) is unchanged.
   useEffect(() => {
     const query = q.trim();
-    if (!query) {
-      setResults([]); setHint(null); setMatch('none'); setLoading(false);
-      return;
-    }
-    setLoading(true);
+    if (!query) return;             // empty-state reset handled in onChange / handlePick
     const myId = ++reqIdRef.current;
     const t = setTimeout(async () => {
       try {
@@ -77,7 +77,12 @@ export default function PatientSearch({
       onPick(hit);
       setQ('');
       setOpen(false);
+      // Reset search state here — the effect no longer does it on empty q.
+      // Matches the old empty-branch (results/hint/match/loading all cleared).
       setResults([]);
+      setHint(null);
+      setMatch('none');
+      setLoading(false);
     },
     [onPick]
   );
@@ -118,7 +123,21 @@ export default function PatientSearch({
           ref={inputRef}
           type="text"
           value={q}
-          onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onChange={(e) => {
+            const v = e.target.value;
+            setQ(v);
+            setOpen(true);
+            // Immediate feedback in the event handler (not the effect): spinner
+            // on as soon as there's a query, eager reset when the field clears.
+            if (v.trim()) {
+              setLoading(true);
+            } else {
+              setResults([]);
+              setHint(null);
+              setMatch('none');
+              setLoading(false);
+            }
+          }}
           onFocus={() => setOpen(true)}
           placeholder={placeholder}
           className="flex-1 outline-none bg-transparent text-sm"
@@ -160,7 +179,7 @@ export default function PatientSearch({
                   className="text-sm font-medium hover:underline"
                   style={{ color: 'var(--color-brand)' }}
                 >
-                  + Създай нов пациент „{q.trim()}"
+                  + Създай нов пациент {`„${q.trim()}"`}
                 </button>
               )}
             </div>
