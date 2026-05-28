@@ -42,16 +42,41 @@ export default function NewVisitPage() {
     setToast({ kind, message, id: Date.now() });
   }, []);
 
-  // ── Selecting an existing patient from the top-bar search ────────────────
-  const handlePickFromSearch = useCallback(async (hit: PatientSearchHit) => {
+  // ── Shared load path ─────────────────────────────────────────────────────
+  // The ONE place that loads an existing patient into the form:
+  // getPatient → setSelected → setForm(fromPatient(...)). Both the top-bar
+  // search pick AND the form's ЕГН auto-match route through this — no
+  // duplicated getPatient/fromPatient/setForm sequence.
+  const loadExistingPatient = useCallback(async (id: string) => {
     try {
-      const detail = await api.getPatient(hit.id);
+      const detail = await api.getPatient(id);
       setSelected(detail.patient);
       setForm(fromPatient(detail.patient));
     } catch (err) {
       showToast('error', err instanceof ApiError ? err.message : 'Грешка при зареждане');
     }
   }, [showToast]);
+
+  // Top-bar search pick.
+  const handlePickFromSearch = useCallback(
+    (hit: PatientSearchHit) => loadExistingPatient(hit.id),
+    [loadExistingPatient]
+  );
+
+  // Form ЕГН field matched an existing patient; doctor clicked the row.
+  // After the shared load (which blanks national_id via fromPatient for GDPR),
+  // re-apply the ЕГН the DOCTOR typed this session — already plaintext in their
+  // hands by their own action, unlike a DB-fetched value. Functional update so
+  // it merges on top of loadExistingPatient's setForm with no stale-state race.
+  // This persist lives ONLY here, never in the shared helper, so the top-search
+  // pick still blanks correctly.
+  const handleEgnMatchLoad = useCallback(
+    async (hit: PatientSearchHit, typedEgn: string) => {
+      await loadExistingPatient(hit.id);
+      setForm((prev) => ({ ...prev, national_id: typedEgn }));
+    },
+    [loadExistingPatient]
+  );
 
   const handleClearSelection = useCallback(() => {
     setSelected(null);
@@ -223,6 +248,7 @@ export default function NewVisitPage() {
             isSaving={saving}
             onSaveDraft={handleSaveDraft}
             onStartVisit={handleStartVisit}
+            onEgnMatchLoad={handleEgnMatchLoad}
           />
         </div>
         <div>

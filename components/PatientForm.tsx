@@ -1,18 +1,24 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { dobFromEgn, genderFromEgn } from '@/lib/egn';
 import { ageFromBirthDate } from '@/lib/age';
+import { api } from '@/lib/api';
 import ChipInput from './ChipInput';
 import MkbPicker from './MkbPicker';
+import PatientResultRow from './PatientResultRow';
 import type {
   CreatePatientPayload,
   Gender,
   NationalIdType,
+  PatientSearchHit,
   PatientSummary,
   VisitType,
   Locale,
 } from '@/lib/types';
+
+// Debounce for the form's ЕГН auto-lookup — same spirit as PatientSearch's.
+const EGN_LOOKUP_DEBOUNCE_MS = 250;
 
 // ── Form state shape (everything the page edits in one place) ───────────────
 export interface PatientFormState {
@@ -97,6 +103,9 @@ interface PatientFormProps {
   isSaving?: boolean;
   onSaveDraft: () => void;
   onStartVisit: () => void;
+  /** Doctor clicked the ЕГН-field auto-match row. `typedEgn` is the exact ЕГН
+   *  the doctor entered (the lookup key) — the caller re-applies it after load. */
+  onEgnMatchLoad?: (hit: PatientSearchHit, typedEgn: string) => void;
 }
 
 export default function PatientForm({
@@ -106,6 +115,7 @@ export default function PatientForm({
   isSaving,
   onSaveDraft,
   onStartVisit,
+  onEgnMatchLoad,
 }: PatientFormProps) {
   const set = useCallback(
     <K extends keyof PatientFormState>(key: K, value: PatientFormState[K]) =>
@@ -138,7 +148,14 @@ export default function PatientForm({
 
   return (
     <div className="flex flex-col gap-6">
-      <IdentificationSection state={state} set={set} setMany={setMany} age={age} />
+      <IdentificationSection
+        state={state}
+        set={set}
+        setMany={setMany}
+        age={age}
+        isExistingPatient={isExistingPatient}
+        onEgnMatchLoad={onEgnMatchLoad}
+      />
       <ClinicalContextSection state={state} set={set} />
       <VisitTypeSection state={state} set={set} />
       <ChiefComplaintSection state={state} set={set} />
@@ -216,12 +233,14 @@ function inputStyle(): React.CSSProperties {
 }
 
 function IdentificationSection({
-  state, set, setMany, age,
+  state, set, setMany, age, isExistingPatient, onEgnMatchLoad,
 }: {
   state: PatientFormState;
   set: SetFn;
   setMany: (partial: Partial<PatientFormState>) => void;
   age: number | null;
+  isExistingPatient?: boolean;
+  onEgnMatchLoad?: (hit: PatientSearchHit, typedEgn: string) => void;
 }) {
   // Validity derivation — runs every render so we never display stale flags.
   const isEgn       = state.national_id_type === 'egn';
@@ -229,6 +248,41 @@ function IdentificationSection({
   const derivedDob  = isEgn && ten ? dobFromEgn(state.national_id) : null;
   const egnInvalid  = isEgn && ten && derivedDob === null;
   const egnValid    = isEgn && ten && derivedDob !== null;
+
+  // ── ЕГН auto-lookup (form-field convenience) ─────────────────────────────
+  // When a complete, valid ЕГН is typed AND we're not already bound to an
+  // existing patient, look the patient up (the backend does exact ЕГН-hash
+  // matching when q is 10 digits) and offer a one-click load. Debounced +
+  // stale-guarded (reqId) like PatientSearch so mid-type corrections don't
+  // storm the API. Non-blocking: nothing auto-loads — the doctor clicks Зареди.
+  // Match is stored WITH the ЕГН it was found for. The prompt only renders when
+  // `egnMatch.egn === state.national_id`, so a stale match from a previous ЕГН
+  // is hidden automatically the instant the field changes — no need to clear it
+  // synchronously inside the effect (React 19 flags synchronous setState in an
+  // effect body). setState happens only inside the debounced async callback.
+  const [egnMatch, setEgnMatch] = useState<{ egn: string; hit: PatientSearchHit } | null>(null);
+  const lookupReqRef = useRef(0);
+
+  useEffect(() => {
+    // Only fire for a fresh, complete, valid ЕГН on a not-yet-loaded patient.
+    // egnValid is false for <10 digits and for lnch/foreign/none, so this never
+    // fires on partial input or non-ЕГН types. No synchronous setState here.
+    if (isExistingPatient || !egnValid) return;
+    const egn = state.national_id;
+    const myId = ++lookupReqRef.current;
+    const t = setTimeout(async () => {
+      try {
+        const data = await api.searchPatients(egn, 5);
+        if (myId !== lookupReqRef.current) return;          // stale — a newer ЕГН superseded this
+        const hit = data.patients[0] ?? null;               // exact ЕГН-hash match → 0 or 1 row
+        setEgnMatch(hit ? { egn, hit } : null);
+      } catch {
+        if (myId !== lookupReqRef.current) return;
+        setEgnMatch(null);
+      }
+    }, EGN_LOOKUP_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [state.national_id, egnValid, isExistingPatient]);
 
   // Handles every keystroke on the ЕГН input. For type='egn' specifically:
   // re-derives DOB + gender on every change. When DOB can't be parsed (length
@@ -305,6 +359,20 @@ function IdentificationSection({
                 style={{ color: 'var(--color-ok)' }}
                 title="Валидно ЕГН"
               >✓</span>
+            )}
+            {/* ЕГН auto-match dropdown — same row UI as the top search box
+                (PatientResultRow). Anchored under the input; the egn-equality
+                guard hides a stale match the instant the field changes. */}
+            {egnMatch && egnMatch.egn === state.national_id && egnValid && !isExistingPatient && (
+              <div
+                className="absolute left-0 right-0 top-full mt-1 rounded-md shadow-lg z-40 overflow-hidden"
+                style={{ background: 'white', border: '1px solid var(--color-border)' }}
+              >
+                <PatientResultRow
+                  hit={egnMatch.hit}
+                  onClick={() => onEgnMatchLoad?.(egnMatch.hit, egnMatch.egn)}
+                />
+              </div>
             )}
           </span>
           {egnInvalid && (
