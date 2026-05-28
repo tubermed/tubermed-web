@@ -123,7 +123,18 @@ export default function PatientForm({
   );
 
   const age = useMemo(() => ageFromBirthDate(state.birth_date), [state.birth_date]);
-  const canSubmit = state.first_name.trim() && state.last_name.trim();
+
+  // Mirrors IdentificationSection's `egnInvalid`: true ONLY when type is ЕГН,
+  // exactly 10 digits are entered, AND those digits can't decode to a real past
+  // birth date — the unambiguously-bad, format-derivable-impossible case. A
+  // partial (<10-digit) ЕГН is neither valid nor invalid here, so it stays
+  // submittable as a draft; non-ЕГН types ('lnch'/'foreign'/'none') are
+  // unaffected because the `=== 'egn'` guard keeps this false for them.
+  const egnInvalid =
+    state.national_id_type === 'egn' &&
+    state.national_id.length === 10 &&
+    dobFromEgn(state.national_id) === null;
+  const canSubmit = Boolean(state.first_name.trim() && state.last_name.trim() && !egnInvalid);
 
   return (
     <div className="flex flex-col gap-6">
