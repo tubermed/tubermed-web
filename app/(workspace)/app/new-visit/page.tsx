@@ -9,9 +9,11 @@ import PatientForm, {
   EMPTY_FORM,
   fromPatient,
   toCreatePayload,
+  changedEditableLabels,
   type PatientFormState,
 } from '@/components/PatientForm';
 import DedupModal from '@/components/DedupModal';
+import EgnSwitchGuardModal from '@/components/EgnSwitchGuardModal';
 import TodayConsultations from '@/components/TodayConsultations';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import { api, ApiError, getSession } from '@/lib/api';
@@ -37,6 +39,15 @@ export default function NewVisitPage() {
   const [saving, setSaving]         = useState(false);
   const [toast, setToast]           = useState<ToastData | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Held ЕГН change: set when the doctor edits national_id away from a loaded
+  // patient that has unsaved edits. `pendingForm` is the not-yet-applied form
+  // state; we hold it until the doctor saves or cancels.
+  const [egnGuard, setEgnGuard] = useState<{
+    pendingForm: PatientFormState;
+    changedLabels: string[];
+    patientName: string;
+  } | null>(null);
 
   const showToast = useCallback((kind: ToastKind, message: string) => {
     setToast({ kind, message, id: Date.now() });
@@ -95,6 +106,28 @@ export default function NewVisitPage() {
     });
   }, []);
 
+  // ── Form change interceptor (ЕГН-switch guard) ───────────────────────────
+  // The single onChange the form reports through. When the doctor edits the
+  // ЕГН field on a loaded patient that already has unsaved edits, hold the
+  // change and surface a modal instead of applying it — otherwise the edits
+  // would be silently discarded when a different patient loads. Every other
+  // change (and ЕГН edits with no pending edits, or on a fresh draft) applies
+  // straight through.
+  const handleFormChange = useCallback((next: PatientFormState) => {
+    if (selected && next.national_id !== form.national_id) {
+      const changedLabels = changedEditableLabels(form, selected);
+      if (changedLabels.length > 0) {
+        setEgnGuard({
+          pendingForm: next,
+          changedLabels,
+          patientName: [selected.first_name, selected.last_name].filter(Boolean).join(' '),
+        });
+        return; // HOLD — input reverts to the loaded ЕГН until the doctor chooses
+      }
+    }
+    setForm(next);
+  }, [selected, form]);
+
   // ── POST /api/patients with dedup handling ───────────────────────────────
   const persistPatient = useCallback(async (s: PatientFormState, force: boolean): Promise<PatientSummary | null> => {
     if (selected) {
@@ -133,6 +166,38 @@ export default function NewVisitPage() {
       return null;
     }
   }, [selected, showToast]);
+
+  // ── ЕГН-switch guard handlers ────────────────────────────────────────────
+  // [Запази промените]: PATCH the loaded patient with the current edits, then
+  // let the held ЕГН change proceed as a fresh entry (selection cleared so the
+  // new value can trigger a normal match/load).
+  const onEgnGuardSave = useCallback(async () => {
+    const held = egnGuard;
+    if (!held) return;
+    setSaving(true);
+    const patient = await persistPatient(form, false); // selected truthy → PATCH path
+    setSaving(false);
+    if (!patient) return; // save failed (toast shown) — keep modal open, nothing lost
+    setEgnGuard(null);
+    setSelected(null);
+    // Only the PATIENT identity swaps. Carry over the visit context the doctor
+    // already typed (chief_complaint, visit_type) — resetting those would be the
+    // same silent data loss this guard exists to prevent.
+    setForm({
+      ...EMPTY_FORM,
+      national_id_type: held.pendingForm.national_id_type,
+      national_id:      held.pendingForm.national_id,
+      birth_date:       held.pendingForm.birth_date,
+      gender:           held.pendingForm.gender,
+      chief_complaint:  form.chief_complaint,
+      visit_type:       form.visit_type,
+    });
+    showToast('success', 'Промените са запазени.');
+  }, [egnGuard, form, persistPatient, showToast]);
+
+  // [Отказ]: discard the held change. The form was never updated, so the ЕГН
+  // input reverts to the loaded patient's value and the edits stay intact.
+  const onEgnGuardCancel = useCallback(() => setEgnGuard(null), []);
 
   // ── Footer buttons ───────────────────────────────────────────────────────
   const handleSaveDraft = useCallback(async () => {
@@ -243,7 +308,7 @@ export default function NewVisitPage() {
         <div className="min-w-0">
           <PatientForm
             state={form}
-            onChange={setForm}
+            onChange={handleFormChange}
             isExistingPatient={!!selected}
             isSaving={saving}
             onSaveDraft={handleSaveDraft}
@@ -261,6 +326,15 @@ export default function NewVisitPage() {
         onUseExisting={onDedupUseExisting}
         onForceCreate={onDedupForceCreate}
         onCancel={() => { setDedup(null); setPendingPayload(null); }}
+      />
+
+      <EgnSwitchGuardModal
+        open={!!egnGuard}
+        patientName={egnGuard?.patientName ?? ''}
+        changedLabels={egnGuard?.changedLabels ?? []}
+        saving={saving}
+        onSave={onEgnGuardSave}
+        onCancel={onEgnGuardCancel}
       />
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />

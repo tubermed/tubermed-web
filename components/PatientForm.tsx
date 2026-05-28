@@ -78,6 +78,40 @@ export function fromPatient(p: PatientSummary): PatientFormState {
   };
 }
 
+// Fields editable on an already-loaded patient — exactly the set
+// persistPatient/updatePatient sends — paired with their Bulgarian labels.
+// national_id is deliberately absent: it's the value being changed, never compared.
+const EDITABLE_FIELD_LABELS: Array<{ key: keyof PatientFormState; label: string }> = [
+  { key: 'first_name',         label: 'Име' },
+  { key: 'middle_name',        label: 'Презиме' },
+  { key: 'last_name',          label: 'Фамилия' },
+  { key: 'birth_date',         label: 'Дата на раждане' },
+  { key: 'gender',             label: 'Пол' },
+  { key: 'allergies',          label: 'Алергии' },
+  { key: 'chronic_conditions', label: 'Хронични заболявания' },
+  { key: 'insurance_status',   label: 'Здравен статус' },
+];
+
+const sortedJoin = (arr: string[]) => [...arr].sort().join(' ');
+
+// Bulgarian labels of the editable fields whose form value differs from the
+// loaded patient. Baseline is fromPatient(patient) so the normalization
+// (null→'', insurance default) matches exactly how the form was populated.
+// Arrays compared order-insensitively by content, not reference.
+export function changedEditableLabels(form: PatientFormState, patient: PatientSummary): string[] {
+  const baseline = fromPatient(patient);
+  const labels: string[] = [];
+  for (const { key, label } of EDITABLE_FIELD_LABELS) {
+    const a = form[key];
+    const b = baseline[key];
+    const differs = Array.isArray(a) && Array.isArray(b)
+      ? sortedJoin(a) !== sortedJoin(b)
+      : a !== b;
+    if (differs) labels.push(label);
+  }
+  return labels;
+}
+
 export function toCreatePayload(s: PatientFormState, force = false): CreatePatientPayload {
   return {
     national_id_type:   s.national_id_type,
