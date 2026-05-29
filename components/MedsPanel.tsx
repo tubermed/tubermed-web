@@ -388,7 +388,7 @@ function MedRow({
     >
       <div className="flex-1 min-w-0 self-center">
         <div
-          className="flex items-center gap-1.5 min-w-0"
+          className="flex items-start gap-1.5 min-w-0"
           style={{
             color: triggered ? 'var(--color-red)' : 'var(--color-text)',
           }}
@@ -403,7 +403,7 @@ function MedRow({
           >
             {rx ? 'Rx' : 'БЛП'}
           </span>
-          <div className="text-sm font-medium leading-tight truncate min-w-0">
+          <div className="text-sm font-medium leading-snug min-w-0 break-words [overflow-wrap:anywhere]">
             {triggered && <span className="mr-1">🚨</span>}
             {med.inn || (
               <span style={{ color: 'var(--color-gold)' }}>

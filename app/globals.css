@@ -110,12 +110,32 @@ html, body {
 
 .result-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 220px) 1fr minmax(220px, 260px);
+  /* Center track is minmax(0, 1fr) — not the implicit minmax(auto, 1fr) — so a
+     long unbreakable string in the document can never force the grid wider than
+     <main> and push the meds rail off-screen. */
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr) minmax(220px, 260px);
   gap: 24px;
   padding: 24px;
 }
 
+/* Intermediate step. When the 252px sidebar squeezes <main> below the
+   3-column comfort width, drop the LEFT section-nav aside first but KEEP the
+   right meds rail. The meds panel is safety-critical and must stay visible at
+   every desktop width, so it survives far longer than the (convenience) nav.
+   Without this step the old hard collapse hid BOTH asides at ~1280px viewport,
+   making the meds panel disappear inside the required-visible range. */
 @container (max-width: 1024px) {
+  .result-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 260px);
+  }
+  .result-grid > aside:first-of-type {
+    display: none;
+  }
+}
+
+/* Truly narrow (mobile / very small windows) — single column, document only.
+   Both asides hide here; the rail is allowed to drop only on small screens. */
+@container (max-width: 720px) {
   .result-grid {
     grid-template-columns: 1fr;
     padding: 16px;
