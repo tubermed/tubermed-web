@@ -4,7 +4,6 @@ import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import WorkspaceTopBar from '@/components/WorkspaceTopBar';
 import { SCRIBE_FLOW_STEPS } from '@/lib/flow';
-import PatientSearch from '@/components/PatientSearch';
 import PatientForm, {
   EMPTY_FORM,
   fromPatient,
@@ -55,55 +54,76 @@ export default function NewVisitPage() {
 
   // ── Shared load path ─────────────────────────────────────────────────────
   // The ONE place that loads an existing patient into the form:
-  // getPatient → setSelected → setForm(fromPatient(...)). Both the top-bar
-  // search pick AND the form's ЕГН auto-match route through this — no
-  // duplicated getPatient/fromPatient/setForm sequence.
-  const loadExistingPatient = useCallback(async (id: string) => {
+  // getPatient → setSelected → setForm(fromPatient(...)). Both the form's name
+  // typeahead pick AND the form's ЕГН instant auto-load route through this — no
+  // duplicated getPatient/fromPatient/setForm sequence. getPatient pulls the
+  // full record incl. allergies + chronic_conditions (the drug-safety engine
+  // depends on those being loaded). Returns the patient (or null on failure) so
+  // callers can chain a follow-up (re-apply typed ЕГН / reveal plaintext) only
+  // when the load actually succeeded. fromPatient blanks national_id for GDPR —
+  // plaintext is NEVER sourced from getPatient/search, only from revealNationalId.
+  // `method` ('egn_typed' | 'name_pick') is forwarded to the backend's
+  // patient_viewed audit event so the load context is distinguishable.
+  const loadExistingPatient = useCallback(async (
+    id: string,
+    method: 'egn_typed' | 'name_pick',
+  ): Promise<PatientSummary | null> => {
     try {
-      const detail = await api.getPatient(id);
+      const detail = await api.getPatient(id, method);
       setSelected(detail.patient);
       setForm(fromPatient(detail.patient));
+      return detail.patient;
     } catch (err) {
       showToast('error', err instanceof ApiError ? err.message : 'Грешка при зареждане');
+      return null;
     }
   }, [showToast]);
 
-  // Top-bar search pick.
-  const handlePickFromSearch = useCallback(
-    (hit: PatientSearchHit) => loadExistingPatient(hit.id),
+  // Name-typeahead confirm-load. After the shared load (which blanks national_id),
+  // reveal the plaintext ЕГН ONCE via the audit-logged revealNationalId endpoint
+  // and show it in the field — the confirm is the deliberate, logged action, so
+  // displaying the full ЕГН here is in scope. NO 30s auto-hide on this new-visit
+  // path (the patients browsing page keeps masked + manual reveal + auto-hide).
+  // Functional setForm merges onto fromPatient's result with no stale-state race.
+  const handlePickFromName = useCallback(
+    async (hit: PatientSearchHit) => {
+      const patient = await loadExistingPatient(hit.id, 'name_pick');
+      if (!patient) return;
+      try {
+        // 'name_load_autoreveal' tags this as the automatic reveal-on-load,
+        // distinct from a deliberate показване click ('manual_reveal').
+        const { national_id } = await api.revealNationalId(patient.id, 'name_load_autoreveal');
+        if (national_id) setForm((prev) => ({ ...prev, national_id }));
+      } catch {
+        // Reveal failed — leave the ЕГН field blank; non-fatal, the name is loaded.
+      }
+    },
     [loadExistingPatient]
   );
 
-  // Form ЕГН field matched an existing patient; doctor clicked the row.
+  // Form ЕГН field resolved to an existing patient → instant auto-load (FIX 1).
   // After the shared load (which blanks national_id via fromPatient for GDPR),
   // re-apply the ЕГН the DOCTOR typed this session — already plaintext in their
   // hands by their own action, unlike a DB-fetched value. Functional update so
   // it merges on top of loadExistingPatient's setForm with no stale-state race.
-  // This persist lives ONLY here, never in the shared helper, so the top-search
-  // pick still blanks correctly.
+  // This persist lives ONLY here, never in the shared helper, so the name-pick
+  // path stays plaintext-free until its explicit revealNationalId call.
   const handleEgnMatchLoad = useCallback(
     async (hit: PatientSearchHit, typedEgn: string) => {
-      await loadExistingPatient(hit.id);
+      const patient = await loadExistingPatient(hit.id, 'egn_typed');
+      if (!patient) return;
       setForm((prev) => ({ ...prev, national_id: typedEgn }));
     },
     [loadExistingPatient]
   );
 
+  // Clear the loaded patient → back to the empty NEW-patient form. setForm runs
+  // directly (NOT through handleFormChange), so the ЕГН-switch guard never fires
+  // on a clear, and the dirty-tracker (changedEditableLabels vs `selected`) is
+  // reset cleanly because `selected` goes null in the same pass.
   const handleClearSelection = useCallback(() => {
     setSelected(null);
     setForm(EMPTY_FORM);
-  }, []);
-
-  // Prefill name from the search query when creating fresh from a zero-result state.
-  const handleCreateFromSearch = useCallback((query: string) => {
-    const parts = query.trim().split(/\s+/);
-    setSelected(null);
-    setForm({
-      ...EMPTY_FORM,
-      first_name: parts[0] || '',
-      middle_name: parts.length > 2 ? parts.slice(1, -1).join(' ') : '',
-      last_name:  parts.length > 1 ? parts[parts.length - 1] : '',
-    });
   }, []);
 
   // ── Form change interceptor (ЕГН-switch guard) ───────────────────────────
@@ -245,7 +265,7 @@ export default function NewVisitPage() {
     setDedup(null);
     setPendingPayload(null);
     try {
-      const detail = await api.getPatient(hit.id);
+      const detail = await api.getPatient(hit.id, 'dedup_pick');
       setSelected(detail.patient);
       setForm(fromPatient(detail.patient));
       showToast('info', 'Зареден е съществуващият пациент.');
@@ -293,14 +313,6 @@ export default function NewVisitPage() {
         steps={SCRIBE_FLOW_STEPS}
         current={0}
         doctorInitials={doctorInitials}
-        searchSlot={
-          <PatientSearch
-            onPick={handlePickFromSearch}
-            onCreateNew={handleCreateFromSearch}
-            selectedLabel={selected ? patientLabel : null}
-            onClearSelection={handleClearSelection}
-          />
-        }
       />
 
       <div className="flex-1 grid gap-6 px-6 py-6"
@@ -310,10 +322,13 @@ export default function NewVisitPage() {
             state={form}
             onChange={handleFormChange}
             isExistingPatient={!!selected}
+            selectedPatient={selected}
             isSaving={saving}
             onSaveDraft={handleSaveDraft}
             onStartVisit={handleStartVisit}
             onEgnMatchLoad={handleEgnMatchLoad}
+            onNamePick={handlePickFromName}
+            onClearSelection={handleClearSelection}
           />
         </div>
         <div>

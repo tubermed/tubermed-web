@@ -22,7 +22,7 @@ export default function RevealEgnButton({ patientId, last4, autoHideMs = 30_000 
     if (loading || plain) return;
     setLoad(true); setErr(null);
     try {
-      const data = await api.revealNationalId(patientId);
+      const data = await api.revealNationalId(patientId, 'manual_reveal');
       setPlain(data.national_id);
       hideTimer.current = setTimeout(() => setPlain(null), autoHideMs);
     } catch (e) {

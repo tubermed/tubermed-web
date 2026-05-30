@@ -8,8 +8,6 @@ interface WorkspaceTopBarProps {
   /** Stepper steps and the active index (passed straight through to Stepper). */
   steps: StepperStep[];
   current: number;
-  /** Slot for a page-owned search input (e.g. PatientSearch). Optional. */
-  searchSlot?: React.ReactNode;
   /** Visual-only placeholders (bell / settings / initials) — non-functional in this pass. */
   showActionPlaceholders?: boolean;
   doctorInitials?: string;
@@ -19,7 +17,6 @@ export default function WorkspaceTopBar({
   breadcrumb,
   steps,
   current,
-  searchSlot,
   showActionPlaceholders = true,
   doctorInitials,
 }: WorkspaceTopBarProps) {
@@ -60,10 +57,9 @@ export default function WorkspaceTopBar({
           })}
         </nav>
 
-        {/* Search slot */}
-        <div className="flex-1 flex justify-end">
-          {searchSlot}
-        </div>
+        {/* Spacer — patient lookup now lives inside the form (name typeahead +
+            ЕГН lookup), so the top bar no longer hosts a search input. */}
+        <div className="flex-1" />
 
         {/* Action placeholders (visual only) */}
         {showActionPlaceholders && (

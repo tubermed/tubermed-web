@@ -101,7 +101,7 @@ export default function PatientsPage() {
     const myList = ++listReqIdRef.current;
     try {
       const [p, page] = await Promise.all([
-        api.getPatient(id),
+        api.getPatient(id, 'history_view'),
         api.getPatientConsultations(id, 0, PAGE_SIZE),
       ]);
       if (myList !== listReqIdRef.current) return;

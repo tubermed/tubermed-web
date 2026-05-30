@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import ChipInput from './ChipInput';
 import MkbPicker from './MkbPicker';
 import PatientResultRow from './PatientResultRow';
+import PatientLoadConfirmModal from './PatientLoadConfirmModal';
 import type {
   CreatePatientPayload,
   Gender,
@@ -19,6 +20,12 @@ import type {
 
 // Debounce for the form's ЕГН auto-lookup — same spirit as PatientSearch's.
 const EGN_LOOKUP_DEBOUNCE_MS = 250;
+// Debounce for the name typeahead (Име/Презиме/Фамилия). Slightly longer than
+// the ЕГН lookup: name fuzzy search is broader and fires across three fields.
+const NAME_LOOKUP_DEBOUNCE_MS = 280;
+// Minimum combined name-query length before the typeahead fires — avoids
+// querying on a single stray letter.
+const NAME_MIN_QUERY_LEN = 2;
 
 // ── Form state shape (everything the page edits in one place) ───────────────
 export interface PatientFormState {
@@ -78,15 +85,21 @@ export function fromPatient(p: PatientSummary): PatientFormState {
   };
 }
 
-// Fields editable on an already-loaded patient — exactly the set
-// persistPatient/updatePatient sends — paired with their Bulgarian labels.
-// national_id is deliberately absent: it's the value being changed, never compared.
+// Fields whose change counts as a real, user-made patient-record edit for the
+// dirty-tracker (drives the ЕГН-switch guard + the "Незапазени промени" modal),
+// paired with their Bulgarian labels.
+// DELIBERATELY ABSENT:
+//   - national_id — it's the value being changed, never compared.
+//   - birth_date / gender — these are DERIVED from the ЕГН (dobFromEgn /
+//     genderFromEgn), never a user edit. Tracking them caused an off-by-one in
+//     the guard: dropping a digit clears birth_date+gender, which then read as
+//     "changed" vs the loaded patient on the NEXT keystroke and fired a spurious
+//     guard. They must never count as dirty or appear in the modal. They are
+//     still PATCHed by persistPatient — exclusion here only affects edit-tracking.
 const EDITABLE_FIELD_LABELS: Array<{ key: keyof PatientFormState; label: string }> = [
   { key: 'first_name',         label: 'Име' },
   { key: 'middle_name',        label: 'Презиме' },
   { key: 'last_name',          label: 'Фамилия' },
-  { key: 'birth_date',         label: 'Дата на раждане' },
-  { key: 'gender',             label: 'Пол' },
   { key: 'allergies',          label: 'Алергии' },
   { key: 'chronic_conditions', label: 'Хронични заболявания' },
   { key: 'insurance_status',   label: 'Здравен статус' },
@@ -133,6 +146,9 @@ interface PatientFormProps {
   onChange: (next: PatientFormState) => void;
   /** True when the form is bound to an existing patient (different submit semantics). */
   isExistingPatient?: boolean;
+  /** The loaded patient record (null for a fresh draft). Carries the id + ЕГН
+   *  last-4 the masked-on-load display and RevealEgnButton need. */
+  selectedPatient?: PatientSummary | null;
   /** Cleared when the doctor clicks "Започни запис" / "Запази чернова" */
   isSaving?: boolean;
   onSaveDraft: () => void;
@@ -140,16 +156,23 @@ interface PatientFormProps {
   /** Doctor clicked the ЕГН-field auto-match row. `typedEgn` is the exact ЕГН
    *  the doctor entered (the lookup key) — the caller re-applies it after load. */
   onEgnMatchLoad?: (hit: PatientSearchHit, typedEgn: string) => void;
+  /** Doctor picked a row from the name typeahead dropdown — load that patient. */
+  onNamePick?: (hit: PatientSearchHit) => void;
+  /** Clear the loaded patient and return to the empty NEW-patient state. */
+  onClearSelection?: () => void;
 }
 
 export default function PatientForm({
   state,
   onChange,
   isExistingPatient,
+  selectedPatient,
   isSaving,
   onSaveDraft,
   onStartVisit,
   onEgnMatchLoad,
+  onNamePick,
+  onClearSelection,
 }: PatientFormProps) {
   const set = useCallback(
     <K extends keyof PatientFormState>(key: K, value: PatientFormState[K]) =>
@@ -188,7 +211,10 @@ export default function PatientForm({
         setMany={setMany}
         age={age}
         isExistingPatient={isExistingPatient}
+        selectedPatient={selectedPatient}
         onEgnMatchLoad={onEgnMatchLoad}
+        onNamePick={onNamePick}
+        onClearSelection={onClearSelection}
       />
       <ClinicalContextSection state={state} set={set} />
       <VisitTypeSection state={state} set={set} />
@@ -267,95 +293,203 @@ function inputStyle(): React.CSSProperties {
 }
 
 function IdentificationSection({
-  state, set, setMany, age, isExistingPatient, onEgnMatchLoad,
+  state, set, setMany, age, isExistingPatient, selectedPatient, onEgnMatchLoad, onNamePick, onClearSelection,
 }: {
   state: PatientFormState;
   set: SetFn;
   setMany: (partial: Partial<PatientFormState>) => void;
   age: number | null;
   isExistingPatient?: boolean;
+  selectedPatient?: PatientSummary | null;
   onEgnMatchLoad?: (hit: PatientSearchHit, typedEgn: string) => void;
+  onNamePick?: (hit: PatientSearchHit) => void;
+  onClearSelection?: () => void;
 }) {
-  // Validity derivation — runs every render so we never display stale flags.
-  const isEgn       = state.national_id_type === 'egn';
-  const ten         = state.national_id.length === 10;
-  const derivedDob  = isEgn && ten ? dobFromEgn(state.national_id) : null;
-  const egnInvalid  = isEgn && ten && derivedDob === null;
-  const egnValid    = isEgn && ten && derivedDob !== null;
+  // ── Name typeahead (Име / Презиме / Фамилия) ─────────────────────────────
+  // As the doctor types any of the three name parts, debounce and search. The
+  // backend classifies q_kind='name' (trigram fuzzy via search_patients_by_name,
+  // transliteration-aware) so a partial first / middle / last name in Latin or
+  // Cyrillic all match. Names are NOT unique → never autofill; the doctor must
+  // pick a row to disambiguate. Suppressed once a patient is loaded
+  // (isExistingPatient): the name fields are then plain edits, not a lookup.
+  const nameQuery = [state.first_name, state.middle_name, state.last_name]
+    .map((s) => s.trim()).filter(Boolean).join(' ').trim();
 
-  // ── ЕГН auto-lookup (form-field convenience) ─────────────────────────────
-  // When a complete, valid ЕГН is typed AND we're not already bound to an
-  // existing patient, look the patient up (the backend does exact ЕГН-hash
-  // matching when q is 10 digits) and offer a one-click load. Debounced +
-  // stale-guarded (reqId) like PatientSearch so mid-type corrections don't
-  // storm the API. Non-blocking: nothing auto-loads — the doctor clicks Зареди.
-  // Match is stored WITH the ЕГН it was found for. The prompt only renders when
-  // `egnMatch.egn === state.national_id`, so a stale match from a previous ЕГН
-  // is hidden automatically the instant the field changes — no need to clear it
-  // synchronously inside the effect (React 19 flags synchronous setState in an
-  // effect body). setState happens only inside the debounced async callback.
-  const [egnMatch, setEgnMatch] = useState<{ egn: string; hit: PatientSearchHit } | null>(null);
-  const lookupReqRef = useRef(0);
+  const [nameResults, setNameResults] = useState<PatientSearchHit[]>([]);
+  const [nameOpen, setNameOpen] = useState(false);
+  const [nameLoading, setNameLoading] = useState(false);
+  // The picked-but-not-yet-loaded hit while the confirm modal is open. Name
+  // matches are fuzzy / non-unique, so a pick is ambiguous → confirm before load.
+  const [confirmHit, setConfirmHit] = useState<PatientSearchHit | null>(null);
+  const nameReqRef = useRef(0);
+  const nameWrapRef = useRef<HTMLDivElement | null>(null);
 
+  // Debounced search. setState happens ONLY inside the async callback (React 19
+  // flags synchronous setState in an effect body); immediate feedback (open +
+  // spinner / eager reset) lives in the field onChange handler below.
   useEffect(() => {
-    // Only fire for a fresh, complete, valid ЕГН on a not-yet-loaded patient.
-    // egnValid is false for <10 digits and for lnch/foreign/none, so this never
-    // fires on partial input or non-ЕГН types. No synchronous setState here.
-    if (isExistingPatient || !egnValid) return;
-    const egn = state.national_id;
-    const myId = ++lookupReqRef.current;
+    if (isExistingPatient || nameQuery.length < NAME_MIN_QUERY_LEN) return;
+    const myId = ++nameReqRef.current;
     const t = setTimeout(async () => {
       try {
-        const data = await api.searchPatients(egn, 5);
-        if (myId !== lookupReqRef.current) return;          // stale — a newer ЕГН superseded this
-        const hit = data.patients[0] ?? null;               // exact ЕГН-hash match → 0 or 1 row
-        setEgnMatch(hit ? { egn, hit } : null);
+        const data = await api.searchPatients(nameQuery, 8);
+        if (myId !== nameReqRef.current) return;            // stale — a newer query superseded this
+        setNameResults(data.patients);
       } catch {
-        if (myId !== lookupReqRef.current) return;
-        setEgnMatch(null);
+        if (myId !== nameReqRef.current) return;
+        setNameResults([]);
+      } finally {
+        if (myId === nameReqRef.current) setNameLoading(false);
       }
-    }, EGN_LOOKUP_DEBOUNCE_MS);
+    }, NAME_LOOKUP_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [state.national_id, egnValid, isExistingPatient]);
+  }, [nameQuery, isExistingPatient]);
 
-  // Handles every keystroke on the ЕГН input. For type='egn' specifically:
-  // re-derives DOB + gender on every change. When DOB can't be parsed (length
-  // < 10 OR digits 1–6 aren't a real calendar date), both birth_date and
-  // gender are cleared in the same React update so we never display a gender
-  // derived from a garbage ЕГН.
-  function handleNationalIdChange(raw: string) {
-    const cleaned = raw.replace(/\s/g, '');
-    if (state.national_id_type !== 'egn') {
-      setMany({ national_id: cleaned });
-      return;
+  // Close the dropdown on outside click — same pattern as PatientSearch.
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!nameWrapRef.current) return;
+      if (!nameWrapRef.current.contains(e.target as Node)) setNameOpen(false);
     }
-    const dob = cleaned.length === 10 ? dobFromEgn(cleaned) : null;
-    if (dob === null) {
-      setMany({ national_id: cleaned, birth_date: '', gender: '' });
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  // Per-keystroke handler for the three name inputs. Applies the edit, then —
+  // for a fresh draft only — toggles the dropdown + spinner immediately based
+  // on the query the edit produces (state.first_name etc. are still the
+  // pre-update values inside this handler, so we substitute the new value).
+  function handleNameField(key: 'first_name' | 'middle_name' | 'last_name', value: string) {
+    set(key, value);
+    if (isExistingPatient) return;
+    const probe = [
+      key === 'first_name'  ? value : state.first_name,
+      key === 'middle_name' ? value : state.middle_name,
+      key === 'last_name'   ? value : state.last_name,
+    ].map((s) => s.trim()).filter(Boolean).join(' ').trim();
+    if (probe.length >= NAME_MIN_QUERY_LEN) {
+      setNameOpen(true);
+      setNameLoading(true);
     } else {
-      const g = genderFromEgn(cleaned) ?? '';
-      setMany({ national_id: cleaned, birth_date: dob, gender: g });
+      setNameOpen(false);
+      setNameLoading(false);
+      setNameResults([]);
     }
   }
 
+  // A row click does NOT load immediately — it opens the confirm modal. We hide
+  // the dropdown (so it isn't behind the modal) but keep nameResults intact so a
+  // cancel can reopen the same list. Loading happens only on confirm.
+  function handleNamePick(hit: PatientSearchHit) {
+    setNameOpen(false);
+    setConfirmHit(hit);
+  }
+
+  // [Зареди данни] — load the confirmed patient's full record into the form.
+  function handleConfirmLoad() {
+    const hit = confirmHit;
+    if (!hit) return;
+    setConfirmHit(null);
+    setNameResults([]);
+    setNameLoading(false);
+    onNamePick?.(hit);
+  }
+
+  // [Отказ] — keep the typed name untouched and reopen the dropdown so the
+  // doctor can pick a different row (or refine the query).
+  function handleConfirmCancel() {
+    setConfirmHit(null);
+    setNameOpen(true);
+  }
+
+  const showNameDropdown =
+    nameOpen && !isExistingPatient && nameQuery.length >= NAME_MIN_QUERY_LEN;
+
+  const onNameFocus = () => { if (!isExistingPatient && nameResults.length > 0) setNameOpen(true); };
+
+  const loadedName = selectedPatient
+    ? [selectedPatient.first_name, selectedPatient.last_name].filter(Boolean).join(' ')
+    : '';
+
   return (
+    <>
     <SectionCard title="Идентификация">
+      {/* Loaded-patient banner + clear control. The search bar that used to host
+          the patient chip is gone; clearing here returns the form to the empty
+          NEW-patient state (page resets dirty state in the same pass). */}
+      {isExistingPatient && selectedPatient && (
+        <div
+          className="mb-4 flex items-center justify-between gap-3 px-3 py-2 rounded-md"
+          style={{ background: 'var(--color-brand-soft)' }}
+        >
+          <span className="text-sm min-w-0 truncate" style={{ color: 'var(--color-brand)' }}>
+            <span className="opacity-70">Зареден пациент:</span>{' '}
+            <span className="font-medium">{loadedName || '—'}</span>
+          </span>
+          <button
+            type="button"
+            onClick={onClearSelection}
+            className="text-xs px-2 py-1 rounded-md flex-shrink-0 hover:underline underline-offset-2"
+            style={{ color: 'var(--color-brand)' }}
+            aria-label="Изчисти избрания пациент"
+          >
+            × Изчисти
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <label>
-          <FieldLabel>Име</FieldLabel>
-          <input className={inputClass()} style={inputStyle()}
-                 value={state.first_name} onChange={(e) => set('first_name', e.target.value)} />
-        </label>
-        <label>
-          <FieldLabel>Презиме</FieldLabel>
-          <input className={inputClass()} style={inputStyle()}
-                 value={state.middle_name} onChange={(e) => set('middle_name', e.target.value)} />
-        </label>
-        <label>
-          <FieldLabel>Фамилия</FieldLabel>
-          <input className={inputClass()} style={inputStyle()}
-                 value={state.last_name} onChange={(e) => set('last_name', e.target.value)} />
-        </label>
+        {/* Name fields + typeahead dropdown, anchored under the whole name row. */}
+        <div className="md:col-span-3 relative" ref={nameWrapRef}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <label>
+              <FieldLabel>Име</FieldLabel>
+              <input className={inputClass()} style={inputStyle()}
+                     value={state.first_name}
+                     onChange={(e) => handleNameField('first_name', e.target.value)}
+                     onFocus={onNameFocus} />
+            </label>
+            <label>
+              <FieldLabel>Презиме</FieldLabel>
+              <input className={inputClass()} style={inputStyle()}
+                     value={state.middle_name}
+                     onChange={(e) => handleNameField('middle_name', e.target.value)}
+                     onFocus={onNameFocus} />
+            </label>
+            <label>
+              <FieldLabel>Фамилия</FieldLabel>
+              <input className={inputClass()} style={inputStyle()}
+                     value={state.last_name}
+                     onChange={(e) => handleNameField('last_name', e.target.value)}
+                     onFocus={onNameFocus} />
+            </label>
+          </div>
+
+          {showNameDropdown && (
+            <div
+              className="absolute left-0 right-0 top-full mt-1 rounded-md shadow-lg z-40 overflow-hidden"
+              style={{ background: 'white', border: '1px solid var(--color-border)' }}
+            >
+              {nameResults.length > 0 ? (
+                <ul className="max-h-[320px] overflow-y-auto">
+                  {nameResults.map((hit) => (
+                    <li key={hit.id}>
+                      <PatientResultRow hit={hit} onClick={() => handleNamePick(hit)} />
+                    </li>
+                  ))}
+                </ul>
+              ) : nameLoading ? (
+                <div className="px-3 py-3 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  Търсене…
+                </div>
+              ) : (
+                <div className="px-3 py-3 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  Няма съвпадащи пациенти — ще създадете нов.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         <label>
           <FieldLabel>Тип на ИД</FieldLabel>
@@ -369,52 +503,14 @@ function IdentificationSection({
           </select>
         </label>
 
-        <label className="md:col-span-1">
-          <FieldLabel>{state.national_id_type === 'egn' ? 'ЕГН' : state.national_id_type === 'lnch' ? 'ЛНЧ' : 'Идентификатор'}</FieldLabel>
-          <span className="relative block">
-            <input
-              className={`${inputClass()} font-[family-name:var(--font-jetbrains)] tracking-wider pr-7`}
-              style={{
-                ...inputStyle(),
-                borderColor: egnInvalid ? 'var(--color-red)' : 'var(--color-border-mid)',
-              }}
-              value={state.national_id}
-              onChange={(e) => handleNationalIdChange(e.target.value)}
-              disabled={state.national_id_type === 'none'}
-              inputMode={state.national_id_type === 'egn' || state.national_id_type === 'lnch' ? 'numeric' : 'text'}
-              maxLength={state.national_id_type === 'egn' || state.national_id_type === 'lnch' ? 10 : undefined}
-              placeholder={state.national_id_type === 'none' ? '—' : '10 цифри'}
-              aria-invalid={egnInvalid || undefined}
-            />
-            {egnValid && (
-              <span
-                aria-hidden
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-sm"
-                style={{ color: 'var(--color-ok)' }}
-                title="Валидно ЕГН"
-              >✓</span>
-            )}
-            {/* ЕГН auto-match dropdown — same row UI as the top search box
-                (PatientResultRow). Anchored under the input; the egn-equality
-                guard hides a stale match the instant the field changes. */}
-            {egnMatch && egnMatch.egn === state.national_id && egnValid && !isExistingPatient && (
-              <div
-                className="absolute left-0 right-0 top-full mt-1 rounded-md shadow-lg z-40 overflow-hidden"
-                style={{ background: 'white', border: '1px solid var(--color-border)' }}
-              >
-                <PatientResultRow
-                  hit={egnMatch.hit}
-                  onClick={() => onEgnMatchLoad?.(egnMatch.hit, egnMatch.egn)}
-                />
-              </div>
-            )}
-          </span>
-          {egnInvalid && (
-            <span className="block text-xs mt-1" style={{ color: 'var(--color-red)' }} role="alert">
-              Невалидно ЕГН — датата на раждане не може да бъде извлечена.
-            </span>
-          )}
-        </label>
+        {/* Keyed by patient id so the auto-lookup state resets on patient change. */}
+        <EgnField
+          key={selectedPatient?.id ?? 'new'}
+          state={state}
+          setMany={setMany}
+          isExistingPatient={isExistingPatient}
+          onEgnMatchLoad={onEgnMatchLoad}
+        />
 
         <div className="grid grid-cols-2 gap-3 md:col-span-1">
           <label>
@@ -455,6 +551,132 @@ function IdentificationSection({
         </label>
       </div>
     </SectionCard>
+
+    {/* Confirm-before-load — NAME typeahead pick only. The full-ЕГН auto-match
+        (EgnField) loads directly with no confirm. */}
+    <PatientLoadConfirmModal
+      hit={confirmHit}
+      onConfirm={handleConfirmLoad}
+      onCancel={handleConfirmCancel}
+    />
+    </>
+  );
+}
+
+// ── ЕГН field — single editable input + instant auto-load ───────────────────
+// Encapsulates ALL ЕГН input logic: validity derivation, DOB/gender derivation,
+// and the exact-hash instant auto-load. On the new-visit form the ЕГН is ALWAYS
+// a plain editable value — no masking, no "показване" reveal link, no "Смени"
+// toggle. For a loaded patient the plaintext is supplied by the page (the
+// doctor-typed value on the ЕГН path, or a one-time audit-logged revealNationalId
+// on the name-typeahead confirm-load). Keyed by patient id so the lookup's
+// stale-guard ref resets cleanly on a patient switch.
+function EgnField({
+  state, setMany, isExistingPatient, onEgnMatchLoad,
+}: {
+  state: PatientFormState;
+  setMany: (partial: Partial<PatientFormState>) => void;
+  isExistingPatient?: boolean;
+  onEgnMatchLoad?: (hit: PatientSearchHit, typedEgn: string) => void;
+}) {
+  // Validity derivation — runs every render so we never display stale flags.
+  const isEgn       = state.national_id_type === 'egn';
+  const ten         = state.national_id.length === 10;
+  const derivedDob  = isEgn && ten ? dobFromEgn(state.national_id) : null;
+  const egnInvalid  = isEgn && ten && derivedDob === null;
+  const egnValid    = isEgn && ten && derivedDob !== null;
+
+  const lookupReqRef = useRef(0);
+
+  // ── ЕГН instant auto-load (FIX 1) ────────────────────────────────────────
+  // When a complete, valid ЕГН is typed on a not-yet-loaded patient, fire the
+  // backend exact-hash lookup; if it resolves to an existing patient, auto-load
+  // the full record IMMEDIATELY — no match dropdown, no click (mirrors standard
+  // Bulgarian systems). DOB/gender/age are already derived locally by
+  // handleNationalIdChange, so they show before the network call even returns;
+  // the loaded name appearing instantly is the safety backstop for a mistyped
+  // ЕГН. Debounced + stale-guarded (reqId). No match → new patient with that
+  // ЕГН. No synchronous setState in the effect body (React 19 flags that) — the
+  // load is triggered via the onEgnMatchLoad callback inside the async timeout.
+  useEffect(() => {
+    if (isExistingPatient || !egnValid) return;
+    const egn = state.national_id;
+    const myId = ++lookupReqRef.current;
+    const t = setTimeout(async () => {
+      try {
+        const data = await api.searchPatients(egn, 5);
+        if (myId !== lookupReqRef.current) return;          // stale — a newer ЕГН superseded this
+        const hit = data.patients[0] ?? null;               // exact ЕГН-hash match → 0 or 1 row
+        if (hit) onEgnMatchLoad?.(hit, egn);                // resolves → auto-load instantly
+      } catch {
+        // No match / network error — typing a new patient's ЕГН is normal; do nothing.
+      }
+    }, EGN_LOOKUP_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [state.national_id, egnValid, isExistingPatient, onEgnMatchLoad]);
+
+  // Handles every keystroke on the ЕГН input. For type='egn' specifically:
+  // re-derives DOB + gender on every change. When DOB can't be parsed (length
+  // < 10 OR digits 1–6 aren't a real calendar date), both birth_date and gender
+  // are cleared in the same React update so we never display a gender derived
+  // from a garbage ЕГН. These derived fields are NOT dirty-tracked (see
+  // EDITABLE_FIELD_LABELS), so editing the ЕГН never counts as a user change and
+  // unpopulating them never trips the ЕГН-switch guard.
+  function handleNationalIdChange(raw: string) {
+    const cleaned = raw.replace(/\s/g, '');
+    if (state.national_id_type !== 'egn') {
+      setMany({ national_id: cleaned });
+      return;
+    }
+    const dob = cleaned.length === 10 ? dobFromEgn(cleaned) : null;
+    if (dob === null) {
+      setMany({ national_id: cleaned, birth_date: '', gender: '' });
+    } else {
+      const g = genderFromEgn(cleaned) ?? '';
+      setMany({ national_id: cleaned, birth_date: dob, gender: g });
+    }
+  }
+
+  const fieldLabel = state.national_id_type === 'egn' ? 'ЕГН'
+    : state.national_id_type === 'lnch' ? 'ЛНЧ' : 'Идентификатор';
+
+  // Always a plain editable input. For a loaded patient the value is the full
+  // plaintext ЕГН (doctor-typed, or page-revealed on name-load); editing it is
+  // how the doctor switches patients (→ ЕГН-switch guard when there are unsaved
+  // edits) — or they click "× Изчисти" to clear everything.
+  return (
+    <div className="md:col-span-1">
+      <FieldLabel>{fieldLabel}</FieldLabel>
+      <span className="relative block">
+        <input
+          className={`${inputClass()} font-[family-name:var(--font-jetbrains)] tracking-wider pr-7`}
+          style={{
+            ...inputStyle(),
+            borderColor: egnInvalid ? 'var(--color-red)' : 'var(--color-border-mid)',
+          }}
+          value={state.national_id}
+          onChange={(e) => handleNationalIdChange(e.target.value)}
+          disabled={state.national_id_type === 'none'}
+          inputMode={state.national_id_type === 'egn' || state.national_id_type === 'lnch' ? 'numeric' : 'text'}
+          maxLength={state.national_id_type === 'egn' || state.national_id_type === 'lnch' ? 10 : undefined}
+          placeholder={state.national_id_type === 'none' ? '—' : '10 цифри'}
+          aria-invalid={egnInvalid || undefined}
+        />
+        {egnValid && (
+          <span
+            aria-hidden
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-sm"
+            style={{ color: 'var(--color-ok)' }}
+            title="Валидно ЕГН"
+          >✓</span>
+        )}
+      </span>
+      {egnInvalid && (
+        <span className="block text-xs mt-1" style={{ color: 'var(--color-red)' }} role="alert">
+          Невалидно ЕГН — датата на раждане не може да бъде извлечена.
+        </span>
+      )}
+    </div>
   );
 }
 

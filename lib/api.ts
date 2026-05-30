@@ -193,7 +193,13 @@ export const api = {
     u.set('limit', String(limit));
     return request<PatientSearchResponse>(`/api/patients?${u.toString()}`);
   },
-  getPatient: (id: string) => request<PatientDetailResponse>(`/api/patients/${id}`),
+  // `method` is an audit discriminator (load context) forwarded to the backend's
+  // patient_viewed event. Optional — omitting it lets the backend default to
+  // 'unspecified'. Never carries any patient PII, just the load context.
+  getPatient: (id: string, method?: 'egn_typed' | 'name_pick' | 'history_view' | 'dedup_pick') => {
+    const qs = method ? `?method=${encodeURIComponent(method)}` : '';
+    return request<PatientDetailResponse>(`/api/patients/${id}${qs}`);
+  },
 
   // Returns a discriminated union: success or 409-dedup. Other errors still throw ApiError.
   async createPatient(payload: CreatePatientPayload): Promise<CreatePatientResult> {
@@ -221,8 +227,13 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     }),
-  revealNationalId: (patientId: string) =>
-    request<RevealNationalIdResponse>(`/api/patients/${patientId}/national-id`),
+  // `reason` is an audit discriminator forwarded to the backend's
+  // patient_national_id_revealed event. Optional — omitting it lets the backend
+  // default to 'manual_reveal'. Never carries any ЕГН value, just the reason tag.
+  revealNationalId: (patientId: string, reason?: 'manual_reveal' | 'name_load_autoreveal') => {
+    const qs = reason ? `?reason=${encodeURIComponent(reason)}` : '';
+    return request<RevealNationalIdResponse>(`/api/patients/${patientId}/national-id${qs}`);
+  },
 
   // ── Patient history (read-only viewer) ─────────────────────────────────
   // GET /api/consultations/:id returns ONE consultation's filed note for
