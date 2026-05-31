@@ -78,21 +78,30 @@ non-obvious rules — do not "simplify" them:
    (allergies/chronic/name/etc., per `changedEditableLabels`) and the doctor changes the
    ЕГН to switch patients. The change is **held** and a save-or-cancel modal lists the
    changed fields. `[Запази]` PATCHes the current patient then proceeds with the swap;
-   `[Отказ]` reverts the ЕГН and keeps the edits. **DECISION:** on `[Запази]`,
-   `chief_complaint` and `visit_type` are **preserved** across the swap — only the patient
-   identity changes; the visit context is the doctor's typed work too. Do **not** turn this
-   into a silent reset of the visit fields — silent loss of typed context is the exact bug
-   this feature exists to prevent. (Scope: scenario 1 only — an already-loaded patient. The
-   new-patient-draft case is intentionally not guarded.)
+   `[Отказ]` reverts the ЕГН and keeps the edits. **DECISION (reversed — see ⚠ below):**
+   on `[Запази]`, the current patient's record edits are PATCHed first (never lost), then
+   the swap proceeds onto an empty form carrying only the new ЕГН + its derived DOB/gender;
+   `chief_complaint` and `visit_type` are **CLEARED**, not preserved. Changing the patient =
+   a fresh visit, applied **uniformly** on both patient-change paths — this guard-save swap
+   AND the no-edits ЕГН-invalidation DROP in `handleFormChange`. **⚠ REVERSAL:** this
+   overturns the earlier decision that PRESERVED `chief_complaint` + `visit_type` across the
+   swap. Reversed for consistency + to remove a cross-patient contamination risk (one
+   patient's complaint pre-filling onto a different patient's form). Do **not** "fix" this
+   back to preserve — NO path may carry one patient's visit context onto another patient
+   (`fromPatient` and `EMPTY_FORM` both blank these fields, and neither swap path re-applies
+   them). (Scope: scenario 1 only — an already-loaded patient. The new-patient-draft case is
+   intentionally not guarded.)
    **Fires on the FIRST ЕГН divergence** (first delete/add/change), not the second.
    `changedEditableLabels` deliberately **EXCLUDES `birth_date` / `gender`** — they're DERIVED
    from the ЕГН (never user edits) and are not dirty-tracked. Including them caused an
    off-by-one: dropping a digit clears birth_date+gender, which then read as a "change" vs the
    loaded patient on the NEXT keystroke and fired a spurious guard. With them excluded, a
    loaded patient with **unsaved edits** fires the guard the instant the ЕГН first diverges;
-   a loaded patient with **no unsaved edits** never fires — the derived DOB/gender/age simply
-   unpopulate as the ЕГН stops being a valid 10 digits, and the doctor retypes freely. (The
-   derived fields are still PATCHed by `persistPatient`; exclusion only affects edit-tracking.)
+   a loaded patient with **no unsaved edits** never fires the guard — instead, once the ЕГН
+   stops being a valid 10-digit identity, `handleFormChange` **DROPS** the patient (clears the
+   loaded identity AND the visit context, keeping only the in-progress ЕГН so re-typing a
+   valid one re-loads). (Derived fields are still PATCHed by `persistPatient`; their exclusion
+   from `changedEditableLabels` only affects edit-tracking.)
 
 5. **DEFERRED — not built:** visit/edit *migration* on patient switch ("move edits between
    patients" / "revert wrong-patient edits"). Considered and deliberately not built — it's a
@@ -112,3 +121,12 @@ non-obvious rules — do not "simplify" them:
   arg to one `getPatient` call) and are **out of scope to fix right now** — logged here so
   they're tracked. Fix = hoist the `applyPage` `useCallback` above `loadPatient` (and add it
   to `loadPatient`'s dep array) so the declaration precedes its use.
+
+- **Drop-on-ЕГН-invalidation is gated to `national_id_type === 'egn'` (lnch/foreign NOT
+  covered).** The single-predicate drop in `handleFormChange` (rule 4) only drops a loaded
+  patient when an **ЕГН** stops being a valid 10-digit identity. A loaded **lnch / foreign**
+  patient whose ID is edited to an incomplete/invalid value falls through to the prior
+  straight-through apply — its name + bubble persist next to the now-mismatched ID (the same
+  stale-identity shape the ЕГН drop fixes). Known gap, deliberately scoped out for now (only
+  ЕГН has an auto-load identity key + `dobFromEgn` validity notion). Fix = generalise the
+  drop's validity check per id-type (lnch via `validateLnchFormat`, etc.).

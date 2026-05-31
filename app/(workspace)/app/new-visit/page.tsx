@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import WorkspaceTopBar from '@/components/WorkspaceTopBar';
 import { SCRIBE_FLOW_STEPS } from '@/lib/flow';
+import { dobFromEgn } from '@/lib/egn';
 import PatientForm, {
   EMPTY_FORM,
   fromPatient,
@@ -126,13 +127,28 @@ export default function NewVisitPage() {
     setForm(EMPTY_FORM);
   }, []);
 
-  // ── Form change interceptor (ЕГН-switch guard) ───────────────────────────
-  // The single onChange the form reports through. When the doctor edits the
-  // ЕГН field on a loaded patient that already has unsaved edits, hold the
-  // change and surface a modal instead of applying it — otherwise the edits
-  // would be silently discarded when a different patient loads. Every other
-  // change (and ЕГН edits with no pending edits, or on a fresh draft) applies
-  // straight through.
+  // ── Form change interceptor — the single owner of `selected` on ЕГН edits ──
+  // Every form change reports through here. When the ЕГН of a LOADED patient is
+  // edited, this one predicate decides hold-vs-drop-vs-apply; no other handler
+  // clears the loaded patient on ЕГН edits (the only other clear is the explicit
+  // "× Изчисти" button via handleClearSelection). Three branches:
+  //
+  //   1. Unsaved patient-record edits (changedEditableLabels > 0) → HOLD the
+  //      change and surface EgnSwitchGuardModal (rule 4) — otherwise switching
+  //      patients would silently discard the edits.
+  //   2. No edits, and the edited ЕГН is no longer a valid 10-digit identity
+  //      (<10 digits OR digits don't decode to a real DOB) → DROP the patient:
+  //      a loaded name shown next to a now-mismatched/empty ЕГН is the
+  //      wrong-identity hazard. Clear selection + reset to a FULL empty
+  //      new-patient form, keeping ONLY the in-progress ЕГН (so re-typing a valid
+  //      one re-fires the auto-load). chief_complaint + visit_type are CLEARED:
+  //      changing the patient = a fresh visit, applied uniformly on both
+  //      patient-change paths (this drop AND the guard-save swap). See AGENTS.md
+  //      rule 4 — this reverses the earlier preserve-decision.
+  //      Scope: national_id_type 'egn' only — that's the path with an auto-load
+  //      identity key; lnch/foreign/none keep their prior straight-through apply.
+  //   3. Otherwise (still-valid ЕГН, non-ЕГН type, or a non-ЕГН field change) →
+  //      apply normally.
   const handleFormChange = useCallback((next: PatientFormState) => {
     if (selected && next.national_id !== form.national_id) {
       const changedLabels = changedEditableLabels(form, selected);
@@ -143,6 +159,20 @@ export default function NewVisitPage() {
           patientName: [selected.first_name, selected.last_name].filter(Boolean).join(' '),
         });
         return; // HOLD — input reverts to the loaded ЕГН until the doctor chooses
+      }
+
+      const egnStillValid =
+        next.national_id_type === 'egn' &&
+        next.national_id.length === 10 &&
+        dobFromEgn(next.national_id) !== null;
+      if (next.national_id_type === 'egn' && !egnStillValid) {
+        setSelected(null);
+        setForm({
+          ...EMPTY_FORM,
+          national_id_type: next.national_id_type,
+          national_id:      next.national_id,   // keep ONLY what the doctor is mid-typing
+        });
+        return; // DROP — loaded identity + visit context cleared; re-typing a valid ЕГН re-loads
       }
     }
     setForm(next);
@@ -200,17 +230,19 @@ export default function NewVisitPage() {
     if (!patient) return; // save failed (toast shown) — keep modal open, nothing lost
     setEgnGuard(null);
     setSelected(null);
-    // Only the PATIENT identity swaps. Carry over the visit context the doctor
-    // already typed (chief_complaint, visit_type) — resetting those would be the
-    // same silent data loss this guard exists to prevent.
+    // The current patient's record edits were just PATCHed above (they are NOT
+    // lost). The held ЕГН change now proceeds onto a FULL empty form carrying only
+    // the new ЕГН + its derived DOB/gender. chief_complaint + visit_type are
+    // CLEARED, not carried over — changing the patient = a fresh visit, applied
+    // uniformly on both patient-change paths (this swap AND the drop above). See
+    // AGENTS.md rule 4 — this reverses the earlier preserve-decision (consistency
+    // + avoids one patient's complaint contaminating another's form).
     setForm({
       ...EMPTY_FORM,
       national_id_type: held.pendingForm.national_id_type,
       national_id:      held.pendingForm.national_id,
       birth_date:       held.pendingForm.birth_date,
       gender:           held.pendingForm.gender,
-      chief_complaint:  form.chief_complaint,
-      visit_type:       form.visit_type,
     });
     showToast('success', 'Промените са запазени.');
   }, [egnGuard, form, persistPatient, showToast]);

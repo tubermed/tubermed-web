@@ -503,9 +503,11 @@ function IdentificationSection({
           </select>
         </label>
 
-        {/* Keyed by patient id so the auto-lookup state resets on patient change. */}
+        {/* No `key` here: EgnField holds no internal useState (only a ref), so it
+            needn't remount on patient change — and remounting would steal the ЕГН
+            input's focus when the page drops a loaded patient mid-keystroke on
+            ЕГН-invalidation (see handleFormChange in new-visit/page.tsx). */}
         <EgnField
-          key={selectedPatient?.id ?? 'new'}
           state={state}
           setMany={setMany}
           isExistingPatient={isExistingPatient}
