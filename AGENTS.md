@@ -130,3 +130,17 @@ non-obvious rules — do not "simplify" them:
   stale-identity shape the ЕГН drop fixes). Known gap, deliberately scoped out for now (only
   ЕГН has an auto-load identity key + `dobFromEgn` validity notion). Fix = generalise the
   drop's validity check per id-type (lnch via `validateLnchFormat`, etc.).
+
+- **Dependabot: `postcss` 8.4.31 XSS (CVE-2026-41305 / GHSA-qx2v-qp2m-jg93, moderate, CVSS
+  6.1) — DEFERRED, not reachable.** The flagged copy is the one **Next bundles internally**
+  (`node_modules/next/node_modules/postcss`) for its build-time CSS compiler — our **top-level
+  `postcss` is already 8.5.14 (patched)** and serves the Tailwind/PostCSS pipeline. The vuln is
+  a `</style>`-breakout XSS that only triggers when **untrusted CSS** is run through `postcss`
+  and the re-stringified output is embedded in served HTML; **not reachable here** — all CSS is
+  author-written Tailwind compiled at build time (exactly the bundler use-case the advisory says
+  is *not* the impact target). **DECISION: DEFERRED** — not reachable, not worth Next-16
+  build-pipeline risk to chase. Fix options when revisited: **(B, preferred)** npm override
+  `{"overrides":{"postcss":">=8.5.10"}}` then `next build` to confirm Next's compiler accepts
+  postcss 8.5.x; **(A)** bump `next` to ≥16.3 stable **+ `eslint-config-next` in lockstep**
+  (build-touching). **NEVER run `npm audit fix --force`** — it "fixes" by installing `next@9.3.3`,
+  a 16→9 major downgrade that destroys the app.
