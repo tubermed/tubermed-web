@@ -174,6 +174,26 @@ frontend was never wired to it — now it is.
   never-lose-a-recording HARDWARE tests (phone disconnect, WebSocket drop) need
   real-device verification.
 
+# A2 follow-up — editable patient after-visit summary (2026-06-01)
+
+`components/PatientSummaryModal.tsx`. The generated summary body is now an
+editable `<textarea>`; the doctor can fix wording / add / remove text before
+copy / print. The mandatory disclaimer is SPLIT OFF (`splitSummary`, keyed on
+the marker `не замества медицинска консултация`) and rendered as a FIXED,
+non-editable footer that `composeFinal` always re-appends to the copied /
+printed text — a free edit can never drop it, preserving the same
+code-controlled-invariant guarantee the backend enforces
+(`tubermed-backend/lib/patient-summary.js`). `DISCLAIMER_FALLBACK` mirrors the
+backend string and is used ONLY if a loaded summary somehow carries no
+disclaimer.
+
+- Edits are SESSION-LOCAL: they shape the copy / print / PDF output but are NOT
+  persisted to the server. "Регенерирай" (confirm-guarded when edited) and
+  closing+reopening the modal both restore the generated text from the cached
+  server copy (`consultations.patient_summary`). Persisting edits would need a
+  new PATCH endpoint — deliberately out of scope; revisit if pilots ask for it.
+- Copy / print are disabled on an empty body. Additive, frontend-only; tsc clean.
+
 # Known issues / gotchas
 
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
