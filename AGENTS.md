@@ -144,6 +144,36 @@ filed note.
   patient context in a fresh tab. Verified LOCALLY only: the silent-edit-loss fix below
   (single + multi-field persist; F5 and edit-then-navigate retain edits).
 
+# A3 — processing-failure recovery ("audio is safe, retry") (2026-06-01)
+
+Web commit `e8e7237` (branch `a3-audio-safe-recovery`). When extraction fails
+AFTER Soniox has produced a transcript, the scribe page no longer dead-ends the
+doctor into re-recording. The backend already persists the transcript and
+exposes `POST /:id/retry-extraction` (re-runs ONLY the Claude stage); the
+frontend was never wired to it — now it is.
+
+- **lib/api.ts** — `api.retryExtraction(consultationId)` →
+  `POST /api/consultations/:id/retry-extraction`; `RetryExtractionResponse` in
+  `lib/types.ts`.
+- **scribe/page.tsx** — a new `recoverableVisitId` state swaps the in-flow
+  record/processing UI for `<RecoveryPanel>`. Set from TWO paths: (1) the
+  cold-start recovery effect when `status==='error'` (replaces the old
+  "запишете отново" banner), and (2) `reportProcessingError()`, which the
+  PcMode/PhoneMode `onError` props now call — it routes a live failure into the
+  panel ONLY when a staged `consultationId` is held, otherwise the plain
+  `ErrorBanner` (unchanged). Both error props were `onError={setError}`.
+- **RecoveryPanel** — primary action calls `retryExtraction`; the retry call is
+  the source of truth for recoverability. **200** → row flips to 'generated' →
+  navigate to `/app/scribe/result?visit=<id>` and let the result page re-read
+  the server note (reuses the tested cold-start path — no client-side note shape
+  is assembled). **409** (no transcript / wrong status) → hide retry, offer a
+  fresh visit. **502 / network** → keep retry available ("звукът ви е запазен").
+- Additive, frontend-only — no backend or migration change. `tsc` clean; no new
+  eslint errors (the pre-existing react-hooks debt is unchanged). Verified the
+  panel + the 409 and 502 branches live in dev (1 June). **Still pending:** the
+  never-lose-a-recording HARDWARE tests (phone disconnect, WebSocket drop) need
+  real-device verification.
+
 # Known issues / gotchas
 
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
