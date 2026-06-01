@@ -108,7 +108,83 @@ non-obvious rules — do not "simplify" them:
    speculative data-migration UI for a case no doctor has reported. Revisit only if pilot
    doctors ask for it.
 
+# Scribe cold-start recovery + result-page edit persistence (2026-06-01)
+
+Web commit `df3198d` (backend `GET /:id` widened in `39a5036`). `/app/scribe` and
+`/app/scribe/result` no longer bounce to `/app/new-visit` on a hard refresh / new tab /
+laptop sleep, and the result page now treats the SERVER as the source of truth for the
+filed note.
+
+- **Recovery hook (`lib/use-cold-start-recovery.ts`).** When sessionStorage is present,
+  both pages render from it unchanged (happy path). When it's GONE, the shared
+  `useColdStartRecovery(visitId, page)` hook reads `?visit=<id>` and rebuilds context
+  from `GET /api/consultations/:id` → `getPatient(patient_id)`, assembling a
+  `PendingVisit`-shaped object so existing components consume it unchanged. A loop-free
+  status→destination matrix decides stay/redirect (generated/exported with a note →
+  result stays / scribe → result; pending/started/error → scribe; abandoned / no-note /
+  no-`patient_id` / unrecoverable fetch → `/app/new-visit` with a one-shot notice).
+  `scribe/page.tsx` `onResult` now pushes `/app/scribe/result?visit=<consultationId>`,
+  so the result URL ALWAYS carries `?visit=`.
+
+- **Result-page reconcile (Option A).** When `?visit=` is present, the server's
+  `extracted_fields` is the SOURCE OF TRUTH. The `tuber_last_result` sessionStorage blob
+  — the original pre-edit AI output, written once and NEVER updated with edits — is
+  downgraded to an instant-paint fallback: the page paints it for a fast first render,
+  then fetches `GET /:id` and OVERWRITES the render `fields` with the server copy. The
+  reconcile touches `fields` ONLY, never `original`, so the `chars_changed` baseline
+  stays seeded from the AI original (happy-path edit metric unchanged). Fetch failure /
+  null note → keep the blob paint (never blank the screen).
+
+- **PhoneMode untouched.** No changes to PhoneMode mount/lifecycle (consultationId set
+  once, never reset to null). Verified live 2026-06-01 that the phone-path survives a
+  cold-start recovery and still produces a note.
+
+- **Verification (2026-06-01).** Verified LIVE on the deployed env: direct PC recording
+  produces a note; phone-path × cold-start recovery produces a note; recovery rebuilds
+  patient context in a fresh tab. Verified LOCALLY only: the silent-edit-loss fix below
+  (single + multi-field persist; F5 and edit-then-navigate retain edits).
+
 # Known issues / gotchas
+
+- **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
+  here (fixed 2026-06-01, web commit `df3198d`).** Named failure mode: **stale-closure
+  debounce + commit-on-blur.** `EditableField` buffers keystrokes in internal `local`
+  state and calls the parent `onChange` exactly ONCE on blur with the whole value — the
+  parent does NOT re-render while the textarea is focused. Pre-fix, the debounced
+  `flushEdit` was a `useCallback` closing over `fields`, so the `setTimeout(flushEdit, …)`
+  captured a closure over the PRE-edit `fields` and the POST persisted the note WITHOUT
+  the edit — while the row's `edit_count` still bumped, masking it as success. Lone edits,
+  and the LAST edit of every session, were silently lost server-side (multi-edit sessions
+  masked it: each edit carried the prior ones forward, only the final vanished). Real
+  production data-loss, EXPOSED (not caused) by the cold-start recovery work — recovery
+  was the first thing to read the server copy back into the UI. **Fixes that MUST be
+  preserved:** (1) `flushEdit` reads `fieldsRef.current` (a ref mirrored from `fields` via
+  an effect), NOT a captured `fields`; (2) a flush-on-unmount in the result-page cleanup
+  so an edit immediately followed by "+ Нова консултация" / nav-away WITHIN the 1.5s
+  debounce is flushed, not dropped (double-flush-guarded via `pendingEditField.current`).
+  This also resolves the previously-noted "edit-then-leave-page within the debounce
+  window" gap. Backend side: `POST /:id/edit` now gates `edit_count` on the actual write
+  (see tubermed-backend/CLAUDE.md).
+
+- **⚠ DEPLOY HAZARD — local-only cross-repo paths ENOENT in production.** The two repos
+  share a parent dir locally, so a `require` / `readFileSync` reaching across
+  (`../../../tubermed-web/...` from the backend, or the reverse) works locally but
+  `ENOENT`s in prod, where Vercel deploys ONLY `tubermed-web` and Railway ONLY
+  `tubermed-backend`. This caused a sev-1 backend outage 2026-06-01 (the gazetteer reading
+  `ial-inns.json` from the web repo — every consultation crashed). Fix pattern: a synced
+  in-repo MIRROR committed into the repo that reads the file at runtime (the other copy
+  stays canonical; both update together). `public/` files (e.g. `ial-inns.json`,
+  `mkb10.json`) are canonical here and served by Vercel to the browser — fine for the
+  frontend, but must NOT be assumed reachable from the backend's filesystem. Flag any
+  cross-repo runtime read in review.
+
+- **`uncertain_spans` have no visible result-page UI indicator (pre-existing, NOT a
+  regression — confirmed 2026-06-01).** The yellow highlighting on the result page is
+  vital-range warnings (`lib/vital-rules.ts`, out-of-normal-range vital VALUES) — a
+  SEPARATE system. `uncertain_spans` (AI-unsure-field markers computed by the backend
+  validators and persisted in `extracted_fields`) are NOT surfaced to the doctor.
+  Decision pending for a future session (safety affordance, possibly lawyer-relevant);
+  do NOT fix unprompted. Full detail in tubermed-backend/CLAUDE.md.
 
 - **`app/(workspace)/app/patients/page.tsx` — two pre-existing ESLint errors at lines
   111 / 120 (NOT yet fixed).** `loadPatient` calls `applyPage(...)` (~line 111) but
