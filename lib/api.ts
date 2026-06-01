@@ -22,6 +22,7 @@ import type {
   ConsultationDetailResponse,
   PatientConsultationsResponse,
   PatientSummaryResponse,
+  RetryExtractionResponse,
 } from './types';
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL!;
@@ -310,6 +311,22 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(opts?.regenerate ? { regenerate: true } : {}),
       },
+    ),
+
+  // ── Retry extraction (A3 recovery) ─────────────────────────────────────
+  // Resurrect a consultation whose generation failed AFTER Soniox produced a
+  // transcript (typically a sustained Anthropic outage that exhausted the
+  // retry wrapper). Re-runs ONLY the Claude stage against the saved transcript
+  // — the doctor does NOT re-record. Backend gates: 409 if status≠'error' or
+  // no transcript is on the row (nothing to resurrect), 502 if the upstream is
+  // still down (transcript kept for a later attempt). On 200 the row flips to
+  // 'generated'; callers can navigate to /app/scribe/result?visit=<id> and let
+  // the result page re-read the note from the server. NOT fire-and-forget —
+  // the recovery panel surfaces the outcome to the doctor.
+  retryExtraction: (consultationId: string) =>
+    request<RetryExtractionResponse>(
+      `/api/consultations/${consultationId}/retry-extraction`,
+      { method: 'POST' },
     ),
 };
 

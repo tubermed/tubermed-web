@@ -65,6 +65,12 @@ function ScribePageInner() {
   // (hard refresh / new tab / laptop sleep). Drives useColdStartRecovery below;
   // stays null on the happy path so recovery never fires there.
   const [recoverVisitId, setRecoverVisitId] = useState<string | null>(null);
+  // A3 failure-recovery: when a processing run fails on a STAGED consultation
+  // (Claude threw after Soniox already produced + persisted a transcript), the
+  // note can be resurrected with retry-extraction WITHOUT re-recording. Holding
+  // the consultation id here swaps the in-flow UI for the recovery panel. Stays
+  // null on the happy path. See RecoveryPanel below.
+  const [recoverableVisitId, setRecoverableVisitId] = useState<string | null>(null);
   // PC-side recording active flag — bubbled up from PcMode so the sidebar
   // can be locked while the doctor is mid-recording. Phone-side "in progress"
   // naturally maps to view === 'processing' (PC isn't recording anything).
@@ -147,7 +153,12 @@ function ScribePageInner() {
       setPendingVisit(recovery.pendingVisit);
       if (recovery.pendingVisit.consent_to_record_at) setConsentRecorded(true);
       if (recovery.status === 'error') {
-        setError('Извличането на този преглед е неуспешно. Можете да запишете отново.');
+        // The transcript was persisted by the failing route's catch block, so
+        // offer retry-extraction (no re-record) via the recovery panel. If the
+        // transcript is gone (e.g. purged, or Soniox never produced one), the
+        // retry call returns 409 and the panel routes the doctor to a fresh
+        // visit — see RecoveryPanel.
+        setRecoverableVisitId(recovery.pendingVisit.consultation_id);
       }
       // ⚠ PhoneMode-safe: consultationId is set EXACTLY ONCE here, after the
       // fetch resolves, and is never reset to null. The async null→defined set
@@ -212,6 +223,25 @@ function ScribePageInner() {
     [showToast]
   );
 
+  // A3: route a live processing failure to the recovery panel when we hold a
+  // staged consultation id (the backend saves the transcript on a post-Soniox
+  // failure, so retry-extraction can resurrect the note without re-recording).
+  // The retry call itself is the source of truth for recoverability — if there
+  // is nothing to resurrect it returns 409 and the panel offers a fresh visit.
+  // Errors without a consultation id (nothing staged) fall through to the plain
+  // banner, unchanged.
+  const reportProcessingError = useCallback(
+    (message: string) => {
+      if (consultationId) {
+        setError(null);
+        setRecoverableVisitId(consultationId);
+      } else {
+        setError(message);
+      }
+    },
+    [consultationId]
+  );
+
   const onResult = useCallback(
     (result: TranscribeResult) => {
       sessionStorage.setItem(RESULT_STORAGE_KEY, JSON.stringify(result));
@@ -259,6 +289,14 @@ function ScribePageInner() {
       {pendingVisit && <PatientHeaderStrip pending={pendingVisit} />}
       <div className="flex-1 px-6 py-8">
         <div className="max-w-2xl mx-auto">
+          {recoverableVisitId ? (
+            <RecoveryPanel
+              visitId={recoverableVisitId}
+              onSuccess={(id) => router.push(`/app/scribe/result?visit=${id}`)}
+              onRestart={() => router.replace('/app/new-visit')}
+            />
+          ) : (
+          <>
           {error && (
             <ErrorBanner message={error} onClose={() => setError(null)} />
           )}
@@ -294,7 +332,7 @@ function ScribePageInner() {
                   goToProcessing('AI анализира...', 'Транскрипция и извличане')
                 }
                 onResult={onResult}
-                onError={setError}
+                onError={reportProcessingError}
               />
             </div>
           )}
@@ -307,7 +345,7 @@ function ScribePageInner() {
                 goToProcessing('Транскрипция...', 'Изпраща се аудиото')
               }
               onResult={onResult}
-              onError={setError}
+              onError={reportProcessingError}
               onAuthError={() => {
                 clearSession();
                 router.replace('/app/login');
@@ -315,6 +353,8 @@ function ScribePageInner() {
               onBackToIdle={() => setView('record')}
               requestConsent={requestConsent}
             />
+          )}
+          </>
           )}
         </div>
       </div>
@@ -354,6 +394,121 @@ function ErrorBanner({
       >
         ×
       </button>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────── */
+/* RECOVERY PANEL (A3 — "обработката се провали, звукът е запазен") */
+/* ─────────────────────────────────────────────────────────────── */
+//
+// Shown instead of the record/processing UI when a processing run failed on a
+// staged consultation. The primary action re-runs ONLY the Claude extraction
+// against the transcript the backend persisted on failure (api.retryExtraction
+// → POST /:id/retry-extraction) — the doctor never re-records. The retry call
+// is the source of truth for recoverability:
+//   • 200  → row flips to 'generated'; navigate to the result page, which
+//            re-reads the note from the server via ?visit= (tested cold-start
+//            path), so no client-side note shape is assembled here.
+//   • 409  → nothing to resurrect (no saved transcript / wrong status) → the
+//            only safe path is a fresh visit; the retry button is removed.
+//   • 502/network/other → upstream still down; the audio is still safe, so the
+//            retry button stays enabled for another attempt.
+
+type RecoveryPhase =
+  | { kind: 'idle' }
+  | { kind: 'retrying' }
+  | { kind: 'temporary'; message: string }
+  | { kind: 'no-transcript'; message: string };
+
+function RecoveryPanel({
+  visitId,
+  onSuccess,
+  onRestart,
+}: {
+  visitId: string;
+  onSuccess: (visitId: string) => void;
+  onRestart: () => void;
+}) {
+  const [phase, setPhase] = useState<RecoveryPhase>({ kind: 'idle' });
+
+  const retry = useCallback(async () => {
+    setPhase({ kind: 'retrying' });
+    try {
+      await api.retryExtraction(visitId);
+      // Row is now 'generated'. Hand off to the result page; its ?visit=
+      // cold-start path fetches the fresh server note.
+      onSuccess(visitId);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setPhase({
+          kind: 'no-transcript',
+          message:
+            'Записът не може да бъде възстановен автоматично. Моля, започнете нов преглед.',
+        });
+        return;
+      }
+      setPhase({
+        kind: 'temporary',
+        message:
+          'Услугата временно е недостъпна. Звукът ви е запазен — опитайте отново след малко.',
+      });
+    }
+  }, [visitId, onSuccess]);
+
+  const retrying = phase.kind === 'retrying';
+  const blocked = phase.kind === 'no-transcript';
+
+  return (
+    <div
+      className="bg-white rounded-2xl border p-10 flex flex-col items-center text-center"
+      style={{ borderColor: 'var(--color-border)' }}
+    >
+      <div
+        className="text-xl font-semibold mb-2"
+        style={{ color: 'var(--color-danger)' }}
+      >
+        Обработката се провали
+      </div>
+      <p className="text-sm max-w-md" style={{ color: 'var(--color-text-muted)' }}>
+        Звукът ви е запазен. Можете да опитате повторно извличане, без да записвате
+        отново.
+      </p>
+
+      {(phase.kind === 'temporary' || phase.kind === 'no-transcript') && (
+        <div
+          className="mt-4 px-4 py-3 rounded-md text-sm"
+          style={{ background: 'var(--color-danger-soft)', color: 'var(--color-danger)' }}
+        >
+          {phase.message}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-3 justify-center mt-6">
+        {!blocked && (
+          <button
+            onClick={retry}
+            disabled={retrying}
+            className="px-5 py-2.5 rounded-md text-sm font-medium transition disabled:opacity-60"
+            style={{ background: 'var(--color-brand)', color: 'white' }}
+          >
+            {retrying ? 'Обработва се…' : 'Опитайте отново'}
+          </button>
+        )}
+        <button
+          onClick={onRestart}
+          disabled={retrying}
+          className="px-5 py-2.5 rounded-md text-sm font-medium transition disabled:opacity-60"
+          style={{
+            background: 'var(--color-bg-card)',
+            color: 'var(--color-text-muted)',
+            borderColor: 'var(--color-border)',
+            borderWidth: 1,
+          }}
+        >
+          Започни нов преглед
+        </button>
+      </div>
     </div>
   );
 }

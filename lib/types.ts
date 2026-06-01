@@ -337,3 +337,17 @@ export interface PatientSummaryResponse {
   summary: string;
   generated_at: string | null;    // ISO-8601 / TIMESTAMPTZ
 }
+
+// Response from POST /api/consultations/:id/retry-extraction (A3 recovery).
+// Re-runs ONLY the Claude extraction stage against the transcript that was
+// persisted when the original generation failed AFTER Soniox succeeded — so
+// the doctor never has to re-record. Backend preconditions: status='error' AND
+// transcript IS NOT NULL, else 409 (nothing to resurrect → caller must offer a
+// fresh recording). 502 means the upstream (Anthropic) is still down and the
+// transcript is kept on the row for a later retry. On 200 the row flips to
+// 'generated'; `fields` is the resurrected note (the result page also re-reads
+// it from the server via ?visit=, so callers can simply navigate there).
+export interface RetryExtractionResponse {
+  ok: true;
+  fields: TranscribeFields;
+}
