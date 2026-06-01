@@ -9,8 +9,12 @@
 // it, so re-opening is free). The doctor can copy it, print/PDF it for the
 // patient, or regenerate it if they edited the note after the first run.
 //
-// The mandatory disclaimer is appended server-side and is part of `summary`, so
-// it is always present in whatever the doctor copies or prints.
+// The doctor can EDIT the summary body in-app before copy/print. The mandatory
+// disclaimer is split off and shown as a FIXED, non-editable footer that is
+// always re-appended to whatever is copied/printed — a free edit can never drop
+// it (it stays the code-controlled invariant the backend guarantees). Edits are
+// session-local: they shape the copy/print output but are NOT persisted to the
+// server; "Регенерирай" or re-opening restores the generated text.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
@@ -28,8 +32,40 @@ interface PatientSummaryModalProps {
 
 type Phase =
   | { kind: 'loading' }
-  | { kind: 'ready'; summary: string; cached: boolean }
+  | { kind: 'ready'; cached: boolean }
   | { kind: 'error'; message: string };
+
+// Mirror of the backend's code-controlled disclaimer (lib/patient-summary.js),
+// used ONLY as a fallback if a loaded summary somehow carries no disclaimer —
+// normally we re-use the exact text the backend appended (see splitSummary).
+const DISCLAIMER_FALLBACK =
+  'Това резюме е информационно и не замества медицинска консултация. При въпроси или влошаване потърсете Вашия лекар.';
+
+// Substring the backend guarantees inside the disclaimer sentence — lets us
+// split the disclaimer off the editable body without hardcoding the sentence.
+const DISCLAIMER_MARKER = 'не замества медицинска консултация';
+
+// Split a generated summary into editable body + fixed disclaimer. Backend
+// appends `${body}\n\n${DISCLAIMER}`, so split at the blank line before the
+// marker; fall back to the marker's own line if the model wrote it inline.
+function splitSummary(full: string): { body: string; disclaimer: string } {
+  const text = (full || '').trim();
+  const idx = text.indexOf(DISCLAIMER_MARKER);
+  if (idx === -1) return { body: text, disclaimer: '' };
+  const before = text.slice(0, idx);
+  const para = before.lastIndexOf('\n\n');
+  const cut = para !== -1 ? para : before.lastIndexOf('\n');
+  if (cut === -1) return { body: '', disclaimer: text };
+  return { body: text.slice(0, cut).trim(), disclaimer: text.slice(cut).trim() };
+}
+
+// The text the doctor copies / prints: edited body + the always-present
+// disclaimer (the extracted one, or the fallback if none was found).
+function composeFinal(body: string, disclaimer: string): string {
+  const d = disclaimer || DISCLAIMER_FALLBACK;
+  const b = body.trim();
+  return b ? `${b}\n\n${d}` : d;
+}
 
 function escapeHtml(s: string): string {
   return s
@@ -73,6 +109,11 @@ export default function PatientSummaryModal({
 }: PatientSummaryModalProps) {
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
   const [regenerating, setRegenerating] = useState(false);
+  // Editable body + the disclaimer split off the generated summary, plus the
+  // pristine generated body so we can detect edits and offer a reset.
+  const [draft, setDraft] = useState('');
+  const [disclaimer, setDisclaimer] = useState('');
+  const [originalBody, setOriginalBody] = useState('');
   // Guards the auto-fetch so opening doesn't double-fire under StrictMode.
   const fetchedForRef = useRef<string | null>(null);
 
@@ -83,7 +124,11 @@ export default function PatientSummaryModal({
       else setPhase({ kind: 'loading' });
       try {
         const res = await api.generatePatientSummary(consultationId, { regenerate });
-        setPhase({ kind: 'ready', summary: res.summary, cached: res.cached });
+        const split = splitSummary(res.summary);
+        setOriginalBody(split.body);
+        setDraft(split.body);
+        setDisclaimer(split.disclaimer);
+        setPhase({ kind: 'ready', cached: res.cached });
       } catch (err) {
         const message =
           err instanceof ApiError
@@ -121,10 +166,12 @@ export default function PatientSummaryModal({
 
   if (!isOpen) return null;
 
-  const summary = phase.kind === 'ready' ? phase.summary : '';
+  const edited = draft.trim() !== originalBody.trim();
+  const finalText = composeFinal(draft, disclaimer);
+  const canExport = phase.kind === 'ready' && draft.trim().length > 0;
 
   async function handleCopy() {
-    const ok = await copyToClipboard(summary);
+    const ok = await copyToClipboard(finalText);
     onToast(
       ok ? 'success' : 'error',
       ok ? '✓ Резюмето е копирано' : 'Копирането не е възможно в този браузър',
@@ -132,10 +179,22 @@ export default function PatientSummaryModal({
   }
 
   function handlePrint() {
-    const opened = openPdfPreview(buildPrintHtml(summary, patientName), { autoPrint: true });
+    const opened = openPdfPreview(buildPrintHtml(finalText, patientName), { autoPrint: true });
     if (!opened) {
       onToast('error', 'Изскачащият прозорец е блокиран — разрешете го за този сайт');
     }
+  }
+
+  function handleRegenerate() {
+    if (
+      edited &&
+      !window.confirm(
+        'Регенерирането ще замени редакциите ви с ново резюме от бележката. Да продължа?',
+      )
+    ) {
+      return;
+    }
+    load(true);
   }
 
   return (
@@ -200,11 +259,42 @@ export default function PatientSummaryModal({
           )}
 
           {phase.kind === 'ready' && (
-            <div
-              className="text-sm leading-relaxed whitespace-pre-wrap"
-              style={{ color: 'var(--color-text)' }}
-            >
-              {phase.summary}
+            <div className="flex flex-col gap-3">
+              <label
+                className="text-xs font-medium"
+                style={{ color: 'var(--color-text-hint)' }}
+              >
+                Текст за пациента — можете да редактирате преди печат/копиране
+              </label>
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={10}
+                className="w-full text-sm leading-relaxed rounded-md border px-3 py-2 resize-y focus:outline-none"
+                style={{
+                  borderColor: 'var(--color-border-mid)',
+                  color: 'var(--color-text)',
+                  minHeight: '12rem',
+                }}
+                placeholder="Текстът на резюмето…"
+              />
+              {edited && (
+                <button
+                  onClick={() => setDraft(originalBody)}
+                  className="self-start text-xs underline"
+                  style={{ color: 'var(--color-text-hint)' }}
+                >
+                  Възстанови генерирания текст
+                </button>
+              )}
+              {/* Fixed, non-editable disclaimer — ALWAYS added to copy/print */}
+              <div
+                className="text-xs rounded-md px-3 py-2"
+                style={{ background: 'var(--color-bg)', color: 'var(--color-text-muted)' }}
+              >
+                <span className="font-medium">Забележка (добавя се автоматично): </span>
+                {disclaimer || DISCLAIMER_FALLBACK}
+              </div>
             </div>
           )}
         </div>
@@ -216,7 +306,7 @@ export default function PatientSummaryModal({
             style={{ borderColor: 'var(--color-border)' }}
           >
             <button
-              onClick={() => load(true)}
+              onClick={handleRegenerate}
               disabled={regenerating}
               className="px-3 py-1.5 rounded-md text-sm font-medium border transition hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ borderColor: 'var(--color-border-mid)', color: 'var(--color-text-muted)' }}
@@ -227,14 +317,16 @@ export default function PatientSummaryModal({
             <div className="flex items-center gap-2">
               <button
                 onClick={handlePrint}
-                className="px-3 py-1.5 rounded-md text-sm font-medium border transition hover:bg-[var(--color-bg)]"
+                disabled={!canExport}
+                className="px-3 py-1.5 rounded-md text-sm font-medium border transition hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ borderColor: 'var(--color-border-mid)', color: 'var(--color-text-muted)' }}
               >
                 ⎙ Печат
               </button>
               <button
                 onClick={handleCopy}
-                className="px-3 py-1.5 rounded-md text-sm font-medium text-white transition hover:opacity-90"
+                disabled={!canExport}
+                className="px-3 py-1.5 rounded-md text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'var(--gradient-brand)' }}
               >
                 ⧉ Копирай
