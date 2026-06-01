@@ -21,6 +21,7 @@ import type {
   ExportSignalPayload,
   ConsultationDetailResponse,
   PatientConsultationsResponse,
+  PatientSummaryResponse,
 } from './types';
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL!;
@@ -291,6 +292,25 @@ export const api = {
     request<ApproveResponse>(`/api/consultations/${consultationId}/approve`, {
       method: 'POST',
     }),
+
+  // ── Patient after-visit summary (A2) ───────────────────────────────────
+  // Generates (or returns the cached) plain-language Bulgarian summary the
+  // patient takes home. Built server-side from the doctor-APPROVED note, so
+  // the backend refuses with 403 (patient_summary_blocked_no_approval) until
+  // the note is confirmed. Pass { regenerate: true } to force a fresh
+  // generation + overwrite (e.g. after the doctor edited the note). NOT
+  // fire-and-forget — the modal surfaces errors to the doctor.
+  generatePatientSummary: (
+    consultationId: string,
+    opts?: { regenerate?: boolean },
+  ) =>
+    request<PatientSummaryResponse>(
+      `/api/consultations/${consultationId}/patient-summary`,
+      {
+        method: 'POST',
+        body: JSON.stringify(opts?.regenerate ? { regenerate: true } : {}),
+      },
+    ),
 };
 
 /**

@@ -324,3 +324,16 @@ export interface ApproveResponse {
   note_approved_at: string;       // ISO-8601 / TIMESTAMPTZ
   idempotent: boolean;
 }
+
+// Response from POST /api/consultations/:id/patient-summary (A2).
+// `summary` is the plain-language Bulgarian after-visit text (includes the
+// mandatory disclaimer line). `cached` is true when the backend returned a
+// previously-generated summary without spending tokens; false on a fresh
+// generation. The endpoint is gated on note_approved=true (403 +
+// patient_summary_blocked_no_approval otherwise).
+export interface PatientSummaryResponse {
+  ok: true;
+  cached: boolean;
+  summary: string;
+  generated_at: string | null;    // ISO-8601 / TIMESTAMPTZ
+}

@@ -35,6 +35,7 @@ import {
   downloadWord,
 } from '@/lib/exporters';
 import CopyButton from '@/components/CopyButton';
+import PatientSummaryModal from '@/components/PatientSummaryModal';
 
 const RESULT_STORAGE_KEY  = 'tuber_last_result';
 const PENDING_VISIT_KEY   = 'tuber_pending_visit';
@@ -149,6 +150,7 @@ function ResultPageInner() {
   const [reviewPopupOpen, setReviewPopupOpen] = useState(false);
   const [activeNav, setActiveNav] = useState<string>('sec-diag');
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [mkbOpen, setMkbOpen] = useState(false);
   const [mkbTarget, setMkbTarget] = useState<MkbTarget | null>(null);
   const [lastRemovedMedName, setLastRemovedMedName] = useState<string | null>(
@@ -960,6 +962,13 @@ function ResultPageInner() {
             label="⎙ Печат"
             lockedHint="Първо потвърдете прегледа"
           />
+          <TopbarBtn
+            locked={isLocked}
+            disabled={isLocked}
+            onClick={() => setSummaryOpen(true)}
+            label="📄 Резюме за пациента"
+            lockedHint="Първо потвърдете прегледа"
+          />
         </div>
       </div>
 
@@ -1314,6 +1323,20 @@ function ResultPageInner() {
           mkbTarget?.kind === 'osnovna'
             ? 'Основна диагноза — МКБ-10'
             : 'Придружаващо заболяване — МКБ-10'
+        }
+      />
+
+      <PatientSummaryModal
+        isOpen={summaryOpen}
+        consultationId={original.consultationId}
+        onClose={() => setSummaryOpen(false)}
+        onToast={showToast}
+        patientName={
+          pendingVisit
+            ? [pendingVisit.patient.first_name, pendingVisit.patient.last_name]
+                .filter(Boolean)
+                .join(' ')
+            : undefined
         }
       />
 
