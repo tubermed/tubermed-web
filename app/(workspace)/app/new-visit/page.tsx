@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { RECOVERY_NOTICE_KEY } from '@/lib/use-cold-start-recovery';
 import WorkspaceTopBar from '@/components/WorkspaceTopBar';
 import { SCRIBE_FLOW_STEPS } from '@/lib/flow';
 import { dobFromEgn } from '@/lib/egn';
@@ -52,6 +53,24 @@ export default function NewVisitPage() {
   const showToast = useCallback((kind: ToastKind, message: string) => {
     setToast({ kind, message, id: Date.now() });
   }, []);
+
+  // Cold-start recovery bounces an unrecoverable / abandoned visit here with a
+  // one-shot reason in sessionStorage. Surface it once, then clear it so a
+  // later manual navigation to /app/new-visit doesn't re-show a stale message.
+  useEffect(() => {
+    let notice: string | null = null;
+    try {
+      notice = sessionStorage.getItem(RECOVERY_NOTICE_KEY);
+      if (notice) sessionStorage.removeItem(RECOVERY_NOTICE_KEY);
+    } catch {
+      /* sessionStorage unavailable — no notice to show */
+    }
+    if (notice === 'visit_abandoned') {
+      showToast('info', 'Това посещение е приключено и не може да бъде възстановено. Започнете ново.');
+    } else if (notice === 'visit_unavailable') {
+      showToast('info', 'Посещението не е намерено или вече е недостъпно. Започнете ново.');
+    }
+  }, [showToast]);
 
   // ── Shared load path ─────────────────────────────────────────────────────
   // The ONE place that loads an existing patient into the form:

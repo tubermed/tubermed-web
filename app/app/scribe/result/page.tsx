@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import Stepper from '@/components/Stepper';
@@ -13,6 +13,7 @@ import PatientHeaderStrip from '@/components/PatientHeaderStrip';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import { api, ApiError, getSession } from '@/lib/api';
 import type { DoctorInfo } from '@/lib/api';
+import { useColdStartRecovery } from '@/lib/use-cold-start-recovery';
 import type {
   TranscribeResult,
   TranscribeFields,
@@ -110,8 +111,36 @@ function stringifyForDiff(value: unknown): string {
   return String(value);
 }
 
+// useSearchParams() must live inside a Suspense boundary in Next.js 16.
 export default function ResultPage() {
+  return (
+    <Suspense fallback={<BootSplash />}>
+      <ResultPageInner />
+    </Suspense>
+  );
+}
+
+function BootSplash() {
+  return (
+    <main
+      className="min-h-screen flex items-center justify-center"
+      style={{ color: 'var(--color-text-muted)' }}
+    >
+      Зареждане…
+    </main>
+  );
+}
+
+function ResultPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Cold-start recovery: set to ?visit= when tuber_last_result is absent
+  // (hard refresh / new tab). Drives useColdStartRecovery; null on happy path.
+  const [recoverVisitId, setRecoverVisitId] = useState<string | null>(null);
+  // Server-reconcile target: set to ?visit= when we DID paint from the stale
+  // tuber_last_result blob. Drives the reconcile effect below, which overwrites
+  // the rendered fields with the server's extracted_fields (the edited truth).
+  const [reconcileVisitId, setReconcileVisitId] = useState<string | null>(null);
   const [doctor, setDoctor] = useState<DoctorInfo | null>(null);
   const [pendingVisit, setPendingVisit] = useState<PendingVisit | null>(null);
   const [original, setOriginal] = useState<TranscribeResult | null>(null);
@@ -156,6 +185,15 @@ export default function ResultPage() {
 
     const raw = sessionStorage.getItem(RESULT_STORAGE_KEY);
     if (!raw) {
+      // Cold start (hard refresh / new tab / laptop sleep): tuber_last_result is
+      // gone. If the URL carries ?visit=<id>, recover the filed note + patient
+      // header from the backend instead of bouncing. Otherwise there's nothing
+      // to recover — back to scribe.
+      const visitId = searchParams.get('visit');
+      if (visitId) {
+        setRecoverVisitId(visitId);
+        return;
+      }
       router.replace('/app/scribe');
       return;
     }
@@ -168,6 +206,14 @@ export default function ResultPage() {
           parsed.fields.medications_list
         ),
       });
+      // The blob is the AI output frozen at generation — it never carries the
+      // doctor's later edits. Whenever ?visit= is present the server's
+      // extracted_fields is the source of truth: we just painted the blob for an
+      // instant first render; arm the reconcile effect to overwrite the rendered
+      // fields with the server copy. (Fixes same-tab F5 / duplicated-tab showing
+      // pre-edit text — sessionStorage survives those, so recovery never fires.)
+      const visitId = searchParams.get('visit');
+      if (visitId) setReconcileVisitId(visitId);
     } catch {
       router.replace('/app/scribe');
     }
@@ -180,7 +226,77 @@ export default function ResultPage() {
     } catch {
       /* malformed — render without patient header */
     }
-  }, [router]);
+  }, [router, searchParams]);
+
+  // ── Cold-start recovery driver ─────────────────────────────────────────
+  // Fires only when the bootstrap above set recoverVisitId (tuber_last_result
+  // was absent). Rebuilds `original` (and thus the editable note) from the
+  // filed `note`, plus the patient header from getPatient. Inert on happy path.
+  const recovery = useColdStartRecovery(recoverVisitId, 'result');
+  useEffect(() => {
+    if (recovery.phase === 'redirect') {
+      router.replace(recovery.to);
+      return;
+    }
+    if (recovery.phase === 'recovered') {
+      const note = recovery.note ?? {};
+      // No transcript on recovery — the backend omits it by design; '' lets the
+      // transcript viewer fall back to its existing "unavailable" state.
+      // ACCEPTED (not a bug): originalFieldLengths derives the edit-diff baseline
+      // from `original.fields`, which on recovery is the ALREADY-FILED note — so
+      // chars_changed measures edits-since-recovery, not edits-since-AI-output.
+      setOriginal({
+        consultationId: recovery.pendingVisit.consultation_id,
+        transcript: '',
+        fields: note,
+      });
+      setFields({
+        ...note,
+        medications_list: normalizeMedications(note.medications_list),
+      });
+      setPendingVisit(recovery.pendingVisit);
+    }
+  }, [recovery, router]);
+
+  // ── Server reconcile (happy path + same-tab refresh) ───────────────────────
+  // Fires only when the bootstrap painted from the stale tuber_last_result blob
+  // AND ?visit= is present (reconcileVisitId set). The blob is the AI output
+  // frozen at generation and never carries the doctor's edits, so the server's
+  // extracted_fields is the source of truth — overwrite the RENDERED fields.
+  //
+  // Overwrites `fields` ONLY, never `original`: the chars_changed baseline
+  // (originalFieldLengths, seeded from `original`) must stay the blob = the AI
+  // output, so the happy-path "edits since AI generation" metric is unchanged.
+  // Reseeding the baseline from the server copy would zero it (the server copy
+  // already contains the edits → diff against it = 0).
+  //
+  // Guards (never blank the screen, never clobber a live edit):
+  //   • fetch throws            → keep the blob paint
+  //   • note is null            → keep the blob paint (pending/error/abandoned)
+  //   • doctor already editing  → keep their in-progress edits (sub-second race
+  //                               right after load; on an F5 the fresh mount has
+  //                               an empty edit map so the overwrite applies).
+  useEffect(() => {
+    if (!reconcileVisitId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { consultation } = await api.getConsultation(reconcileVisitId);
+        if (cancelled) return;
+        if (!consultation.note) return;
+        if (editedFieldsRef.current.size > 0) return;
+        setFields({
+          ...consultation.note,
+          medications_list: normalizeMedications(consultation.note.medications_list),
+        });
+      } catch {
+        /* transient fetch error → keep the blob paint, never blank the screen */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reconcileVisitId]);
 
   // Pre-load MKB-10 data so the bidirectional sync works immediately
   // (and so the picker is instant on first open). Silent failure — picker
@@ -214,6 +330,19 @@ export default function ResultPage() {
   );
 
   // ── Edit tracking (debounced) ─────────────────────────────────
+  // Latest `fields` mirrored into a ref. flushEdit is scheduled via
+  // trackEdit's setTimeout, which captures a flushEdit instance. EditableField
+  // commits the WHOLE new value in a single onChange (on blur) and the parent
+  // doesn't re-render while the textarea is focused — so the captured flushEdit
+  // would close over the PRE-edit `fields` and POST a note WITHOUT the edit (the
+  // row's edit_count still bumps, masking the loss). Reading fieldsRef.current
+  // at flush time guarantees the POST carries the current note: by the time the
+  // 1500ms timer fires, the edit is in state and this effect has synced the ref.
+  const fieldsRef = useRef<TranscribeFields>(fields);
+  useEffect(() => {
+    fieldsRef.current = fields;
+  }, [fields]);
+
   const flushEdit = useCallback(() => {
     if (!original) return;
     // Send the edited field name + chars_changed for analytics + the full
@@ -222,14 +351,14 @@ export default function ResultPage() {
     // debounce window — see pendingCharsChangedRef.
     const field        = pendingEditField.current ?? undefined;
     const charsChanged = pendingCharsChangedRef.current;
-    api.editConsultation(original.consultationId, field, fields, charsChanged).catch((err) => {
+    api.editConsultation(original.consultationId, field, fieldsRef.current, charsChanged).catch((err) => {
       if (err instanceof ApiError) {
         console.warn('[edit-track] ' + err.status + ' ' + err.message);
       }
     });
     pendingEditField.current = null;
     pendingCharsChangedRef.current = 0;
-  }, [original, fields]);
+  }, [original]);
 
   const trackEdit = useCallback(
     (fieldKey: string, charsChanged: number) => {
@@ -246,9 +375,34 @@ export default function ResultPage() {
     [flushEdit, reviewStatus]
   );
 
+  // Keep a ref to the latest flushEdit so the unmount cleanup — which MUST use
+  // [] deps to run only on real unmount — can call the current version (with the
+  // current `original`) instead of a closure captured at mount.
+  const flushEditRef = useRef(flushEdit);
+  useEffect(() => {
+    flushEditRef.current = flushEdit;
+  }, [flushEdit]);
+
   useEffect(() => {
     return () => {
-      if (editTimerRef.current) clearTimeout(editTimerRef.current);
+      // On unmount — including client-side nav like "+ Нова консултация" or
+      // jumping to the next patient — flush any pending debounced edit instead
+      // of dropping it. Same data-loss class as the stale-closure bug: a doctor
+      // who edits then immediately navigates would otherwise lose that last
+      // edit. flushEdit reads fieldsRef.current, so the flushed note is current.
+      //
+      // Double-flush guard: pendingEditField.current is non-null ONLY while an
+      // edit is scheduled-but-not-yet-flushed (trackEdit sets it; flushEdit nulls
+      // it). If the timer already fired, it's null → we clear the spent timer and
+      // do NOT flush again. clearTimeout also cancels the pending callback so the
+      // manual flush below is the only one that runs.
+      if (editTimerRef.current) {
+        clearTimeout(editTimerRef.current);
+        editTimerRef.current = null;
+        if (pendingEditField.current !== null) {
+          flushEditRef.current();
+        }
+      }
     };
   }, []);
 

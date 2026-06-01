@@ -240,10 +240,18 @@ export interface PatientConsultationsResponse {
 // `note: null` is the normal empty case for pending/error/abandoned visits.
 export interface ConsultationDetail {
   id: string;
+  // patient_id + consent_to_record_at are additive fields the GET /:id handler
+  // now returns (cross-repo: tubermed-backend). They drive cold-start recovery:
+  // patient_id lets the frontend re-fetch the full PatientSummary for the header;
+  // consent_to_record_at suppresses a redundant consent re-prompt on recovery.
+  // patient_id is nullable — legacy / never-staged rows have none (treated as
+  // unrecoverable by useColdStartRecovery).
+  patient_id: string | null;
   status: string;
   created_at: string;
   started_at: string | null;
   exported_at: string | null;
+  consent_to_record_at: string | null;
   visit_type: VisitType | null;
   chief_complaint: string | null;
   // Phase 2 Step D — osnovna_diagnoza / osnovna_mkb are no longer separate

@@ -25,6 +25,7 @@ import type {
 } from '@/lib/types';
 import ConsentModal from '@/components/ConsentModal';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
+import { useColdStartRecovery } from '@/lib/use-cold-start-recovery';
 
 type Mode = 'phone' | 'pc';
 type View = 'record' | 'processing';
@@ -60,6 +61,10 @@ function ScribePageInner() {
   const [procSub, setProcSub] = useState('Моля изчакайте');
   const [consultationId, setConsultationId] = useState<string | null>(null);
   const [pendingVisit, setPendingVisit] = useState<PendingVisit | null>(null);
+  // Cold-start recovery: set to the ?visit= id when sessionStorage is absent
+  // (hard refresh / new tab / laptop sleep). Drives useColdStartRecovery below;
+  // stays null on the happy path so recovery never fires there.
+  const [recoverVisitId, setRecoverVisitId] = useState<string | null>(null);
   // PC-side recording active flag — bubbled up from PcMode so the sidebar
   // can be locked while the doctor is mid-recording. Phone-side "in progress"
   // naturally maps to view === 'processing' (PC isn't recording anything).
@@ -105,8 +110,11 @@ function ScribePageInner() {
       /* malformed — treat as absent */
     }
     if (!pending || pending.consultation_id !== visitId) {
+      // Cold start (hard refresh / new tab / laptop sleep): the PendingVisit is
+      // gone but the URL still carries ?visit=<id>. Recover from the backend
+      // (useColdStartRecovery) instead of bouncing to /app/new-visit.
       sessionStorage.removeItem(PENDING_VISIT_KEY);
-      router.replace('/app/new-visit');
+      setRecoverVisitId(visitId);
       return;
     }
 
@@ -124,6 +132,30 @@ function ScribePageInner() {
       }
     });
   }, [router, searchParams]);
+
+  // ── Cold-start recovery driver ─────────────────────────────────────────
+  // Fires only when the gate above set recoverVisitId (sessionStorage was
+  // absent). Fetches consultation + patient and either rebuilds context in
+  // place or redirects per status. Inert (phase 'idle') on the happy path.
+  const recovery = useColdStartRecovery(recoverVisitId, 'scribe');
+  useEffect(() => {
+    if (recovery.phase === 'redirect') {
+      router.replace(recovery.to);
+      return;
+    }
+    if (recovery.phase === 'recovered') {
+      setPendingVisit(recovery.pendingVisit);
+      if (recovery.pendingVisit.consent_to_record_at) setConsentRecorded(true);
+      if (recovery.status === 'error') {
+        setError('Извличането на този преглед е неуспешно. Можете да запишете отново.');
+      }
+      // ⚠ PhoneMode-safe: consultationId is set EXACTLY ONCE here, after the
+      // fetch resolves, and is never reset to null. The async null→defined set
+      // is the transition PhoneMode already handles; a null→defined→null flip
+      // would re-introduce the documented second-session-mid-QR-scan bug.
+      setConsultationId(recovery.pendingVisit.consultation_id);
+    }
+  }, [recovery, router]);
 
   // ── Gate 1 — auto-open the modal once we know the consultation and consent
   // is missing. Re-fires only when consultationId or consentRecorded changes,
@@ -183,7 +215,9 @@ function ScribePageInner() {
   const onResult = useCallback(
     (result: TranscribeResult) => {
       sessionStorage.setItem(RESULT_STORAGE_KEY, JSON.stringify(result));
-      router.push('/app/scribe/result');
+      // Carry the consultation id in the URL so a hard refresh / new tab on the
+      // result page can cold-start recover (useColdStartRecovery reads ?visit=).
+      router.push(`/app/scribe/result?visit=${result.consultationId}`);
     },
     [router]
   );
@@ -195,6 +229,20 @@ function ScribePageInner() {
   }, []);
 
   if (!doctor) {
+    return (
+      <main
+        className="min-h-screen flex items-center justify-center"
+        style={{ color: 'var(--color-text-muted)' }}
+      >
+        Зареждане…
+      </main>
+    );
+  }
+
+  // Cold-start recovery in flight (or about to redirect) — show a splash rather
+  // than flashing the empty record UI / consent modal. Happy path: recoverVisitId
+  // is null, so this whole branch is skipped.
+  if (recoverVisitId && recovery.phase !== 'recovered') {
     return (
       <main
         className="min-h-screen flex items-center justify-center"
