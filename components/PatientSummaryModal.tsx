@@ -41,16 +41,12 @@ type Phase =
 const DISCLAIMER_FALLBACK =
   'Това резюме е информационно и не замества медицинска консултация. При въпроси или влошаване потърсете Вашия лекар.';
 
-// Substring the backend guarantees inside the disclaimer sentence — lets us
-// split the disclaimer off the editable body without hardcoding the sentence.
-const DISCLAIMER_MARKER = 'не замества медицинска консултация';
-
 // Split a generated summary into editable body + fixed disclaimer. Backend
 // appends `${body}\n\n${DISCLAIMER}`, so split at the blank line before the
 // marker; fall back to the marker's own line if the model wrote it inline.
 function splitSummary(full: string): { body: string; disclaimer: string } {
   const text = (full || '').trim();
-  const idx = text.indexOf(DISCLAIMER_MARKER);
+  const idx = text.search(/не замества медицинска консултация/i);
   if (idx === -1) return { body: text, disclaimer: '' };
   const before = text.slice(0, idx);
   const para = before.lastIndexOf('\n\n');
