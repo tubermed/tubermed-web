@@ -285,7 +285,13 @@ function ResultPageInner() {
       try {
         const { consultation } = await api.getConsultation(reconcileVisitId);
         if (cancelled) return;
-        if (!consultation.note) return;
+        if (!consultation.note) {
+          if (consultation.status === 'abandoned' || consultation.status === 'error') {
+            toastIdRef.current += 1;
+            setToast({ kind: 'error', message: 'Бележката не е налична — започнете нов преглед', id: toastIdRef.current });
+          }
+          return;
+        }
         if (editedFieldsRef.current.size > 0) return;
         setFields({
           ...consultation.note,
