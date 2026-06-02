@@ -155,13 +155,20 @@ export default function PatientSummaryModal({
     if (!isOpen) fetchedForRef.current = null;
   }, [isOpen]);
 
+  // Guard close when unsaved edits are present.
+  const handleClose = useCallback(() => {
+    const isEdited = draft.trim() !== originalBody.trim();
+    if (isEdited && !window.confirm('Редакциите ще бъдат изгубени. Да затворя?')) return;
+    onClose();
+  }, [draft, originalBody, onClose]);
+
   // Esc to close.
   useEffect(() => {
     if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
+  }, [isOpen, handleClose]);
 
   if (!isOpen) return null;
 
@@ -200,7 +207,7 @@ export default function PatientSummaryModal({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 no-print"
       style={{ background: 'rgba(15, 23, 42, 0.45)' }}
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div
         className="bg-white rounded-2xl border w-full max-w-lg max-h-[85vh] flex flex-col shadow-xl"
@@ -222,7 +229,7 @@ export default function PatientSummaryModal({
             </h2>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="Затвори"
             className="w-8 h-8 rounded-md flex items-center justify-center text-lg transition hover:bg-[var(--color-bg)]"
             style={{ color: 'var(--color-text-hint)' }}
@@ -278,13 +285,18 @@ export default function PatientSummaryModal({
                 placeholder="Текстът на резюмето…"
               />
               {edited && (
-                <button
-                  onClick={() => setDraft(originalBody)}
-                  className="self-start text-xs underline"
-                  style={{ color: 'var(--color-text-hint)' }}
-                >
-                  Възстанови генерирания текст
-                </button>
+                <>
+                  <p className="text-xs" style={{ color: 'var(--color-text-hint)' }}>
+                    Редакциите са временни — не се записват на сървъра.
+                  </p>
+                  <button
+                    onClick={() => setDraft(originalBody)}
+                    className="self-start text-xs underline"
+                    style={{ color: 'var(--color-text-hint)' }}
+                  >
+                    Възстанови генерирания текст
+                  </button>
+                </>
               )}
               {/* Fixed, non-editable disclaimer — ALWAYS added to copy/print */}
               <div
