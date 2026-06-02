@@ -17,9 +17,9 @@ export function isValidEgnFormat(plain: string): boolean {
 // flagged just because UTC hasn't ticked over yet.
 export function dobFromEgn(plain: string): string | null {
   if (!isValidEgnFormat(plain)) return null;
-  let yy = parseInt(plain.slice(0, 2), 10);
+  const yy = parseInt(plain.slice(0, 2), 10);
   let mm = parseInt(plain.slice(2, 4), 10);
-  let dd = parseInt(plain.slice(4, 6), 10);
+  const dd = parseInt(plain.slice(4, 6), 10);
   let century = 1900;
   if (mm >= 41 && mm <= 52)      { century = 2000; mm -= 40; }
   else if (mm >= 21 && mm <= 32) { century = 1800; mm -= 20; }
