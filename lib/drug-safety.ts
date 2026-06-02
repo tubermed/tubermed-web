@@ -293,6 +293,63 @@ function buildDiagnosesText(f: TranscribeFields): string {
     .toLowerCase();
 }
 
+// ── Negation-aware token matching ───────────────────────────
+// A raw `text.includes(term)` is negation-blind. anamneza such as
+// "няма оплаквания за гастрит" (gastritis explicitly RULED OUT by the doctor)
+// matched the bare disease word and fired a false НСПВС/PPI warning. The flaw
+// is shared by every drug-diag rule ("няма астма" + beta-blocker) and by the
+// allergy path ("няма алергия към пеницилин"), both of which read anamneza.
+//
+// assertedIncludes() counts an occurrence only when it is ASSERTED — i.e. not
+// preceded, *within its own clause*, by a Bulgarian negation cue. It stays
+// conservative: only the disease/allergen token is gated, so an asserted
+// condition ("пациент с гастрит", "анамнеза за язва", an MKB code like K25,
+// "алергия към пеницилин") still fires. `text` and `term` must already be
+// lowercased — every caller lowercases via the build* helpers.
+const NEGATION_CUES = [
+  'няма',
+  'без',
+  'не ',
+  'не е',
+  'отрича',
+  'отсъствие на',
+  'липсва',
+  'липсват',
+  'изключен',
+  'изключва',
+  'не се установяв',
+  'не се наблюдав',
+  'не съобщава за',
+];
+
+function assertedIncludes(text: string, term: string): boolean {
+  for (
+    let idx = text.indexOf(term);
+    idx !== -1;
+    idx = text.indexOf(term, idx + term.length)
+  ) {
+    // Look back a short window, but never past the start of the current
+    // clause/sentence: a negation in a PRIOR clause must not suppress an
+    // asserted term here (e.g. "Няма астма. Гастрит потвърден.").
+    let window = text.slice(Math.max(0, idx - 25), idx);
+    const brk = Math.max(
+      window.lastIndexOf('.'),
+      window.lastIndexOf(','),
+      window.lastIndexOf(';'),
+      window.lastIndexOf('!'),
+      window.lastIndexOf('?'),
+      window.lastIndexOf('\n')
+    );
+    if (brk !== -1) window = window.slice(brk + 1);
+    // Leading space anchors each cue to a word boundary, so a word ending in
+    // "-не" (e.g. "оплакване") can't masquerade as the negation "не".
+    const probe = ' ' + window;
+    const negated = NEGATION_CUES.some((cue) => probe.includes(' ' + cue));
+    if (!negated) return true; // an asserted occurrence is enough
+  }
+  return false;
+}
+
 export function checkDrugSafety(f: TranscribeFields): SafetyAlert[] {
   const prescribedText = buildPrescribedText(f);
   const allergyText = buildAllergyText(f);
@@ -313,7 +370,12 @@ export function checkDrugSafety(f: TranscribeFields): SafetyAlert[] {
       // such terms; bare drug-name mention in anamneza alone must not
       // imply allergy.
       if (!/алерг|непоносим|intoleran/i.test(allergyText)) continue;
-      const allergyHit = rule.allergy.some((k) => allergyText.includes(k));
+      // Negation-aware: "няма алергия към пеницилин" must NOT fire, but a real
+      // allergy ("алергия към пеницилин", an `alergii` entry) still does. Only
+      // the allergen token is gated — drugHit (what's prescribed now) is not,
+      // since that's a separate concern and negating a prescription is not the
+      // reported failure mode.
+      const allergyHit = rule.allergy.some((k) => assertedIncludes(allergyText, k));
       const drugHit = rule.drugs.some((k) => prescribedText.includes(k));
       if (allergyHit && drugHit) {
         alerts.push({
@@ -338,7 +400,9 @@ export function checkDrugSafety(f: TranscribeFields): SafetyAlert[] {
       }
     } else if (rule.type === 'drug-diag') {
       const hasDrug = rule.drugs1.some((d) => prescribedText.includes(d));
-      const hasDiag = rule.diag.some((d) => diagnosesText.includes(d));
+      // Negation-aware: a diagnosis word ruled out in anamneza
+      // ("няма оплаквания за гастрит") must not trigger the rule.
+      const hasDiag = rule.diag.some((d) => assertedIncludes(diagnosesText, d));
       if (hasDrug && hasDiag) {
         alerts.push({
           severity: rule.severity,
