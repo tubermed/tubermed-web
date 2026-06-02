@@ -51,7 +51,10 @@ function splitSummary(full: string): { body: string; disclaimer: string } {
   const before = text.slice(0, idx);
   const para = before.lastIndexOf('\n\n');
   const cut = para !== -1 ? para : before.lastIndexOf('\n');
-  if (cut === -1) return { body: '', disclaimer: text };
+  if (cut === -1) {
+    if (idx > 0) return { body: before.trim(), disclaimer: text.slice(idx).trim() };
+    return { body: '', disclaimer: text };
+  }
   return { body: text.slice(0, cut).trim(), disclaimer: text.slice(cut).trim() };
 }
 
