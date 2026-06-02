@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
-import { copyToClipboard, openPdfPreview } from '@/lib/exporters';
+import { copyToClipboard, escapeHtml, openPdfPreview } from '@/lib/exporters';
 
 interface PatientSummaryModalProps {
   isOpen: boolean;
@@ -64,13 +64,6 @@ function composeFinal(body: string, disclaimer: string): string {
   const d = disclaimer || DISCLAIMER_FALLBACK;
   const b = body.trim();
   return b ? `${b}\n\n${d}` : d;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 
 // Minimal, A5-friendly printable document. openPdfPreview injects the

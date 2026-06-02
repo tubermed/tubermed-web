@@ -5,11 +5,13 @@
 
 import type { TranscribeFields } from './types';
 
-function esc(s: string): string {
+export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function clean(s: string): string {
@@ -125,20 +127,20 @@ function fallbackCopy(text: string): boolean {
 function pdfSection(title: string, content: string): string {
   const v = fieldText(content);
   if (!v) return '';
-  return `<h2 style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14pt;color:#1F3A5F;font-weight:600;letter-spacing:-0.01em;margin:24px 0 6px;border-bottom:1px solid #DCE1E8;padding-bottom:4px">${esc(title)}</h2>
-       <p style="margin:0;line-height:1.75;white-space:pre-wrap;font-size:11pt">${esc(v)}</p>`;
+  return `<h2 style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14pt;color:#1F3A5F;font-weight:600;letter-spacing:-0.01em;margin:24px 0 6px;border-bottom:1px solid #DCE1E8;padding-bottom:4px">${escapeHtml(title)}</h2>
+       <p style="margin:0;line-height:1.75;white-space:pre-wrap;font-size:11pt">${escapeHtml(v)}</p>`;
 }
 
 export function generatePdfHtml(f: TranscribeFields, dateStr: string): string {
   let diagRows = '';
   if (f.osnovna_diagnoza && f.osnovna_diagnoza.trim()) {
-    diagRows += `<tr><td><strong>${esc(f.osnovna_diagnoza)}</strong></td>
-       <td style="white-space:nowrap;font-family:monospace;color:#1F3A5F;font-weight:700">${esc(f.osnovna_mkb || '')}</td></tr>`;
+    diagRows += `<tr><td><strong>${escapeHtml(f.osnovna_diagnoza)}</strong></td>
+       <td style="white-space:nowrap;font-family:monospace;color:#1F3A5F;font-weight:700">${escapeHtml(f.osnovna_mkb || '')}</td></tr>`;
   }
   (f.pridruzhavashti || []).forEach((d) => {
     if (!d.diagnoza?.trim() && !d.mkb?.trim()) return;
-    diagRows += `<tr><td>${esc(d.diagnoza || '')}</td>
-       <td style="white-space:nowrap;font-family:monospace;color:#1F3A5F">${esc(d.mkb || '')}</td></tr>`;
+    diagRows += `<tr><td>${escapeHtml(d.diagnoza || '')}</td>
+       <td style="white-space:nowrap;font-family:monospace;color:#1F3A5F">${escapeHtml(d.mkb || '')}</td></tr>`;
   });
 
   let medsBlock = '';
@@ -148,8 +150,8 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string): string {
         const parts = [m.dose, m.regimen, m.route, m.duration]
           .filter(Boolean)
           .join(' · ');
-        return `<tr><td style="padding:4px 8px 4px 0"><strong>${esc(m.inn)}</strong></td>
-                  <td style="padding:4px 0;color:#586472">${esc(parts)}</td></tr>`;
+        return `<tr><td style="padding:4px 8px 4px 0"><strong>${escapeHtml(m.inn)}</strong></td>
+                  <td style="padding:4px 0;color:#586472">${escapeHtml(parts)}</td></tr>`;
       })
       .join('');
     medsBlock = `<h2 style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14pt;color:#1F3A5F;font-weight:600;letter-spacing:-0.01em;margin:24px 0 6px;border-bottom:1px solid #DCE1E8;padding-bottom:4px">Медикаменти</h2>
@@ -162,7 +164,7 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string): string {
       : '';
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-    <title>Амбулаторен лист — ${esc(dateStr)}</title>
+    <title>Амбулаторен лист — ${escapeHtml(dateStr)}</title>
     <style>
       body{margin:0;padding:32px 48px;font-family:'Inter','Segoe UI',Arial,sans-serif;font-size:11pt;color:#1C2733;background:#F3F5F8}
       h1{font-family:'Inter','Segoe UI',Arial,sans-serif;font-size:22pt;font-weight:600;letter-spacing:-0.01em;margin:0 0 4px;color:#1F3A5F}
@@ -206,7 +208,7 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string): string {
     <div class="doc">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
         <h1>Амбулаторен лист</h1>
-        <div style="text-align:right;font-size:10pt;color:#8893A1">Дата: ${esc(dateStr)}</div>
+        <div style="text-align:right;font-size:10pt;color:#8893A1">Дата: ${escapeHtml(dateStr)}</div>
       </div>
       <hr style="border:none;border-top:2px solid #1F3A5F;margin:0 0 20px">
 
@@ -281,8 +283,8 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string): string {
     if (!d.diagnoza?.trim() && !d.mkb?.trim()) return;
     pdRows += `<tr>
       <td style="padding:6px 10px;border:1px solid #ccc;width:50px;color:#555">${i + 1}.</td>
-      <td style="padding:6px 10px;border:1px solid #ccc">${esc(d.diagnoza || '')}</td>
-      <td style="padding:6px 10px;border:1px solid #ccc;font-family:Courier New;color:#1F3A5F;white-space:nowrap">${esc(d.mkb || '')}</td>
+      <td style="padding:6px 10px;border:1px solid #ccc">${escapeHtml(d.diagnoza || '')}</td>
+      <td style="padding:6px 10px;border:1px solid #ccc;font-family:Courier New;color:#1F3A5F;white-space:nowrap">${escapeHtml(d.mkb || '')}</td>
     </tr>`;
   });
 
@@ -292,15 +294,15 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string): string {
       .filter(Boolean)
       .join(' · ');
     medsRows += `<tr>
-      <td style="padding:6px 10px;border:1px solid #ccc"><strong>${esc(m.inn)}</strong></td>
-      <td style="padding:6px 10px;border:1px solid #ccc;color:#586472">${esc(parts)}</td>
+      <td style="padding:6px 10px;border:1px solid #ccc"><strong>${escapeHtml(m.inn)}</strong></td>
+      <td style="padding:6px 10px;border:1px solid #ccc;color:#586472">${escapeHtml(parts)}</td>
     </tr>`;
   });
 
   const para = (title: string, value: string | undefined) => {
     const v = fieldText(value);
     if (!v) return '';
-    return `<h2>${esc(title)}</h2><p>${esc(v).replace(/\n/g, '<br>')}</p>`;
+    return `<h2>${escapeHtml(title)}</h2><p>${escapeHtml(v).replace(/\n/g, '<br>')}</p>`;
   };
 
   return `
@@ -319,15 +321,15 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string): string {
 </head>
 <body>
 <h1>АМБУЛАТОРЕН ЛИСТ</h1>
-<p class="meta">Дата: ${esc(dateStr)}</p>
+<p class="meta">Дата: ${escapeHtml(dateStr)}</p>
 
 ${
   f.osnovna_diagnoza?.trim()
     ? `<h2>Основна диагноза</h2>
 <table>
   <tr>
-    <td style="padding:6px 10px;border:1px solid #ccc">${esc(f.osnovna_diagnoza)}</td>
-    <td style="padding:6px 10px;border:1px solid #ccc;font-family:Courier New;color:#1F3A5F;white-space:nowrap;width:80px">${esc(f.osnovna_mkb || '')}</td>
+    <td style="padding:6px 10px;border:1px solid #ccc">${escapeHtml(f.osnovna_diagnoza)}</td>
+    <td style="padding:6px 10px;border:1px solid #ccc;font-family:Courier New;color:#1F3A5F;white-space:nowrap;width:80px">${escapeHtml(f.osnovna_mkb || '')}</td>
   </tr>
 </table>`
     : ''
