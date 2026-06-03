@@ -220,6 +220,51 @@ cue (`няма`, `без`, `не `, `не е`, `отрича`, `отсъстви
   unit-test runner**, so drug-safety logic regressions live as standalone
   `npx tsx` scripts.
 
+# Bug 1 — МКБ-10 diagnosis UX (result page) (2026-06-03)
+
+`app/app/scribe/result/page.tsx` (`DiagnosesSection`) + `components/MkbTypeahead.tsx`
++ `lib/diagnosis.ts` + `lib/mkb10.ts`. Backend contract: `tubermed-backend/CLAUDE.md`
+("МКБ-10 code-validity gate").
+
+- **Recorded/displayed diagnosis = the official МКБ term** for a valid code
+  (doctor says "първична хипертония" → model emits `I10` → the note shows
+  **"Есенциална [първична] хипертония"**), via `filedMainTerm` / `filedComorbidityTerm`
+  in `lib/diagnosis.ts` (`osnovna_mkb_term` / comorbidity `mkb_term` wins, spoken
+  fallback). The old **"ПО МКБ-10: …" line is removed** — the term IS the displayed
+  value; a parent-accepted code shows a subtle "категория по МКБ-10" hint.
+- **"доктор каза: …" cue.** Subtle grey line under the main diagnosis, shown **only
+  when** the doctor's spoken wording (the immutable `original` blob's
+  `osnovna_diagnoza`) meaningfully diverges from the official term.
+  `spokenDivergesFromOfficial` treats a contained rewording ("първична хипертония"
+  ⊂ "Есенциална [първична] хипертония") as a match (no cue) and a genuine mismatch
+  ("навехнат глезен" vs "Контузия на глезена") as a divergence (cue — the wrong-code
+  catch). `divergence_advisory` is **never surfaced**.
+- **Inline МКБ typeahead (`MkbTypeahead`).** Client-side search over the loaded
+  `public/mkb10.json` — matches on **term OR code**, no API / backend round-trip;
+  picking sets code + official term together (so a filed diagnosis can't be
+  free-text hallucination). Used for the **main diagnosis** and for **changing an
+  existing comorbidity**; the 🔍 still opens the full `MkbPicker` modal for
+  chapter/pinned browse.
+- **"+ Добави" opens the `MkbPicker` modal directly** (target `{ kind: 'co-add' }`
+  → `applyMkbPick` → `addComorbidity`), NOT an inline row. Cancel/close adds **no
+  empty row**. **Max 4 comorbidities** — "+ Добави" greys out at 4 (matches the
+  backend STEP 2 contract + the `/edit` server clamp).
+- **Main-diagnosis code copy** button (bare code, e.g. `I10`) reuses the per-section
+  `CopyButton` "copied ✓" pattern, gated on `isLocked` like the other copies
+  (enabled after approval). Comorbidity-code copy deferred.
+- **Pre-approval editing is ALWAYS enabled.** `isLocked` (`= reviewStatus !== 'confirmed'`)
+  gates ONLY copy / export / approve — **never editing**. The typeahead, "+ Добави",
+  change/remove, and the text/meds fields are all editable before approval; an
+  invalid/missing code blocks ONLY approve + export, and the doctor clears it by
+  picking a valid code (re-validates server-side via `/edit`). **Do NOT re-gate
+  diagnosis editing on `isLocked`** — that was the reconcile DEADLOCK (could neither
+  edit the code nor approve).
+- **Deterministic, no API.** Exporters (`lib/exporters.ts` via `lib/diagnosis.ts`)
+  file the official term; client validity/parity (`resolveMkb` / `isValidMkb` in
+  `lib/mkb10.ts`, mirroring the backend parent-accept rule) is pure over the loaded
+  nomenclature. Logic regressions: `npx tsx scripts/diagnosis-term.ts` +
+  `scripts/mkb-validity.ts`.
+
 # Known issues / gotchas
 
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
