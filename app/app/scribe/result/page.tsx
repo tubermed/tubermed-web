@@ -1720,6 +1720,7 @@ function DiagnosesSection({
   notifyCopy: (ok: boolean) => void;
 }) {
   const needsReview = !!mkbReview?.needs_review;
+  const atMaxComorbidities = pridruzhavashti.length >= 4; // backend STEP 2 contract caps at 4
 
   // Displayed term = official МКБ term for a valid code, spoken fallback otherwise.
   const mainTerm = filedMainTerm({
@@ -1797,10 +1798,12 @@ function DiagnosesSection({
         className="text-xs uppercase tracking-wider mb-3 font-medium flex items-center justify-between"
         style={{ color: 'var(--color-text-hint)' }}
       >
-        <span>Придружаващи заболявания</span>
+        <span>Придружаващи заболявания{atMaxComorbidities ? ' · макс 4' : ''}</span>
         <button
           onClick={onComorbidityAddBrowse}
-          className="text-xs font-semibold px-2 py-1 rounded transition hover:opacity-80"
+          disabled={atMaxComorbidities}
+          title={atMaxComorbidities ? 'Макс 4 придружаващи заболявания' : undefined}
+          className="text-xs font-semibold px-2 py-1 rounded transition hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40"
           style={{ color: 'var(--color-brand)', background: 'var(--color-brand-soft)' }}
         >
           + Добави
