@@ -194,6 +194,32 @@ disclaimer.
   new PATCH endpoint — deliberately out of scope; revisit if pilots ask for it.
 - Copy / print are disabled on an empty body. Additive, frontend-only; tsc clean.
 
+# Bug 3 — negation-aware drug-safety matching (2026-06-02)
+
+`lib/drug-safety.ts`. The `drug-diag` rules (NSAID→PPI, beta-blocker→asthma, …)
+and the allergy rules previously matched conditions with a raw
+`text.includes(term)`, which is **negation-blind**: a diagnosis/allergy token
+fired even when the doctor explicitly RULED IT OUT — the canonical failure was
+the NSAID→PPI warning firing on `"няма оплаквания за гастрит"`. Matching now goes
+through an **`assertedIncludes(text, term)`** helper: a token counts only when it
+is ASSERTED — i.e. NOT preceded, *within its own clause*, by a Bulgarian negation
+cue (`няма`, `без`, `не `, `не е`, `отрича`, `отсъствие на`, `липсва`,
+`изключен`, `не се установяв`, `не съобщава за`, …).
+
+- **Clause-scoped:** a negation in a PRIOR clause must not suppress a later
+  asserted mention (the probe only looks back to the start of the current
+  clause/sentence). The `не ` cue is space-anchored so a `-не` suffix (e.g.
+  `оплакване`) can't masquerade as the negation `не`.
+- **Conservative:** only the disease/allergen token is gated, so an asserted
+  condition (`"пациент с гастрит"`, an MKB code like `K25`, `"алергия към
+  пеницилин"`) still fires; a prescription is never negated. Applied to BOTH the
+  drug-diag path and the allergy path (`"няма алергия към пеницилин"` no longer
+  fires). `text`/`term` are pre-lowercased by the `build*` helpers.
+- **Regression:** `scripts/drug-safety-negation.ts`, run via
+  `npx tsx scripts/drug-safety-negation.ts`. The web repo still has **no
+  unit-test runner**, so drug-safety logic regressions live as standalone
+  `npx tsx` scripts.
+
 # Known issues / gotchas
 
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
