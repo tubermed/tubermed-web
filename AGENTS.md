@@ -276,18 +276,22 @@ Backend contract: `tubermed-backend/CLAUDE.md` ("Medication-completeness gate").
   frequency (`regimen`), duration. `route` (начин) is the optional sixth. The model
   NEVER fabricates a missing one (backend STEP 2 anti-fabrication rule); the backend
   marks the empties in `extracted_fields.meds_review`.
-- **Yellow "needs input", NOT "не е посочено".** Any component the backend marked
-  missing renders a VISIBLE yellow editable field (`NeedsInputField` in `MedsPanel`)
-  — replacing the old passive gold "⚠ не е посочена" slot. The field buffers
-  keystrokes and commits on blur/Enter so it does NOT vanish mid-typing when the
-  parent recomputes `meds_review`; **free text is accepted** (duration "дългосрочно",
-  dose "тънък слой"). Filled components show their value. `inn` is NOT inline-fillable
-  here — a nameless med is named via the picker or removed.
-- **Fill-required — NO dismiss escape.** The yellow field clears ONLY by typing a
-  value (the only resolution). There is **no "Пропусни"/skip** — an incomplete
+- **Yellow chip → opens the med-editor (NOT "не е посочено", NOT an inline box).**
+  Each component the backend marked missing renders as a clean clickable yellow
+  **chip** (`MissingChip` in `MedsPanel` — e.g. `⚠ Доза`, `⚠ Продължителност`),
+  replacing both the old passive gold "⚠ не е посочена" slot AND the earlier inline
+  "впишете…" text box (removed — it cluttered the rail). Clicking a chip (or the row's
+  edit affordance) opens the existing `MedsPicker` med-editor **prefilled** (via the
+  row's `openForEdit`), where the doctor fills the missing component(s); on save the
+  parent recomputes `meds_review` and the chip clears. Filled components show their
+  value in the summary line. `inn` has no chip — a nameless med is named via the
+  editor or removed. **Free text is accepted in the editor** (duration "дългосрочно",
+  dose "тънък слой").
+- **Fill-required — NO dismiss escape.** A chip clears ONLY by filling the value in
+  the editor (the only resolution). There is **no "Пропусни"/skip** — an incomplete
   prescription must not be approvable (there is no legitimate "skip" of a
-  dose/duration). The earlier dismiss path + dismissed chips were removed in the
-  2026-06-03 revision.
+  dose/duration). The earlier dismiss path + dismissed chips, and then the inline
+  input, were removed in the 2026-06-03 revisions.
 - **Client mirror + gate.** `lib/meds-review.ts` `computeMedsReview(meds)` mirrors the
   backend `validateMedicationCompleteness` (pure, NO API — same five required incl.
   form, same order; `needs_review` = any med with a missing required component). The
@@ -296,9 +300,9 @@ Backend contract: `tubermed-backend/CLAUDE.md` ("Medication-completeness gate").
   confirm (`StatusBadge`) is disabled with a clear `medsBlockMessage()` reason while
   `meds_review.needs_review` is true. The server `409 meds_review_required` is the
   backstop. Same shape as the Bug-1 МКБ gate (`clientMkbReview` + 409).
-- **Pre-approval editing ALWAYS enabled — no Bug-1 deadlock.** The yellow fields and
-  fill are editable regardless of `isLocked`; the gate disables ONLY approve/export,
-  never editing. **Do NOT re-gate the meds fields on `isLocked`.**
+- **Pre-approval editing ALWAYS enabled — no Bug-1 deadlock.** The yellow chips and
+  the med-editor are usable regardless of `isLocked`; the gate disables ONLY
+  approve/export, never editing. **Do NOT re-gate the meds fields on `isLocked`.**
 - **Picker form mapping.** `MedsPicker`'s "Форма" selection now writes `med.form`
   (was conflated into `route`); `route` (начин) is preserved through an edit as the
   optional sixth field. Exporters (`lib/exporters.ts`) include `form` in the meds line.
