@@ -8,6 +8,7 @@ import Stepper from '@/components/Stepper';
 import { SCRIBE_FLOW_STEPS } from '@/lib/flow';
 import EditableField from '@/components/EditableField';
 import MkbPicker from '@/components/MkbPicker';
+import MkbTypeahead from '@/components/MkbTypeahead';
 import MedsPanel from '@/components/MedsPanel';
 import PatientHeaderStrip from '@/components/PatientHeaderStrip';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
@@ -24,7 +25,8 @@ import type {
   MkbReview,
 } from '@/lib/types';
 import { mergeBackendAlerts, type SafetyAlert } from '@/lib/drug-safety';
-import { loadMkb, getMkbDataSync, findByCode, resolveMkb } from '@/lib/mkb10';
+import { loadMkb, getMkbDataSync, resolveMkb } from '@/lib/mkb10';
+import { filedMainTerm, filedComorbidityTerm, spokenDivergesFromOfficial } from '@/lib/diagnosis';
 import { loadIal } from '@/lib/ial-meds';
 import { findHighlights, type HighlightMatch } from '@/lib/vital-rules';
 import {
@@ -471,94 +473,30 @@ function ResultPageInner() {
     [trackEdit, computeCharsChanged]
   );
 
-  // Bidirectional sync helpers: when the doctor types a known МКБ code,
-  // auto-fill the diagnosis name; when they type an exact diagnosis name,
-  // auto-fill the code. Only triggers on exact match — partial / paraphrased
-  // input leaves the other field alone.
-  function diagFromCode(code: string): string | null {
-    const data = getMkbDataSync();
-    if (!data) return null;
-    const m = findByCode(data, code.trim().toUpperCase());
-    return m ? m[1] : null;
-  }
-  function codeFromDiag(diag: string): string | null {
-    const data = getMkbDataSync();
-    if (!data) return null;
-    const q = diag.trim().toLowerCase();
-    if (!q) return null;
-    const m = data.find((r) => r[1].toLowerCase() === q);
-    return m ? m[0] : null;
-  }
-
-  const updateOsnovnaMkb = useCallback(
-    (v: string) => {
-      const term = diagFromCode(v);
-      // chars_changed is computed against the PRIMARY field — the MKB code.
-      // If diagFromCode also auto-fills osnovna_diagnoza we don't double-bill.
-      const charsChanged = computeCharsChanged('osnovna_mkb', v);
-      const rec = clientMkbReview(v); // instant validity (server re-validates on save)
-      setFields((prev) => ({
-        ...prev,
-        osnovna_mkb: v,
-        ...(term ? { osnovna_diagnoza: term } : {}),
-        ...(rec ? {
-          mkb_review:              rec.mkb_review,
-          osnovna_mkb_term:        rec.osnovna_mkb_term,
-          osnovna_mkb_term_source: rec.osnovna_mkb_term_source,
-        } : {}),
-      }));
-      trackEdit('osnovna_mkb', charsChanged);
-    },
-    [trackEdit, computeCharsChanged]
-  );
-
-  const updateOsnovnaDiagnoza = useCallback(
-    (v: string) => {
-      const code = codeFromDiag(v);
-      const charsChanged = computeCharsChanged('osnovna_diagnoza', v);
-      // The block is code-based — only recompute if typing the diagnosis name
-      // auto-filled a (new) code; plain text edits leave mkb_review untouched.
-      const rec = code ? clientMkbReview(code) : null;
-      setFields((prev) => ({
-        ...prev,
-        osnovna_diagnoza: v,
-        ...(code ? { osnovna_mkb: code } : {}),
-        ...(rec ? {
-          mkb_review:              rec.mkb_review,
-          osnovna_mkb_term:        rec.osnovna_mkb_term,
-          osnovna_mkb_term_source: rec.osnovna_mkb_term_source,
-        } : {}),
-      }));
-      trackEdit('osnovna_diagnoza', charsChanged);
-    },
-    [trackEdit, computeCharsChanged]
-  );
-
-  const updateCoField = useCallback(
-    (idx: number, key: 'diagnoza' | 'mkb', v: string) => {
-      // For the nested pridruzhavashti array, snapshot the post-update value
-      // and use it to compute chars_changed against the original JSON form.
-      // Bidirectional sync inside the closure means we have to build the
-      // candidate `next` array twice (once here for the diff, once in
-      // setFields). The duplication is small and isolated.
-      const prevList = fields.pridruzhavashti || [];
-      const current  = prevList[idx] || { diagnoza: '', mkb: '' };
-      const updated  = { ...current, [key]: v } as ComorbidDiagnosis;
-      if (key === 'mkb') {
-        const term = diagFromCode(v);
-        if (term) updated.diagnoza = term;
-      } else {
-        const code = codeFromDiag(v);
-        if (code) updated.mkb = code;
-      }
-      const nextList = prevList.map((d, i) => (i === idx ? updated : d));
+  // Comorbidity add — a search-first pick from the typeahead creates the row
+  // (code + official term together). The doctor picked it, so there is no spoken
+  // original; diagnoza + mkb_term are both the official term.
+  const addComorbidity = useCallback(
+    (code: string, term: string) => {
+      const nextList = [...(fields.pridruzhavashti || []), { mkb: code, diagnoza: term, mkb_term: term }];
       const charsChanged = computeCharsChanged('pridruzhavashti', nextList);
+      setFields((prev) => ({
+        ...prev,
+        pridruzhavashti: [...(prev.pridruzhavashti || []), { mkb: code, diagnoza: term, mkb_term: term }],
+      }));
+      trackEdit('pridruzhavashti', charsChanged);
+    },
+    [trackEdit, computeCharsChanged, fields.pridruzhavashti]
+  );
 
-      setFields((prev) => {
-        const co = (prev.pridruzhavashti || []).slice();
-        co[idx] = updated;
-        return { ...prev, pridruzhavashti: co };
-      });
+  const removeComorbidity = useCallback(
+    (idx: number) => {
+      const nextList = (fields.pridruzhavashti || []).filter((_, i) => i !== idx);
+      const charsChanged = computeCharsChanged('pridruzhavashti', nextList);
+      setFields((prev) => ({
+        ...prev,
+        pridruzhavashti: (prev.pridruzhavashti || []).filter((_, i) => i !== idx),
+      }));
       trackEdit('pridruzhavashti', charsChanged);
     },
     [trackEdit, computeCharsChanged, fields.pridruzhavashti]
@@ -737,43 +675,51 @@ function ResultPageInner() {
   // Always overwrite both code AND diagnosis name when picking from MKB.
   // This makes the picker the source of truth — picking a different code
   // means you wanted to change the diagnosis, not keep stale text.
-  const pickMkb = useCallback(
-    (code: string, term: string) => {
-      if (!mkbTarget) return;
-      if (mkbTarget.kind === 'osnovna') {
-        // Two fields update at once — bill chars_changed against the MKB
-        // code (primary picker target). The diagnoza ride-along isn't
-        // double-counted as a separate field touch.
+  // Apply a picked МКБ entry (inline typeahead OR full-browse modal) → set the
+  // code + official term together. The doctor's spoken osnovna_diagnoza is left
+  // UNTOUCHED (it stays the immutable "доктор каза" source); display + export
+  // derive the official term from osnovna_mkb_term. Deterministic, no API.
+  const applyMkbPick = useCallback(
+    (target: MkbTarget, code: string, term: string) => {
+      if (target.kind === 'osnovna') {
         const charsChanged = computeCharsChanged('osnovna_mkb', code);
         const rec = clientMkbReview(code);
         setFields((prev) => ({
           ...prev,
           osnovna_mkb: code,
-          osnovna_diagnoza: term,
-          ...(rec ? {
-            mkb_review:              rec.mkb_review,
-            osnovna_mkb_term:        rec.osnovna_mkb_term,
-            osnovna_mkb_term_source: rec.osnovna_mkb_term_source,
-          } : {}),
+          ...(rec
+            ? {
+                mkb_review:              rec.mkb_review,
+                osnovna_mkb_term:        rec.osnovna_mkb_term,
+                osnovna_mkb_term_source: rec.osnovna_mkb_term_source,
+              }
+            : { mkb_review: { needs_review: false }, osnovna_mkb_term: term }),
         }));
         trackEdit('osnovna_mkb', charsChanged);
       } else {
-        const idx = mkbTarget.index;
-        const prevList = fields.pridruzhavashti || [];
-        const nextList = prevList.map((d, i) =>
-          i === idx ? { mkb: code, diagnoza: term } : d
+        const idx = target.index;
+        const nextList = (fields.pridruzhavashti || []).map((d, i) =>
+          i === idx ? { ...d, mkb: code, diagnoza: term, mkb_term: term } : d
         );
         const charsChanged = computeCharsChanged('pridruzhavashti', nextList);
-        setFields((prev) => {
-          const co = (prev.pridruzhavashti || []).map((d, i) =>
-            i === idx ? { mkb: code, diagnoza: term } : d
-          );
-          return { ...prev, pridruzhavashti: co };
-        });
+        setFields((prev) => ({
+          ...prev,
+          pridruzhavashti: (prev.pridruzhavashti || []).map((d, i) =>
+            i === idx ? { ...d, mkb: code, diagnoza: term, mkb_term: term } : d
+          ),
+        }));
         trackEdit('pridruzhavashti', charsChanged);
       }
     },
-    [mkbTarget, trackEdit, computeCharsChanged, fields.pridruzhavashti]
+    [trackEdit, computeCharsChanged, fields.pridruzhavashti]
+  );
+
+  // Modal (full-browse) pick → routes through the same apply path via mkbTarget.
+  const pickMkb = useCallback(
+    (code: string, term: string) => {
+      if (mkbTarget) applyMkbPick(mkbTarget, code, term);
+    },
+    [mkbTarget, applyMkbPick]
   );
 
   // ── Toast helper ─────────────────────────────────────────────
@@ -1213,17 +1159,15 @@ function ResultPageInner() {
               osnovnaMkbTerm={fields.osnovna_mkb_term}
               termSource={fields.osnovna_mkb_term_source}
               mkbReview={fields.mkb_review}
+              originalSpoken={original?.fields.osnovna_diagnoza}
               pridruzhavashti={fields.pridruzhavashti || []}
-              onOsnovnaDiagnozaChange={updateOsnovnaDiagnoza}
-              onOsnovnaMkbChange={updateOsnovnaMkb}
-              onPridruzhavashtiChange={(v) =>
-                updateField('pridruzhavashti', v)
-              }
-              onCoFieldChange={updateCoField}
-              onOpenMkbForOsnovna={() => openMkbPicker({ kind: 'osnovna' })}
-              onOpenMkbForCo={(i) => openMkbPicker({ kind: 'co', index: i })}
+              onOsnovnaPick={(code, term) => applyMkbPick({ kind: 'osnovna' }, code, term)}
+              onOsnovnaBrowse={() => openMkbPicker({ kind: 'osnovna' })}
+              onComorbidityPick={(i, code, term) => applyMkbPick({ kind: 'co', index: i }, code, term)}
+              onComorbidityBrowse={(i) => openMkbPicker({ kind: 'co', index: i })}
+              onComorbidityAdd={addComorbidity}
+              onComorbidityRemove={removeComorbidity}
               isLocked={isLocked}
-              notifyCopy={notifyCopy}
             />
 
             <TextSection
@@ -1744,41 +1688,43 @@ function DiagnosesSection({
   osnovnaMkbTerm,
   termSource,
   mkbReview,
+  originalSpoken,
   pridruzhavashti,
-  onOsnovnaDiagnozaChange,
-  onOsnovnaMkbChange,
-  onPridruzhavashtiChange,
-  onCoFieldChange,
-  onOpenMkbForOsnovna,
-  onOpenMkbForCo,
+  onOsnovnaPick,
+  onOsnovnaBrowse,
+  onComorbidityPick,
+  onComorbidityBrowse,
+  onComorbidityAdd,
+  onComorbidityRemove,
   isLocked,
-  notifyCopy,
 }: {
   osnovnaDiagnoza: string;
   osnovnaMkb: string;
   osnovnaMkbTerm?: string;
   termSource?: 'exact' | 'parent';
   mkbReview?: MkbReview;
+  originalSpoken?: string;
   pridruzhavashti: ComorbidDiagnosis[];
-  onOsnovnaDiagnozaChange: (v: string) => void;
-  onOsnovnaMkbChange: (v: string) => void;
-  onPridruzhavashtiChange: (v: ComorbidDiagnosis[]) => void;
-  onCoFieldChange: (index: number, key: 'diagnoza' | 'mkb', v: string) => void;
-  onOpenMkbForOsnovna: () => void;
-  onOpenMkbForCo: (index: number) => void;
+  onOsnovnaPick: (code: string, term: string) => void;
+  onOsnovnaBrowse: () => void;
+  onComorbidityPick: (index: number, code: string, term: string) => void;
+  onComorbidityBrowse: (index: number) => void;
+  onComorbidityAdd: (code: string, term: string) => void;
+  onComorbidityRemove: (index: number) => void;
   isLocked: boolean;
-  notifyCopy: (ok: boolean) => void;
 }) {
-  const hasMain = osnovnaDiagnoza.trim().length > 0;
   const needsReview = !!mkbReview?.needs_review;
+  const [addingCo, setAddingCo] = useState(false);
 
-  function removeCo(i: number) {
-    onPridruzhavashtiChange(pridruzhavashti.filter((_, idx) => idx !== i));
-  }
-
-  function addCo() {
-    onPridruzhavashtiChange([...pridruzhavashti, { diagnoza: '', mkb: '' }]);
-  }
+  // Displayed term = official МКБ term for a valid code, spoken fallback otherwise.
+  const mainTerm = filedMainTerm({
+    osnovna_mkb: osnovnaMkb,
+    osnovna_mkb_term: osnovnaMkbTerm,
+    osnovna_diagnoza: osnovnaDiagnoza,
+  });
+  // "доктор каза" cue — only when the spoken phrasing meaningfully diverges from
+  // the official term (and the code is valid, so there IS an official term).
+  const showCue = !needsReview && spokenDivergesFromOfficial(originalSpoken, osnovnaMkbTerm);
 
   return (
     <div
@@ -1788,77 +1734,47 @@ function DiagnosesSection({
     >
       <SectionHead title="Диагнози МКБ-10" />
 
-      <div
-        className="mb-4 pb-4 border-b"
-        style={{ borderColor: 'var(--color-border)' }}
-      >
+      <div className="mb-4 pb-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
         <div
           className="text-xs uppercase tracking-wider mb-2 font-medium"
           style={{ color: 'var(--color-text-hint)' }}
         >
           Основна диагноза
         </div>
-        <DiagRow
-          diagnoza={osnovnaDiagnoza}
-          mkb={osnovnaMkb}
-          onDiagnozaChange={onOsnovnaDiagnozaChange}
-          onMkbChange={onOsnovnaMkbChange}
-          onPickMkb={onOpenMkbForOsnovna}
-          copySlot={
-            osnovnaMkb.trim() ? (
-              <CopyButton
-                text={osnovnaMkb.trim()}
-                disabled={isLocked}
-                onResult={notifyCopy}
-                label="МКБ"
-              />
-            ) : null
-          }
+        <MkbTypeahead
+          code={osnovnaMkb}
+          term={mainTerm}
+          invalid={needsReview}
+          disabled={isLocked}
+          placeholder="Търсене на диагноза или МКБ код…"
+          onPick={onOsnovnaPick}
+          onBrowse={onOsnovnaBrowse}
         />
-        {needsReview ? (
+        {showCue && (
+          <div className="mt-1.5 text-xs px-1" style={{ color: 'var(--color-text-hint)' }}>
+            доктор каза: {originalSpoken}
+          </div>
+        )}
+        {!needsReview && termSource === 'parent' && osnovnaMkbTerm && (
+          <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--color-text-hint)' }}>
+            категория по МКБ-10 (3-знача рубрика)
+          </div>
+        )}
+        {needsReview && (
           <div
             role="alert"
             className="mt-2 rounded-md border px-3 py-2"
-            style={{
-              borderColor: 'var(--color-red)',
-              background: 'var(--color-red-soft)',
-              color: 'var(--color-red)',
-            }}
+            style={{ borderColor: 'var(--color-red)', background: 'var(--color-red-soft)', color: 'var(--color-red)' }}
           >
             <div className="text-sm font-semibold">
               ⚠{' '}
-              {mkbReview?.reason === 'missing_code'
-                ? 'Липсва код по МКБ-10'
-                : 'Невалиден код по МКБ-10'}
+              {mkbReview?.reason === 'missing_code' ? 'Липсва код по МКБ-10' : 'Невалиден код по МКБ-10'}
             </div>
             <div className="text-xs mt-0.5">
               {mkbReview?.reason === 'missing_code'
-                ? 'Добавете валиден код за основната диагноза (въведете или 🔍). Потвърждаването и експортът са блокирани, докато кодът липсва.'
-                : `Кодът „${mkbReview?.code || osnovnaMkb}“ не е в МКБ-10 регистъра. Коригирайте го (въведете нов или 🔍). Потвърждаването и експортът са блокирани.`}
+                ? 'Изберете диагноза от МКБ-10 (търсете или 🔍). Потвърждаването и експортът са блокирани, докато липсва код.'
+                : `Кодът „${mkbReview?.code || osnovnaMkb}“ не е в МКБ-10 регистъра. Изберете валиден (търсете или 🔍). Потвърждаването и експортът са блокирани.`}
             </div>
-          </div>
-        ) : osnovnaMkbTerm ? (
-          <div className="mt-2 flex items-baseline gap-1.5">
-            <span
-              className="text-[11px] uppercase tracking-wider flex-shrink-0"
-              style={{ color: 'var(--color-text-hint)' }}
-            >
-              {termSource === 'parent' ? 'Категория по МКБ-10' : 'По МКБ-10'}
-            </span>
-            <span
-              className="text-sm font-medium"
-              style={{ color: 'var(--color-ink)' }}
-            >
-              {osnovnaMkbTerm}
-            </span>
-          </div>
-        ) : null}
-        {!hasMain && (
-          <div
-            className="text-xs mt-2 px-1"
-            style={{ color: 'var(--color-text-hint)' }}
-          >
-            Не е открита в транскрипта — въведете или използвайте 🔍 за избор от МКБ-10.
           </div>
         )}
       </div>
@@ -1869,117 +1785,47 @@ function DiagnosesSection({
       >
         <span>Придружаващи заболявания</span>
         <button
-          onClick={addCo}
-          className="text-xs font-semibold px-2 py-1 rounded transition hover:opacity-80"
-          style={{
-            color: 'var(--color-brand)',
-            background: 'var(--color-brand-soft)',
-          }}
+          onClick={() => setAddingCo(true)}
+          disabled={isLocked || addingCo}
+          className="text-xs font-semibold px-2 py-1 rounded transition hover:opacity-80 disabled:opacity-40"
+          style={{ color: 'var(--color-brand)', background: 'var(--color-brand-soft)' }}
         >
           + Добави
         </button>
       </div>
       <div className="space-y-2">
         {pridruzhavashti.map((d, i) => (
-          <DiagRow
+          <MkbTypeahead
             key={i}
-            diagnoza={d.diagnoza}
-            mkb={d.mkb}
-            onDiagnozaChange={(v) => onCoFieldChange(i, 'diagnoza', v)}
-            onMkbChange={(v) => onCoFieldChange(i, 'mkb', v)}
-            onRemove={() => removeCo(i)}
-            onPickMkb={() => onOpenMkbForCo(i)}
-            copySlot={
-              d.mkb && d.mkb.trim() ? (
-                <CopyButton
-                  text={d.mkb.trim()}
-                  disabled={isLocked}
-                  onResult={notifyCopy}
-                  label="МКБ"
-                />
-              ) : null
-            }
+            code={d.mkb}
+            term={filedComorbidityTerm(d)}
+            disabled={isLocked}
+            placeholder="Търсене на придружаващо заболяване…"
+            onPick={(code, term) => onComorbidityPick(i, code, term)}
+            onBrowse={() => onComorbidityBrowse(i)}
+            onRemove={() => onComorbidityRemove(i)}
           />
         ))}
-        {pridruzhavashti.length === 0 && (
-          <div
-            className="text-sm px-3 py-1"
-            style={{ color: 'var(--color-text-hint)' }}
-          >
+        {addingCo && (
+          <MkbTypeahead
+            code=""
+            term=""
+            startInSearch
+            disabled={isLocked}
+            placeholder="Търсене на придружаващо заболяване…"
+            onPick={(code, term) => {
+              onComorbidityAdd(code, term);
+              setAddingCo(false);
+            }}
+            onCancel={() => setAddingCo(false)}
+          />
+        )}
+        {pridruzhavashti.length === 0 && !addingCo && (
+          <div className="text-sm px-3 py-1" style={{ color: 'var(--color-text-hint)' }}>
             Няма придружаващи заболявания.
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function DiagRow({
-  diagnoza,
-  mkb,
-  onDiagnozaChange,
-  onMkbChange,
-  onRemove,
-  onPickMkb,
-  copySlot,
-}: {
-  diagnoza: string;
-  mkb: string;
-  onDiagnozaChange: (v: string) => void;
-  onMkbChange: (v: string) => void;
-  onRemove?: () => void;
-  onPickMkb: () => void;
-  /** Optional per-row CopyButton — rendered right after the МКБ input.
-   *  Parent decides whether to render based on whether the code is non-empty. */
-  copySlot?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <input
-        type="text"
-        value={diagnoza}
-        onChange={(e) => onDiagnozaChange(e.target.value)}
-        placeholder="Диагноза"
-        className="flex-1 px-3 py-2 rounded-md border outline-none text-base"
-        style={{
-          borderColor: 'var(--color-border-mid)',
-          background: 'white',
-        }}
-      />
-      <div className="relative flex items-center">
-        <input
-          type="text"
-          value={mkb}
-          onChange={(e) => onMkbChange(e.target.value)}
-          placeholder="МКБ"
-          className="w-28 pl-3 pr-8 py-2 rounded-md border outline-none text-sm font-[family-name:var(--font-jetbrains)] text-center"
-          style={{
-            borderColor: 'var(--color-border-mid)',
-            background: 'white',
-            color: 'var(--color-gold)',
-          }}
-        />
-        <button
-          onClick={onPickMkb}
-          aria-label="Избор от МКБ-10"
-          title="Избор от МКБ-10"
-          className="absolute right-1 w-6 h-6 flex items-center justify-center rounded transition hover:bg-[var(--color-brand-soft)]"
-          style={{ color: 'var(--color-brand)' }}
-        >
-          🔍
-        </button>
-      </div>
-      {copySlot}
-      {onRemove && (
-        <button
-          onClick={onRemove}
-          aria-label="Премахни"
-          className="w-8 h-8 rounded-md flex items-center justify-center text-lg transition hover:bg-[var(--color-bg)]"
-          style={{ color: 'var(--color-text-hint)' }}
-        >
-          ×
-        </button>
-      )}
     </div>
   );
 }
