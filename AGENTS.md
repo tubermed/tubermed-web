@@ -265,6 +265,46 @@ cue (`няма`, `без`, `не `, `не е`, `отрича`, `отсъстви
   nomenclature. Logic regressions: `npx tsx scripts/diagnosis-term.ts` +
   `scripts/mkb-validity.ts`.
 
+# Bug 2 — medication completeness (yellow "needs input" + fill-or-dismiss) (2026-06-03)
+
+`components/MedsPanel.tsx` + `components/MedsPicker.tsx` + `lib/meds-review.ts`
++ `lib/types.ts` + `lib/exporters.ts` + `app/app/scribe/result/page.tsx`.
+Backend contract: `tubermed-backend/CLAUDE.md` ("Medication-completeness gate").
+
+- **Five components + form.** Every prescribed med has five required components —
+  name (`inn`), **form** (NEW `Medication.form` — таблетка/гел/сироп/…), dose,
+  frequency (`regimen`), duration. `route` (начин) is the optional sixth. The model
+  NEVER fabricates a missing one (backend STEP 2 anti-fabrication rule); the backend
+  marks the empties in `extracted_fields.meds_review`.
+- **Yellow "needs input", NOT "не е посочено".** Any component the backend marked
+  missing renders a VISIBLE yellow editable field (`NeedsInputField` in `MedsPanel`)
+  with a "Пропусни" dismiss button — replacing the old passive gold "⚠ не е посочена"
+  slot. The field buffers keystrokes and commits on blur/Enter so it does NOT vanish
+  mid-typing when the parent recomputes `meds_review`. Filled components show their
+  value; dismissed-but-empty ones show a subtle "Label: пропуснато ↺" chip (undo).
+  `inn` is NOT inline-dismissable — a nameless med is named via the picker or removed.
+- **Fill OR dismiss.** Fill (type a value) clears the flag; dismiss (one tap) records
+  the doctor's "intentionally open" choice WITHOUT writing any value ("не е посочено"
+  is never recorded — `onMedsDismiss` only edits `meds_review[].dismissed`). Both
+  resolve the component.
+- **Client mirror + gate.** `lib/meds-review.ts` `computeMedsReview` mirrors the
+  backend `validateMedicationCompleteness` (pure, NO API — same five required incl.
+  form, same order, same dismissed∩missing rule). The result page keeps
+  `fields.meds_review` (recomputed via `withMedsReview` at every load + meds edit;
+  dismissals index-aligned), posts it on `/edit` (server re-validates), and the
+  approve confirm (`StatusBadge`) is disabled with a clear `medsBlockMessage()`
+  reason while `meds_review.needs_review` is true. The server `409
+  meds_review_required` is the backstop. Same shape as the Bug-1 МКБ gate
+  (`clientMkbReview` + 409).
+- **Pre-approval editing ALWAYS enabled — no Bug-1 deadlock.** The yellow fields,
+  fill, and dismiss are editable regardless of `isLocked`; the gate disables ONLY
+  approve/export, never editing. **Do NOT re-gate the meds fields on `isLocked`.**
+- **Picker form mapping.** `MedsPicker`'s "Форма" selection now writes `med.form`
+  (was conflated into `route`); `route` (начин) is preserved through an edit as the
+  optional sixth field. Exporters (`lib/exporters.ts`) include `form` in the meds line.
+- **Deterministic, no API.** Logic regression: `npx tsx scripts/meds-review.ts`
+  (30 assertions, parity with the backend gate).
+
 # Known issues / gotchas
 
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
