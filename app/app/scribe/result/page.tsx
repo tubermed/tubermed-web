@@ -1167,6 +1167,8 @@ function ResultPageInner() {
               onComorbidityBrowse={(i) => openMkbPicker({ kind: 'co', index: i })}
               onComorbidityAdd={addComorbidity}
               onComorbidityRemove={removeComorbidity}
+              isLocked={isLocked}
+              notifyCopy={notifyCopy}
             />
 
             <TextSection
@@ -1695,6 +1697,8 @@ function DiagnosesSection({
   onComorbidityBrowse,
   onComorbidityAdd,
   onComorbidityRemove,
+  isLocked,
+  notifyCopy,
 }: {
   osnovnaDiagnoza: string;
   osnovnaMkb: string;
@@ -1709,6 +1713,8 @@ function DiagnosesSection({
   onComorbidityBrowse: (index: number) => void;
   onComorbidityAdd: (code: string, term: string) => void;
   onComorbidityRemove: (index: number) => void;
+  isLocked: boolean;
+  notifyCopy: (ok: boolean) => void;
 }) {
   const needsReview = !!mkbReview?.needs_review;
   const [addingCo, setAddingCo] = useState(false);
@@ -1738,14 +1744,24 @@ function DiagnosesSection({
         >
           Основна диагноза
         </div>
-        <MkbTypeahead
-          code={osnovnaMkb}
-          term={mainTerm}
-          invalid={needsReview}
-          placeholder="Търсене на диагноза или МКБ код…"
-          onPick={onOsnovnaPick}
-          onBrowse={onOsnovnaBrowse}
-        />
+        <div className="flex items-center gap-2">
+          <MkbTypeahead
+            code={osnovnaMkb}
+            term={mainTerm}
+            invalid={needsReview}
+            placeholder="Търсене на диагноза или МКБ код…"
+            onPick={onOsnovnaPick}
+            onBrowse={onOsnovnaBrowse}
+          />
+          {osnovnaMkb.trim() && (
+            <CopyButton
+              text={osnovnaMkb.trim()}
+              disabled={isLocked}
+              onResult={notifyCopy}
+              label="МКБ"
+            />
+          )}
+        </div>
         {showCue && (
           <div className="mt-1.5 text-xs px-1" style={{ color: 'var(--color-text-hint)' }}>
             доктор каза: {originalSpoken}
