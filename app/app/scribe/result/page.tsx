@@ -1167,7 +1167,6 @@ function ResultPageInner() {
               onComorbidityBrowse={(i) => openMkbPicker({ kind: 'co', index: i })}
               onComorbidityAdd={addComorbidity}
               onComorbidityRemove={removeComorbidity}
-              isLocked={isLocked}
             />
 
             <TextSection
@@ -1696,7 +1695,6 @@ function DiagnosesSection({
   onComorbidityBrowse,
   onComorbidityAdd,
   onComorbidityRemove,
-  isLocked,
 }: {
   osnovnaDiagnoza: string;
   osnovnaMkb: string;
@@ -1711,7 +1709,6 @@ function DiagnosesSection({
   onComorbidityBrowse: (index: number) => void;
   onComorbidityAdd: (code: string, term: string) => void;
   onComorbidityRemove: (index: number) => void;
-  isLocked: boolean;
 }) {
   const needsReview = !!mkbReview?.needs_review;
   const [addingCo, setAddingCo] = useState(false);
@@ -1745,7 +1742,6 @@ function DiagnosesSection({
           code={osnovnaMkb}
           term={mainTerm}
           invalid={needsReview}
-          disabled={isLocked}
           placeholder="Търсене на диагноза или МКБ код…"
           onPick={onOsnovnaPick}
           onBrowse={onOsnovnaBrowse}
@@ -1786,7 +1782,7 @@ function DiagnosesSection({
         <span>Придружаващи заболявания</span>
         <button
           onClick={() => setAddingCo(true)}
-          disabled={isLocked || addingCo}
+          disabled={addingCo}
           className="text-xs font-semibold px-2 py-1 rounded transition hover:opacity-80 disabled:opacity-40"
           style={{ color: 'var(--color-brand)', background: 'var(--color-brand-soft)' }}
         >
@@ -1799,7 +1795,6 @@ function DiagnosesSection({
             key={i}
             code={d.mkb}
             term={filedComorbidityTerm(d)}
-            disabled={isLocked}
             placeholder="Търсене на придружаващо заболяване…"
             onPick={(code, term) => onComorbidityPick(i, code, term)}
             onBrowse={() => onComorbidityBrowse(i)}
@@ -1811,7 +1806,6 @@ function DiagnosesSection({
             code=""
             term=""
             startInSearch
-            disabled={isLocked}
             placeholder="Търсене на придружаващо заболяване…"
             onPick={(code, term) => {
               onComorbidityAdd(code, term);
