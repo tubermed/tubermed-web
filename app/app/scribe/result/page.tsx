@@ -90,7 +90,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'sec-naznacheni', label: 'Назначени изследвания', indent: true },
 ];
 
-type MkbTarget = { kind: 'osnovna' } | { kind: 'co'; index: number };
+type MkbTarget = { kind: 'osnovna' } | { kind: 'co'; index: number } | { kind: 'co-add' };
 
 // Single, simple measure used by all the chars_changed math on this page.
 // Defined once here so the per-edit value sent to /edit and the per-field
@@ -696,6 +696,9 @@ function ResultPageInner() {
             : { mkb_review: { needs_review: false }, osnovna_mkb_term: term }),
         }));
         trackEdit('osnovna_mkb', charsChanged);
+      } else if (target.kind === 'co-add') {
+        // Search-first add: the picker selection creates a new comorbidity row.
+        addComorbidity(code, term);
       } else {
         const idx = target.index;
         const nextList = (fields.pridruzhavashti || []).map((d, i) =>
@@ -711,7 +714,7 @@ function ResultPageInner() {
         trackEdit('pridruzhavashti', charsChanged);
       }
     },
-    [trackEdit, computeCharsChanged, fields.pridruzhavashti]
+    [trackEdit, computeCharsChanged, fields.pridruzhavashti, addComorbidity]
   );
 
   // Modal (full-browse) pick → routes through the same apply path via mkbTarget.
@@ -1165,7 +1168,7 @@ function ResultPageInner() {
               onOsnovnaBrowse={() => openMkbPicker({ kind: 'osnovna' })}
               onComorbidityPick={(i, code, term) => applyMkbPick({ kind: 'co', index: i }, code, term)}
               onComorbidityBrowse={(i) => openMkbPicker({ kind: 'co', index: i })}
-              onComorbidityAdd={addComorbidity}
+              onComorbidityAddBrowse={() => openMkbPicker({ kind: 'co-add' })}
               onComorbidityRemove={removeComorbidity}
               isLocked={isLocked}
               notifyCopy={notifyCopy}
@@ -1695,7 +1698,7 @@ function DiagnosesSection({
   onOsnovnaBrowse,
   onComorbidityPick,
   onComorbidityBrowse,
-  onComorbidityAdd,
+  onComorbidityAddBrowse,
   onComorbidityRemove,
   isLocked,
   notifyCopy,
@@ -1711,13 +1714,12 @@ function DiagnosesSection({
   onOsnovnaBrowse: () => void;
   onComorbidityPick: (index: number, code: string, term: string) => void;
   onComorbidityBrowse: (index: number) => void;
-  onComorbidityAdd: (code: string, term: string) => void;
+  onComorbidityAddBrowse: () => void;
   onComorbidityRemove: (index: number) => void;
   isLocked: boolean;
   notifyCopy: (ok: boolean) => void;
 }) {
   const needsReview = !!mkbReview?.needs_review;
-  const [addingCo, setAddingCo] = useState(false);
 
   // Displayed term = official МКБ term for a valid code, spoken fallback otherwise.
   const mainTerm = filedMainTerm({
@@ -1797,9 +1799,8 @@ function DiagnosesSection({
       >
         <span>Придружаващи заболявания</span>
         <button
-          onClick={() => setAddingCo(true)}
-          disabled={addingCo}
-          className="text-xs font-semibold px-2 py-1 rounded transition hover:opacity-80 disabled:opacity-40"
+          onClick={onComorbidityAddBrowse}
+          className="text-xs font-semibold px-2 py-1 rounded transition hover:opacity-80"
           style={{ color: 'var(--color-brand)', background: 'var(--color-brand-soft)' }}
         >
           + Добави
@@ -1817,20 +1818,7 @@ function DiagnosesSection({
             onRemove={() => onComorbidityRemove(i)}
           />
         ))}
-        {addingCo && (
-          <MkbTypeahead
-            code=""
-            term=""
-            startInSearch
-            placeholder="Търсене на придружаващо заболяване…"
-            onPick={(code, term) => {
-              onComorbidityAdd(code, term);
-              setAddingCo(false);
-            }}
-            onCancel={() => setAddingCo(false)}
-          />
-        )}
-        {pridruzhavashti.length === 0 && !addingCo && (
+        {pridruzhavashti.length === 0 && (
           <div className="text-sm px-3 py-1" style={{ color: 'var(--color-text-hint)' }}>
             Няма придружаващи заболявания.
           </div>
