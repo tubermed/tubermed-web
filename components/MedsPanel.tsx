@@ -112,13 +112,6 @@ export default function MedsPanel({
     onChange(meds.filter((_, idx) => idx !== i));
   }
 
-  // Fill one component of the med at `index` (Bug 2 inline yellow field). The
-  // parent recomputes meds_review, so a filled component drops out of `missing`
-  // and its yellow field disappears.
-  function fillComponent(index: number, component: string, value: string) {
-    onChange(meds.map((m, i) => (i === index ? { ...m, [component]: value } : m)));
-  }
-
   const copyAllText = useMemo(() => buildCopyAllText(meds), [meds]);
 
   async function copyAllMeds() {
@@ -215,7 +208,6 @@ export default function MedsPanel({
                 triggered={isMedTriggered(m, inlineCriticals)}
                 onClick={() => openForEdit(i)}
                 onRemove={() => removeAt(i)}
-                onFill={(component, value) => fillComponent(i, component, value)}
                 isLocked={isLocked}
                 notifyCopy={notifyCopy}
                 onCopied={onMedsCopied}
@@ -361,7 +353,6 @@ function MedRow({
   triggered,
   onClick,
   onRemove,
-  onFill,
   isLocked,
   notifyCopy,
   onCopied,
@@ -370,12 +361,11 @@ function MedRow({
   /** Required components currently empty for this med (Bug 2). */
   missing: string[];
   triggered: boolean;
-  /** Whole row is the edit affordance — fires unless an inner control (inline
-   *  field, remove ×, copy) was hit (all stop propagation). */
+  /** Opens the MedsPicker med-editor (prefilled). Fires from a whole-row click
+   *  or from a missing-component chip — unless the remove × or copy button was
+   *  hit (both stop propagation). */
   onClick: () => void;
   onRemove: () => void;
-  /** Inline fill of one missing component. */
-  onFill: (component: string, value: string) => void;
   /** Disables the per-row copy until the review is confirmed. */
   isLocked: boolean;
   /** Shared Toast callback — true = success, false = failure. */
@@ -385,9 +375,9 @@ function MedRow({
 }) {
   const rx = lookupRx(med.inn);
   const copyText = formatMedLine(med);
-  // Components needing input now (missing). `inn` is excluded from inline
-  // handling (see MED_INLINE_COMPONENTS) — a missing name is surfaced in the
-  // title + gate. Fill-required: the only way to clear a yellow field is to fill it.
+  // Components needing input now (missing) → clean yellow chips that open the
+  // med-editor. `inn` is excluded (see MED_INLINE_COMPONENTS) — a missing name is
+  // surfaced in the title + gate. Fill-required: a chip clears only once filled.
   const needsInput = MED_INLINE_COMPONENTS.filter((c) => missing.includes(c));
 
   async function handleCopy(e: React.MouseEvent) {
@@ -457,21 +447,18 @@ function MedRow({
           <FilledSummary med={med} />
         </div>
 
-        {/* Yellow "needs input" fields — one editable field per missing
-            component (Bug 2, fill-required). Typing a value clears the flag;
-            there is no dismiss/skip. Editable regardless of isLocked — the gate
-            disables ONLY approve/export, never editing. */}
+        {/* Yellow "needs input" chips — one per missing required component (Bug 2,
+            fill-required). Clicking a chip opens the MedsPicker med-editor
+            (prefilled) where the doctor fills it; the chip clears once filled.
+            No inline box, no dismiss/skip. Clickable regardless of isLocked — the
+            gate disables ONLY approve/export, never editing. */}
         {needsInput.length > 0 && (
-          <div
-            className="mt-1.5 space-y-1"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
+          <div className="mt-1.5 flex flex-wrap gap-1">
             {needsInput.map((c) => (
-              <NeedsInputField
+              <MissingChip
                 key={c}
                 label={MED_COMPONENT_LABELS[c]}
-                onFill={(v) => onFill(c, v)}
+                onEdit={onClick}
               />
             ))}
           </div>
@@ -537,58 +524,37 @@ function FilledSummary({ med }: { med: Medication }) {
   );
 }
 
-// Yellow "needs input" field for one missing component (Bug 2, fill-required).
-// Buffers keystrokes in local state and commits on blur / Enter — so the field
-// does NOT vanish mid-typing when the parent recomputes meds_review. Committing a
-// non-empty value fills the component (clearing the flag). Accepts free text
-// (e.g. duration "дългосрочно", dose "тънък слой"). There is no dismiss/skip —
-// the value must be filled.
-function NeedsInputField({
+// Clean yellow "needs input" chip for one missing required component (Bug 2,
+// fill-required). It is a clickable badge — NO inline text box. Clicking it opens
+// the MedsPicker med-editor (prefilled) where the doctor fills the value (free
+// text accepted there — e.g. duration "дългосрочно", dose "тънък слой"); the chip
+// clears once the component is filled (the parent recomputes meds_review). There
+// is no dismiss/skip. Clickable regardless of isLocked — editing is never gated.
+function MissingChip({
   label,
-  onFill,
+  onEdit,
 }: {
   label: string;
-  onFill: (value: string) => void;
+  onEdit: () => void;
 }) {
-  const [val, setVal] = useState('');
-  function commit() {
-    const t = val.trim();
-    if (t) onFill(t); // empty → leave missing; the field persists for next time
-  }
   return (
-    <div
-      className="flex items-center gap-1.5 px-2 py-1.5 rounded-md"
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onEdit();
+      }}
+      title="Липсва — кликнете за попълване"
+      aria-label={`Попълни ${label}`}
+      className="text-[10px] font-semibold px-1.5 py-0.5 rounded inline-flex items-center gap-1 transition hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
       style={{
         background: 'var(--color-gold-soft)',
+        color: 'var(--color-gold)',
         border: '1px solid var(--color-gold)',
       }}
     >
-      <span
-        className="text-[10px] font-semibold flex-shrink-0"
-        style={{ color: 'var(--color-gold)' }}
-        title="липсва — попълнете"
-      >
-        ⚠ {label}
-      </span>
-      <input
-        type="text"
-        value={val}
-        onChange={(e) => setVal(e.target.value)}
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            commit();
-          }
-        }}
-        onBlur={commit}
-        placeholder="впишете…"
-        aria-label={`Впишете ${label}`}
-        className="flex-1 min-w-0 px-2 py-1 rounded text-xs border outline-none bg-white"
-        style={{ borderColor: 'var(--color-gold)' }}
-      />
-    </div>
+      ⚠ {label}
+    </button>
   );
 }
 
