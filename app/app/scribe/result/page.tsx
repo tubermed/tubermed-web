@@ -71,15 +71,15 @@ function normalizeMedications(
   }));
 }
 
-// Recompute the medication-completeness marker from the CURRENT medications_list,
-// preserving the doctor's dismissals carried in the incoming fields.meds_review
-// (index-aligned). Mirrors the backend: the gate + the yellow needs-input fields
-// both read fields.meds_review, and it rides along in the /edit POST so the
-// server re-validates against the same shape. Used at every load + meds-edit site.
+// Recompute the medication-completeness marker from the CURRENT medications_list
+// (fill-required — needs_review = any med with a missing required component).
+// Mirrors the backend: the gate + the yellow needs-input fields both read
+// fields.meds_review, and it rides along in the /edit POST so the server
+// re-validates against the same shape. Used at every load + meds-edit site.
 function withMedsReview(f: TranscribeFields): TranscribeFields {
   return {
     ...f,
-    meds_review: computeMedsReview(f.medications_list || [], f.meds_review),
+    meds_review: computeMedsReview(f.medications_list || []),
   };
 }
 
@@ -527,45 +527,12 @@ function ResultPageInner() {
       }
       // Recompute the completeness marker (Bug 2) alongside the meds write so the
       // yellow needs-input fields + the approve gate update instantly; filling a
-      // missing component clears it. Dismissals (index-aligned) are preserved.
+      // missing component clears it (fill-required — no dismiss path).
       const charsChanged = computeCharsChanged('medications_list', next);
       setFields((prev) => withMedsReview({ ...prev, medications_list: next }));
       trackEdit('medications_list', charsChanged);
     },
     [fields.medications_list, trackEdit, computeCharsChanged]
-  );
-
-  // ── Meds dismiss — "intentionally open" toggle for one component (Bug 2) ──
-  // Records the doctor's conscious choice to leave a component blank. NEVER
-  // writes a value into the medication ("не е посочено" is never recorded);
-  // recomputes meds_review (preserving the toggled dismissal, index-aligned) and
-  // persists via the edit flow so the gate clears. Toggling again un-dismisses.
-  const onMedsDismiss = useCallback(
-    (index: number, component: string) => {
-      setFields((prev) => {
-        const meds = prev.medications_list || [];
-        const prior = prev.meds_review ?? computeMedsReview(meds, null);
-        const nextMeds = prior.meds.map((m, i) => {
-          if (i !== index) return m;
-          const has = m.dismissed.includes(component);
-          return {
-            ...m,
-            dismissed: has
-              ? m.dismissed.filter((c) => c !== component)
-              : [...m.dismissed, component],
-          };
-        });
-        return {
-          ...prev,
-          meds_review: computeMedsReview(meds, {
-            needs_review: prior.needs_review,
-            meds: nextMeds,
-          }),
-        };
-      });
-      trackEdit('medications_list', 0);
-    },
-    [trackEdit]
   );
 
   // ── Safety alerts (derived from fields) ──────────────────────
@@ -1365,7 +1332,6 @@ function ResultPageInner() {
               meds={fields.medications_list || []}
               onChange={onMedsChange}
               medsReview={fields.meds_review}
-              onDismiss={onMedsDismiss}
               terapiaText={fields.terapia || ''}
               inlineCriticals={criticals}
               lastRemovedName={lastRemovedMedName}

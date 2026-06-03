@@ -30,29 +30,18 @@ export function medComponentFilled(value: string | undefined): boolean {
 }
 
 // computeMedsReview — for each medication compute which required components are
-// empty (`missing`) and preserve the doctor's `dismissed` choices from a prior
-// review (index-aligned). A note needs review when ANY med has a missing
-// component that is NOT dismissed. Mirrors validateMedicationCompleteness:
-//   • dismissed is intersected with missing — a dismissed component the doctor
-//     later FILLS drops out naturally; re-emptying a value re-blocks it.
-//   • NEVER mutates the medications or writes a value — `dismissed` records a
-//     choice only (the doctor's "intentionally open").
-export function computeMedsReview(
-  meds: Medication[],
-  prior?: MedsReview | null,
-): MedsReview {
-  const priorMeds = prior?.meds ?? [];
+// empty (`missing`). A note needs review when ANY med has a missing required
+// component. Mirrors validateMedicationCompleteness: FILL-REQUIRED — there is no
+// dismiss escape, the only way to resolve a component is to fill it. Pure; never
+// mutates the medications or writes a value.
+export function computeMedsReview(meds: Medication[]): MedsReview {
   let needsReview = false;
-  const reviewMeds = meds.map((med, i) => {
+  const reviewMeds = meds.map((med) => {
     const missing = MED_REQUIRED_COMPONENTS.filter(
       (c) => !medComponentFilled(med?.[c] as string | undefined),
     ) as string[];
-    const priorDismissed = Array.isArray(priorMeds[i]?.dismissed)
-      ? priorMeds[i].dismissed
-      : [];
-    const dismissed = missing.filter((c) => priorDismissed.includes(c));
-    if (missing.some((c) => !dismissed.includes(c))) needsReview = true;
-    return { missing, dismissed };
+    if (missing.length > 0) needsReview = true;
+    return { missing };
   });
   return { needs_review: needsReview, meds: reviewMeds };
 }
@@ -60,5 +49,5 @@ export function computeMedsReview(
 // Localized block message — mirrors the backend medsReviewBlock() copy so the
 // approve-popup hint, the toast, and the 409 backstop read identically.
 export function medsBlockMessage(): string {
-  return 'Има предписани медикаменти с непопълнени данни (форма, доза, честота или продължителност). Попълнете липсващото или го отбележете съзнателно като пропуснато преди потвърждаване.';
+  return 'Има предписани медикаменти с непопълнени данни (форма, доза, честота или продължителност). Попълнете липсващото преди потвърждаване.';
 }

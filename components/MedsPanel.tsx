@@ -8,22 +8,18 @@ import MedsPicker from './MedsPicker';
 import { copyToClipboard } from '@/lib/exporters';
 import { MED_COMPONENT_LABELS, type MedComponent } from '@/lib/meds-review';
 
-// The four components offered for inline fill / dismiss in a med row. `inn`
-// (the drug name) is one of the five required components but is NOT inline-
-// dismissable — a nameless medication must be named (via the picker) or removed,
-// never "intentionally omitted" — so it is handled by the row title + the gate,
-// not here.
+// The four components offered for inline fill in a med row. `inn` (the drug
+// name) is one of the five required components but is NOT inline-fillable here —
+// a nameless medication is named via the picker or removed — so it is handled by
+// the row title + the gate, not here.
 const MED_INLINE_COMPONENTS: MedComponent[] = ['form', 'dose', 'regimen', 'duration'];
 
 interface MedsPanelProps {
   meds: Medication[];
   onChange: (next: Medication[]) => void;
-  /** Per-med completeness marker (Bug 2). Index-aligned to `meds`. Drives the
-   *  yellow "needs input" fields and which components show a dismissal chip. */
+  /** Per-med completeness marker (Bug 2). Index-aligned to `meds`. Drives which
+   *  components show a yellow "needs input" field (fill-required, no dismiss). */
   medsReview?: MedsReview;
-  /** Toggle a component's "intentionally open" dismissal for med at `index`.
-   *  Never writes a value into the medication — records the choice only. */
-  onDismiss: (index: number, component: string) => void;
   terapiaText: string;
   inlineCriticals: SafetyAlert[];
   lastRemovedName: string | null;
@@ -54,7 +50,6 @@ export default function MedsPanel({
   meds,
   onChange,
   medsReview,
-  onDismiss,
   terapiaText,
   inlineCriticals,
   lastRemovedName,
@@ -217,12 +212,10 @@ export default function MedsPanel({
                 key={i}
                 med={m}
                 missing={review?.missing ?? []}
-                dismissed={review?.dismissed ?? []}
                 triggered={isMedTriggered(m, inlineCriticals)}
                 onClick={() => openForEdit(i)}
                 onRemove={() => removeAt(i)}
                 onFill={(component, value) => fillComponent(i, component, value)}
-                onDismissComponent={(component) => onDismiss(i, component)}
                 isLocked={isLocked}
                 notifyCopy={notifyCopy}
                 onCopied={onMedsCopied}
@@ -365,12 +358,10 @@ function isMedTriggered(med: Medication, criticals: SafetyAlert[]): boolean {
 function MedRow({
   med,
   missing,
-  dismissed,
   triggered,
   onClick,
   onRemove,
   onFill,
-  onDismissComponent,
   isLocked,
   notifyCopy,
   onCopied,
@@ -378,17 +369,13 @@ function MedRow({
   med: Medication;
   /** Required components currently empty for this med (Bug 2). */
   missing: string[];
-  /** Components the doctor consciously dismissed ("intentionally open"). */
-  dismissed: string[];
   triggered: boolean;
   /** Whole row is the edit affordance — fires unless an inner control (inline
-   *  field, dismiss/undo, remove ×, copy) was hit (all stop propagation). */
+   *  field, remove ×, copy) was hit (all stop propagation). */
   onClick: () => void;
   onRemove: () => void;
   /** Inline fill of one missing component. */
   onFill: (component: string, value: string) => void;
-  /** Toggle one component's dismissal. */
-  onDismissComponent: (component: string) => void;
   /** Disables the per-row copy until the review is confirmed. */
   isLocked: boolean;
   /** Shared Toast callback — true = success, false = failure. */
@@ -398,15 +385,10 @@ function MedRow({
 }) {
   const rx = lookupRx(med.inn);
   const copyText = formatMedLine(med);
-  // Components needing input now (missing AND not dismissed) vs. consciously
-  // dismissed-but-empty. `inn` is excluded from inline handling (see
-  // MED_INLINE_COMPONENTS) — a missing name is surfaced in the title + gate.
-  const needsInput = MED_INLINE_COMPONENTS.filter(
-    (c) => missing.includes(c) && !dismissed.includes(c)
-  );
-  const dismissedOpen = MED_INLINE_COMPONENTS.filter(
-    (c) => dismissed.includes(c) && missing.includes(c)
-  );
+  // Components needing input now (missing). `inn` is excluded from inline
+  // handling (see MED_INLINE_COMPONENTS) — a missing name is surfaced in the
+  // title + gate. Fill-required: the only way to clear a yellow field is to fill it.
+  const needsInput = MED_INLINE_COMPONENTS.filter((c) => missing.includes(c));
 
   async function handleCopy(e: React.MouseEvent) {
     e.stopPropagation();
@@ -475,10 +457,10 @@ function MedRow({
           <FilledSummary med={med} />
         </div>
 
-        {/* Yellow "needs input" fields — one editable field per missing,
-            undismissed component (Bug 2). Fill clears it; "Пропусни" dismisses
-            it without ever writing a value. Editable regardless of isLocked —
-            the gate disables ONLY approve/export, never editing. */}
+        {/* Yellow "needs input" fields — one editable field per missing
+            component (Bug 2, fill-required). Typing a value clears the flag;
+            there is no dismiss/skip. Editable regardless of isLocked — the gate
+            disables ONLY approve/export, never editing. */}
         {needsInput.length > 0 && (
           <div
             className="mt-1.5 space-y-1"
@@ -490,24 +472,6 @@ function MedRow({
                 key={c}
                 label={MED_COMPONENT_LABELS[c]}
                 onFill={(v) => onFill(c, v)}
-                onDismiss={() => onDismissComponent(c)}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Consciously dismissed components — subtle, with an undo. No value is
-            ever recorded into the medication. */}
-        {dismissedOpen.length > 0 && (
-          <div
-            className="mt-1 flex flex-wrap gap-1"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {dismissedOpen.map((c) => (
-              <DismissedChip
-                key={c}
-                label={MED_COMPONENT_LABELS[c]}
-                onUndo={() => onDismissComponent(c)}
               />
             ))}
           </div>
@@ -573,19 +537,18 @@ function FilledSummary({ med }: { med: Medication }) {
   );
 }
 
-// Yellow "needs input" field for one missing component (Bug 2). Buffers
-// keystrokes in local state and commits on blur / Enter — so the field does NOT
-// vanish mid-typing when the parent recomputes meds_review. Committing a
-// non-empty value fills the component (clearing the flag); "Пропусни" records a
-// conscious dismissal WITHOUT writing any value.
+// Yellow "needs input" field for one missing component (Bug 2, fill-required).
+// Buffers keystrokes in local state and commits on blur / Enter — so the field
+// does NOT vanish mid-typing when the parent recomputes meds_review. Committing a
+// non-empty value fills the component (clearing the flag). Accepts free text
+// (e.g. duration "дългосрочно", dose "тънък слой"). There is no dismiss/skip —
+// the value must be filled.
 function NeedsInputField({
   label,
   onFill,
-  onDismiss,
 }: {
   label: string;
   onFill: (value: string) => void;
-  onDismiss: () => void;
 }) {
   const [val, setVal] = useState('');
   function commit() {
@@ -603,7 +566,7 @@ function NeedsInputField({
       <span
         className="text-[10px] font-semibold flex-shrink-0"
         style={{ color: 'var(--color-gold)' }}
-        title="липсва — попълнете или пропуснете"
+        title="липсва — попълнете"
       >
         ⚠ {label}
       </span>
@@ -625,49 +588,7 @@ function NeedsInputField({
         className="flex-1 min-w-0 px-2 py-1 rounded text-xs border outline-none bg-white"
         style={{ borderColor: 'var(--color-gold)' }}
       />
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDismiss();
-        }}
-        title="Отбележи като съзнателно пропуснато"
-        className="text-[10px] px-1.5 py-1 rounded flex-shrink-0 transition hover:bg-white"
-        style={{ color: 'var(--color-text-muted)' }}
-      >
-        Пропусни
-      </button>
     </div>
-  );
-}
-
-// A component the doctor consciously dismissed — shown subtly, clickable to
-// undo (re-surface the yellow field). Never reflects a written value.
-function DismissedChip({
-  label,
-  onUndo,
-}: {
-  label: string;
-  onUndo: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onUndo();
-      }}
-      title="Върни към попълване"
-      className="text-[10px] px-1.5 py-0.5 rounded inline-flex items-center gap-1 transition hover:opacity-80"
-      style={{
-        background: 'var(--color-bg)',
-        color: 'var(--color-text-hint)',
-        border: '1px solid var(--color-border)',
-      }}
-    >
-      <span>{label}: пропуснато</span>
-      <span aria-hidden="true">↺</span>
-    </button>
   );
 }
 

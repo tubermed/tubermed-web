@@ -18,13 +18,12 @@ export interface Medication {
   duration?: string;
 }
 
-// Per-medication completeness marker (Bug 2). One entry per medications_list[],
-// index-aligned. `missing` = required components currently empty; `dismissed` =
-// components the doctor consciously marked "intentionally open". A component is
-// resolved when FILLED or DISMISSED. Mirrors the backend meds_review shape.
+// Per-medication completeness marker (Bug 2, fill-required). One entry per
+// medications_list[], index-aligned. `missing` = required components currently
+// empty. A component is resolved only by being FILLED — there is no dismiss
+// escape. Mirrors the backend meds_review shape.
 export interface MedReviewItem {
   missing: string[];
-  dismissed: string[];
 }
 
 export interface MedsReview {

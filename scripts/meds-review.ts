@@ -3,6 +3,9 @@
 // lib/process-audio.js → validateMedicationCompleteness) so a med the client
 // considers complete is never 409-rejected at /approve, and vice-versa.
 //
+// Fill-required: there is NO dismiss escape — a missing component clears only by
+// being FILLED (free text accepted).
+//
 // The web repo has no unit-test runner; logic regressions run as standalone tsx.
 // Run from the tubermed-web root: npx tsx scripts/meds-review.ts
 //   exit 0 on pass, 1 on fail. Pure — no network, no API.
@@ -37,7 +40,6 @@ console.log('\nrequired components');
   assert(set.has('inn') && set.has('form') && set.has('dose') && set.has('regimen') && set.has('duration'),
     'name/form/dose/frequency/duration all required');
   assert(!set.has('route'), 'route is NOT required');
-  // Parity with the backend MED_REQUIRED_COMPONENTS order.
   assert(MED_REQUIRED_COMPONENTS.join(',') === 'inn,form,dose,regimen,duration', 'order matches the backend');
 }
 
@@ -50,92 +52,75 @@ console.log('\nmedComponentFilled');
   assert(medComponentFilled(undefined) === false, 'undefined is missing');
 }
 
-// ── complete med → not blocked ──
+// ── complete med → not blocked, no dismissed field ──
 console.log('\ncompleteness');
 {
-  const r = computeMedsReview([fullMed()], null);
+  const r = computeMedsReview([fullMed()]);
   assert(r.needs_review === false, 'fully-specified med not blocked');
   assert(r.meds[0].missing.length === 0, 'no missing');
+  assert(!('dismissed' in r.meds[0]), 'no dismissed field — fill-required, no dismiss escape');
 }
 
 // ── missing duration → marked, blocked ──
 {
-  const r = computeMedsReview([fullMed({ duration: '' })], null);
+  const r = computeMedsReview([fullMed({ duration: '' })]);
   assert(r.meds[0].missing.includes('duration'), 'missing duration marked');
-  assert(r.needs_review === true, 'blocked while unresolved');
+  assert(r.needs_review === true, 'blocked while missing');
 }
 
 // ── missing form (the new component) → marked, blocked ──
 {
-  const r = computeMedsReview([fullMed({ form: '' })], null);
+  const r = computeMedsReview([fullMed({ form: '' })]);
   assert(r.meds[0].missing.includes('form'), 'missing form marked');
   assert(r.needs_review === true, 'missing form blocks');
 }
 
 // ── fill clears ──
-console.log('\nfill / dismiss');
+console.log('\nfill (the only way to resolve)');
 {
-  let r = computeMedsReview([fullMed({ duration: '' })], null);
+  let r = computeMedsReview([fullMed({ duration: '' })]);
   assert(r.needs_review === true, 'starts blocked');
-  r = computeMedsReview([fullMed({ duration: '7 дни' })], r);
+  r = computeMedsReview([fullMed({ duration: '7 дни' })]);
   assert(r.needs_review === false, 'fill clears');
 }
 
-// ── dismiss clears WITHOUT writing a value ──
+// ── free-text values fill fine (no numeric format forced) ──
 {
-  const meds = [fullMed({ duration: '' })];
-  let r = computeMedsReview(meds, null);
-  // doctor dismisses duration on med 0
-  r = computeMedsReview(meds, { needs_review: r.needs_review, meds: [{ missing: r.meds[0].missing, dismissed: ['duration'] }] });
-  assert(r.meds[0].dismissed.includes('duration'), 'dismissal preserved');
-  assert(r.meds[0].missing.includes('duration'), 'still empty (recorded missing)');
-  assert(r.needs_review === false, 'dismiss clears the block');
-  assert(meds[0].duration === '', 'dismiss never writes a value into the med');
+  const r = computeMedsReview([fullMed({ dose: 'тънък слой', duration: 'при нужда' })]);
+  assert(r.needs_review === false, 'free-text dose/duration count as filled');
+  assert(r.meds[0].missing.length === 0, 'no missing for free-text values');
 }
 
 // ── re-empty a previously-filled component re-blocks ──
 {
-  let r = computeMedsReview([fullMed({ duration: '5 дни' })], null);
+  let r = computeMedsReview([fullMed({ duration: '5 дни' })]);
   assert(r.needs_review === false, 'filled → clear');
-  r = computeMedsReview([fullMed({ duration: '' })], r);
+  r = computeMedsReview([fullMed({ duration: '' })]);
   assert(r.needs_review === true, 'clearing re-blocks');
 }
 
-// ── index-aligned dismissals don't leak across meds ──
+// ── per-med missing is independent (index-aligned, no leak) ──
 {
   const meds = [fullMed({ dose: '' }), fullMed({ duration: '' })];
-  let r = computeMedsReview(meds, null);
-  r = computeMedsReview(meds, {
-    needs_review: r.needs_review,
-    meds: [r.meds[0], { missing: r.meds[1].missing, dismissed: ['duration'] }],
-  });
-  assert(r.needs_review === true, 'med 0 (dose) still unresolved → blocked');
-  assert(r.meds[1].dismissed.includes('duration'), 'med 1 dismissal preserved at its index');
-  assert(!r.meds[0].dismissed.includes('duration'), 'dismissal did NOT leak onto med 0');
-}
-
-// ── stale dismissal dropped once the component is filled ──
-{
-  const meds = [fullMed({ duration: '' })];
-  let r = computeMedsReview(meds, { needs_review: true, meds: [{ missing: ['duration'], dismissed: ['duration'] }] });
-  assert(r.meds[0].dismissed.includes('duration'), 'dismissed while empty');
-  const filled = [fullMed({ duration: '3 дни' })];
-  r = computeMedsReview(filled, r);
-  assert(r.meds[0].missing.length === 0 && r.meds[0].dismissed.length === 0, 'fill drops the stale dismissal');
+  const r = computeMedsReview(meds);
+  assert(r.meds[0].missing.includes('dose') && !r.meds[0].missing.includes('duration'), 'med 0 misses only dose');
+  assert(r.meds[1].missing.includes('duration') && !r.meds[1].missing.includes('dose'), 'med 1 misses only duration');
+  assert(r.needs_review === true, 'blocked while either is missing');
 }
 
 // ── no meds → not blocked ──
 {
-  const r = computeMedsReview([], null);
+  const r = computeMedsReview([]);
   assert(r.needs_review === false, 'empty list passes');
   assert(r.meds.length === 0, 'meds review is empty');
 }
 
-// ── medsBlockMessage ──
+// ── medsBlockMessage — present, and offers no skip ──
 console.log('\nblock message');
 {
   const msg = medsBlockMessage();
   assert(typeof msg === 'string' && msg.length > 0, 'returns a localized message');
+  assert(!/пропусн/i.test(msg), 'message no longer offers a dismiss/skip path');
 }
 
 console.log(`\n${passed + failed} assertions: ${passed} passed, ${failed} failed`);
