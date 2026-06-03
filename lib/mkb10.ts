@@ -153,3 +153,40 @@ export function chapterCounts(data: MkbRow[]): number[] {
 export function findByCode(data: MkbRow[], code: string): MkbRow | undefined {
   return data.find((r) => r[0] === code);
 }
+
+// ── Validity with PARENT-ACCEPT ──────────────────────────────────────────────
+// Mirrors the backend gate (tubermed-backend lib/process-audio.js → mkbResolve):
+// a code is fileable if the EXACT code OR its 3-char parent rubric is in the
+// register — bare (I48, K26, E11) or the ".-" placeholder form (F10.- … F19.-,
+// the substance-use chapter). The client MUST agree with the server so a doctor
+// never sees a green code the approval gate then rejects with 409.
+
+export function parentRubric(code: string): string | null {
+  const m = /^([A-Z]\d{2})/.exec(code.trim().toUpperCase());
+  return m ? m[1] : null;
+}
+
+export interface MkbResolution {
+  ok: boolean;
+  /** Which form matched — drives whether the canonical label is the code's own
+   *  term ('exact') or its parent category's term ('parent'). */
+  source?: 'exact' | 'parent';
+  term?: string;
+}
+
+export function resolveMkb(data: MkbRow[], code: string): MkbResolution {
+  const c = code.trim().toUpperCase();
+  if (!c) return { ok: false };
+  const exact = findByCode(data, c);
+  if (exact) return { ok: true, source: 'exact', term: exact[1] };
+  const p = parentRubric(c);
+  if (p) {
+    const pe = findByCode(data, p) ?? findByCode(data, `${p}.-`);
+    if (pe) return { ok: true, source: 'parent', term: pe[1] };
+  }
+  return { ok: false };
+}
+
+export function isValidMkb(data: MkbRow[], code: string): boolean {
+  return resolveMkb(data, code).ok;
+}
