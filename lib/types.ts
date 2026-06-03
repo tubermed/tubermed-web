@@ -11,10 +11,25 @@ export interface UncertainSpan {
 
 export interface Medication {
   inn: string;
+  form?: string;              // лекарствена форма (таблетка/гел/сироп/…) — Bug 2
   dose?: string;
   regimen?: string;
-  route?: string;
+  route?: string;             // начин на приложение (р.о./и.в./локално) — optional, NOT one of the five required
   duration?: string;
+}
+
+// Per-medication completeness marker (Bug 2). One entry per medications_list[],
+// index-aligned. `missing` = required components currently empty; `dismissed` =
+// components the doctor consciously marked "intentionally open". A component is
+// resolved when FILLED or DISMISSED. Mirrors the backend meds_review shape.
+export interface MedReviewItem {
+  missing: string[];
+  dismissed: string[];
+}
+
+export interface MedsReview {
+  needs_review: boolean;
+  meds: MedReviewItem[];
 }
 
 export interface ComorbidDiagnosis {
@@ -55,6 +70,7 @@ export interface TranscribeFields {
   uncertain_spans?: UncertainSpan[];
   med_alerts?: MedAlert[];
   mkb_review?: MkbReview;                          // derived: code-validity gate state
+  meds_review?: MedsReview;                        // derived: medication-completeness gate state (Bug 2)
   _disclaimer?: string;
 }
 
@@ -346,6 +362,7 @@ export interface EditConsultationResponse {
   mkb_review?: MkbReview | null;
   osnovna_mkb_term?: string | null;
   osnovna_mkb_term_source?: 'exact' | 'parent' | null;
+  meds_review?: MedsReview | null;
 }
 
 // Response from POST /api/consultations/:id/patient-summary (A2).

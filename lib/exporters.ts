@@ -67,7 +67,7 @@ export function formatPlainText(f: TranscribeFields): string {
   if (f.medications_list && f.medications_list.length > 0) {
     lines.push('МЕДИКАМЕНТИ');
     f.medications_list.forEach((m) => {
-      const parts = [m.inn, m.dose, m.regimen, m.route, m.duration].filter(Boolean);
+      const parts = [m.inn, m.form, m.dose, m.regimen, m.route, m.duration].filter(Boolean);
       lines.push('• ' + parts.join(' · '));
     });
     lines.push('');
@@ -151,7 +151,7 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string): string {
   if (f.medications_list && f.medications_list.length > 0) {
     const rows = f.medications_list
       .map((m) => {
-        const parts = [m.dose, m.regimen, m.route, m.duration]
+        const parts = [m.form, m.dose, m.regimen, m.route, m.duration]
           .filter(Boolean)
           .join(' · ');
         return `<tr><td style="padding:4px 8px 4px 0"><strong>${escapeHtml(m.inn)}</strong></td>
@@ -295,7 +295,7 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string): string {
 
   let medsRows = '';
   (f.medications_list || []).forEach((m) => {
-    const parts = [m.dose, m.regimen, m.route, m.duration]
+    const parts = [m.form, m.dose, m.regimen, m.route, m.duration]
       .filter(Boolean)
       .join(' · ');
     medsRows += `<tr>
