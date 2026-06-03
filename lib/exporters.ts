@@ -4,6 +4,7 @@
 // buttons that are hidden when actually printing.
 
 import type { TranscribeFields } from './types';
+import { filedMainTerm, filedComorbidityTerm } from './diagnosis';
 
 export function escapeHtml(s: string): string {
   return s
@@ -28,19 +29,20 @@ export function formatPlainText(f: TranscribeFields): string {
   const lines: string[] = [];
 
   const diagLines: string[] = [];
-  if (f.osnovna_diagnoza && f.osnovna_diagnoza.trim()) {
+  const mainTerm = filedMainTerm(f); // official term for a valid code; spoken fallback
+  if (mainTerm) {
     const mkb = f.osnovna_mkb ? ' (МКБ: ' + f.osnovna_mkb + ')' : '';
-    diagLines.push('Основна диагноза: ' + f.osnovna_diagnoza.trim() + mkb);
+    diagLines.push('Основна диагноза: ' + mainTerm + mkb);
   }
   const co = (f.pridruzhavashti || []).filter(
-    (d) => (d.diagnoza && d.diagnoza.trim()) || (d.mkb && d.mkb.trim())
+    (d) => filedComorbidityTerm(d) || (d.mkb && d.mkb.trim())
   );
   if (co.length > 0) {
     diagLines.push('');
     diagLines.push('Придружаващи заболявания:');
     co.forEach((d, i) => {
       const mkb = d.mkb ? ' (МКБ: ' + d.mkb + ')' : '';
-      diagLines.push(`${i + 1}. ${(d.diagnoza || '').trim()}${mkb}`);
+      diagLines.push(`${i + 1}. ${filedComorbidityTerm(d)}${mkb}`);
     });
   }
   if (diagLines.length > 0) {
@@ -133,13 +135,15 @@ function pdfSection(title: string, content: string): string {
 
 export function generatePdfHtml(f: TranscribeFields, dateStr: string): string {
   let diagRows = '';
-  if (f.osnovna_diagnoza && f.osnovna_diagnoza.trim()) {
-    diagRows += `<tr><td><strong>${escapeHtml(f.osnovna_diagnoza)}</strong></td>
+  const pdfMainTerm = filedMainTerm(f);
+  if (pdfMainTerm) {
+    diagRows += `<tr><td><strong>${escapeHtml(pdfMainTerm)}</strong></td>
        <td style="white-space:nowrap;font-family:monospace;color:#1F3A5F;font-weight:700">${escapeHtml(f.osnovna_mkb || '')}</td></tr>`;
   }
   (f.pridruzhavashti || []).forEach((d) => {
-    if (!d.diagnoza?.trim() && !d.mkb?.trim()) return;
-    diagRows += `<tr><td>${escapeHtml(d.diagnoza || '')}</td>
+    const coTerm = filedComorbidityTerm(d);
+    if (!coTerm && !d.mkb?.trim()) return;
+    diagRows += `<tr><td>${escapeHtml(coTerm)}</td>
        <td style="white-space:nowrap;font-family:monospace;color:#1F3A5F">${escapeHtml(d.mkb || '')}</td></tr>`;
   });
 
@@ -280,10 +284,11 @@ export function openPdfPreview(html: string, opts?: OpenPreviewOpts): boolean {
 export function generateWordHtml(f: TranscribeFields, dateStr: string): string {
   let pdRows = '';
   (f.pridruzhavashti || []).forEach((d, i) => {
-    if (!d.diagnoza?.trim() && !d.mkb?.trim()) return;
+    const coTerm = filedComorbidityTerm(d);
+    if (!coTerm && !d.mkb?.trim()) return;
     pdRows += `<tr>
       <td style="padding:6px 10px;border:1px solid #ccc;width:50px;color:#555">${i + 1}.</td>
-      <td style="padding:6px 10px;border:1px solid #ccc">${escapeHtml(d.diagnoza || '')}</td>
+      <td style="padding:6px 10px;border:1px solid #ccc">${escapeHtml(coTerm)}</td>
       <td style="padding:6px 10px;border:1px solid #ccc;font-family:Courier New;color:#1F3A5F;white-space:nowrap">${escapeHtml(d.mkb || '')}</td>
     </tr>`;
   });
@@ -305,6 +310,8 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string): string {
     return `<h2>${escapeHtml(title)}</h2><p>${escapeHtml(v).replace(/\n/g, '<br>')}</p>`;
   };
 
+  const wordMainTerm = filedMainTerm(f); // official term for a valid code; spoken fallback
+
   return `
 <html xmlns:o='urn:schemas-microsoft-com:office:office'
       xmlns:w='urn:schemas-microsoft-com:office:word'
@@ -324,11 +331,11 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string): string {
 <p class="meta">Дата: ${escapeHtml(dateStr)}</p>
 
 ${
-  f.osnovna_diagnoza?.trim()
+  wordMainTerm
     ? `<h2>Основна диагноза</h2>
 <table>
   <tr>
-    <td style="padding:6px 10px;border:1px solid #ccc">${escapeHtml(f.osnovna_diagnoza)}</td>
+    <td style="padding:6px 10px;border:1px solid #ccc">${escapeHtml(wordMainTerm)}</td>
     <td style="padding:6px 10px;border:1px solid #ccc;font-family:Courier New;color:#1F3A5F;white-space:nowrap;width:80px">${escapeHtml(f.osnovna_mkb || '')}</td>
   </tr>
 </table>`
