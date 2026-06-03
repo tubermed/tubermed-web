@@ -21,9 +21,10 @@ import type {
   Medication,
   PendingVisit,
   ExportSignalPayload,
+  MkbReview,
 } from '@/lib/types';
 import { mergeBackendAlerts, type SafetyAlert } from '@/lib/drug-safety';
-import { loadMkb, getMkbDataSync, findByCode } from '@/lib/mkb10';
+import { loadMkb, getMkbDataSync, findByCode, resolveMkb } from '@/lib/mkb10';
 import { loadIal } from '@/lib/ial-meds';
 import { findHighlights, type HighlightMatch } from '@/lib/vital-rules';
 import {
@@ -113,6 +114,38 @@ function stringifyForDiff(value: unknown): string {
 }
 
 // useSearchParams() must live inside a Suspense boundary in Next.js 16.
+// ── МКБ reconcile helpers (Bug 1 Phase 2) ───────────────────────────────────
+// Client-side mirror of the backend gate (validateMkbCodes) for INSTANT feedback
+// as the doctor edits. The server re-validates on save and is the final authority
+// (the 409 backstop). Returns null when the nomenclature isn't loaded yet — in
+// that case we keep the server's mkb_review rather than guess.
+function clientMkbReview(code: string): {
+  mkb_review: MkbReview;
+  osnovna_mkb_term?: string;
+  osnovna_mkb_term_source?: 'exact' | 'parent';
+} | null {
+  const c = (code || '').trim();
+  if (!c) return { mkb_review: { needs_review: true, reason: 'missing_code', code: '' } };
+  const data = getMkbDataSync();
+  if (!data) return null; // nomenclature not loaded — defer to the server's mkb_review
+  const r = resolveMkb(data, c);
+  if (!r.ok) return { mkb_review: { needs_review: true, reason: 'invalid_code', code: c } };
+  return {
+    mkb_review: { needs_review: false },
+    osnovna_mkb_term: r.term,
+    osnovna_mkb_term_source: r.source,
+  };
+}
+
+// Localized block message — mirrors the backend mkbReviewBlock() copy so the
+// toast and the 409 backstop read identically.
+function mkbBlockMessage(review?: MkbReview | null): string {
+  if (review?.reason === 'missing_code')
+    return 'Липсва код по МКБ-10 за основната диагноза. Добавете валиден код преди потвърждаване.';
+  const code = review?.code ? `„${review.code}“` : 'кодът';
+  return `Кодът по МКБ-10 ${code} не е валиден. Коригирайте основната диагноза преди потвърждаване.`;
+}
+
 export default function ResultPage() {
   return (
     <Suspense fallback={<BootSplash />}>
@@ -359,11 +392,25 @@ function ResultPageInner() {
     // debounce window — see pendingCharsChangedRef.
     const field        = pendingEditField.current ?? undefined;
     const charsChanged = pendingCharsChangedRef.current;
-    api.editConsultation(original.consultationId, field, fieldsRef.current, charsChanged).catch((err) => {
-      if (err instanceof ApiError) {
-        console.warn('[edit-track] ' + err.status + ' ' + err.message);
-      }
-    });
+    const postedMkb    = fieldsRef.current.osnovna_mkb ?? '';
+    api.editConsultation(original.consultationId, field, fieldsRef.current, charsChanged)
+      .then((resp) => {
+        // The backend re-ran validateMkbCodes — reflect its AUTHORITATIVE МКБ
+        // state. Skip if the doctor changed the code again since this save (a
+        // stale response must not clobber the newer optimistic value).
+        if (!resp || (fieldsRef.current.osnovna_mkb ?? '') !== postedMkb) return;
+        setFields((prev) => ({
+          ...prev,
+          mkb_review:              resp.mkb_review ?? prev.mkb_review,
+          osnovna_mkb_term:        resp.osnovna_mkb_term ?? undefined,
+          osnovna_mkb_term_source: resp.osnovna_mkb_term_source ?? undefined,
+        }));
+      })
+      .catch((err) => {
+        if (err instanceof ApiError) {
+          console.warn('[edit-track] ' + err.status + ' ' + err.message);
+        }
+      });
     pendingEditField.current = null;
     pendingCharsChangedRef.current = 0;
   }, [original]);
@@ -449,10 +496,16 @@ function ResultPageInner() {
       // chars_changed is computed against the PRIMARY field — the MKB code.
       // If diagFromCode also auto-fills osnovna_diagnoza we don't double-bill.
       const charsChanged = computeCharsChanged('osnovna_mkb', v);
+      const rec = clientMkbReview(v); // instant validity (server re-validates on save)
       setFields((prev) => ({
         ...prev,
         osnovna_mkb: v,
         ...(term ? { osnovna_diagnoza: term } : {}),
+        ...(rec ? {
+          mkb_review:              rec.mkb_review,
+          osnovna_mkb_term:        rec.osnovna_mkb_term,
+          osnovna_mkb_term_source: rec.osnovna_mkb_term_source,
+        } : {}),
       }));
       trackEdit('osnovna_mkb', charsChanged);
     },
@@ -463,10 +516,18 @@ function ResultPageInner() {
     (v: string) => {
       const code = codeFromDiag(v);
       const charsChanged = computeCharsChanged('osnovna_diagnoza', v);
+      // The block is code-based — only recompute if typing the diagnosis name
+      // auto-filled a (new) code; plain text edits leave mkb_review untouched.
+      const rec = code ? clientMkbReview(code) : null;
       setFields((prev) => ({
         ...prev,
         osnovna_diagnoza: v,
         ...(code ? { osnovna_mkb: code } : {}),
+        ...(rec ? {
+          mkb_review:              rec.mkb_review,
+          osnovna_mkb_term:        rec.osnovna_mkb_term,
+          osnovna_mkb_term_source: rec.osnovna_mkb_term_source,
+        } : {}),
       }));
       trackEdit('osnovna_diagnoza', charsChanged);
     },
@@ -684,10 +745,16 @@ function ResultPageInner() {
         // code (primary picker target). The diagnoza ride-along isn't
         // double-counted as a separate field touch.
         const charsChanged = computeCharsChanged('osnovna_mkb', code);
+        const rec = clientMkbReview(code);
         setFields((prev) => ({
           ...prev,
           osnovna_mkb: code,
           osnovna_diagnoza: term,
+          ...(rec ? {
+            mkb_review:              rec.mkb_review,
+            osnovna_mkb_term:        rec.osnovna_mkb_term,
+            osnovna_mkb_term_source: rec.osnovna_mkb_term_source,
+          } : {}),
         }));
         trackEdit('osnovna_mkb', charsChanged);
       } else {
@@ -726,19 +793,42 @@ function ResultPageInner() {
     if (!original) return;
     if (approvingRef.current) return;
     if (reviewStatus === 'confirmed') return;
+    // МКБ gate — never attempt approval while the code block stands.
+    if (fieldsRef.current.mkb_review?.needs_review) {
+      showToast('error', mkbBlockMessage(fieldsRef.current.mkb_review));
+      setReviewPopupOpen(false);
+      return;
+    }
     approvingRef.current = true;
     try {
       await api.approveConsultation(original.consultationId);
       setReviewStatus('confirmed');
       setReviewPopupOpen(false);
     } catch (err) {
-      showToast(
-        'error',
-        'Грешка при потвърждаване: ' +
-          (err instanceof Error ? err.message : 'неизвестна'),
-      );
-      // Intentionally NOT flipping reviewStatus and NOT closing the popup —
-      // the doctor stays locked until the approval persists on the server.
+      // Server backstop: 409 mkb_review_required means the code is invalid/missing
+      // server-side — surface it so the reconcile prompt appears + the gate holds.
+      if (
+        err instanceof ApiError &&
+        err.status === 409 &&
+        err.body && typeof err.body === 'object' &&
+        (err.body as { code?: string }).code === 'mkb_review_required'
+      ) {
+        const b = err.body as { reason?: MkbReview['reason']; mkb?: string };
+        setFields((prev) => ({
+          ...prev,
+          mkb_review: { needs_review: true, reason: b.reason, code: b.mkb },
+        }));
+        showToast('error', err.message);
+        setReviewPopupOpen(false);
+      } else {
+        showToast(
+          'error',
+          'Грешка при потвърждаване: ' +
+            (err instanceof Error ? err.message : 'неизвестна'),
+        );
+      }
+      // Intentionally NOT flipping reviewStatus — the doctor stays locked until
+      // the approval persists on the server.
     } finally {
       approvingRef.current = false;
     }
@@ -931,6 +1021,12 @@ function ResultPageInner() {
           onClick={() => setReviewPopupOpen((o) => !o)}
           onConfirm={confirmReview}
           onDismiss={() => setReviewPopupOpen(false)}
+          blocked={!!fields.mkb_review?.needs_review}
+          blockHint={
+            fields.mkb_review?.needs_review
+              ? mkbBlockMessage(fields.mkb_review)
+              : undefined
+          }
         />
         {reviewItems.length > 0 && (
           <ReviewCounter
@@ -1114,6 +1210,9 @@ function ResultPageInner() {
             <DiagnosesSection
               osnovnaDiagnoza={fields.osnovna_diagnoza || ''}
               osnovnaMkb={fields.osnovna_mkb || ''}
+              osnovnaMkbTerm={fields.osnovna_mkb_term}
+              termSource={fields.osnovna_mkb_term_source}
+              mkbReview={fields.mkb_review}
               pridruzhavashti={fields.pridruzhavashti || []}
               onOsnovnaDiagnozaChange={updateOsnovnaDiagnoza}
               onOsnovnaMkbChange={updateOsnovnaMkb}
@@ -1459,12 +1558,17 @@ function StatusBadge({
   onClick,
   onConfirm,
   onDismiss,
+  blocked = false,
+  blockHint,
 }: {
   status: ReviewStatus;
   popupOpen: boolean;
   onClick: () => void;
   onConfirm: () => void;
   onDismiss: () => void;
+  /** МКБ gate — when true, the confirm action is disabled (invalid/missing code). */
+  blocked?: boolean;
+  blockHint?: string;
 }) {
   const isConfirmed = status === 'confirmed';
   return (
@@ -1496,9 +1600,18 @@ function StatusBadge({
           className="absolute top-full left-0 mt-2 bg-white rounded-lg border p-2 shadow-md z-20 flex flex-col gap-1 min-w-[220px]"
           style={{ borderColor: 'var(--color-border)' }}
         >
+          {blocked && blockHint && (
+            <div
+              className="px-3 py-1.5 text-xs rounded-md"
+              style={{ color: 'var(--color-red)', background: 'var(--color-red-soft)' }}
+            >
+              {blockHint}
+            </div>
+          )}
           <button
             onClick={onConfirm}
-            className="text-left px-3 py-2 rounded-md text-sm font-medium transition hover:bg-[var(--color-ok-soft)]"
+            disabled={blocked}
+            className="text-left px-3 py-2 rounded-md text-sm font-medium transition hover:bg-[var(--color-ok-soft)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
             style={{ color: 'var(--color-ok)' }}
           >
             ✓ Вярно! Потвърждавам прегледа
@@ -1628,6 +1741,9 @@ function TextSection({
 function DiagnosesSection({
   osnovnaDiagnoza,
   osnovnaMkb,
+  osnovnaMkbTerm,
+  termSource,
+  mkbReview,
   pridruzhavashti,
   onOsnovnaDiagnozaChange,
   onOsnovnaMkbChange,
@@ -1640,6 +1756,9 @@ function DiagnosesSection({
 }: {
   osnovnaDiagnoza: string;
   osnovnaMkb: string;
+  osnovnaMkbTerm?: string;
+  termSource?: 'exact' | 'parent';
+  mkbReview?: MkbReview;
   pridruzhavashti: ComorbidDiagnosis[];
   onOsnovnaDiagnozaChange: (v: string) => void;
   onOsnovnaMkbChange: (v: string) => void;
@@ -1651,6 +1770,7 @@ function DiagnosesSection({
   notifyCopy: (ok: boolean) => void;
 }) {
   const hasMain = osnovnaDiagnoza.trim().length > 0;
+  const needsReview = !!mkbReview?.needs_review;
 
   function removeCo(i: number) {
     onPridruzhavashtiChange(pridruzhavashti.filter((_, idx) => idx !== i));
@@ -1695,6 +1815,44 @@ function DiagnosesSection({
             ) : null
           }
         />
+        {needsReview ? (
+          <div
+            role="alert"
+            className="mt-2 rounded-md border px-3 py-2"
+            style={{
+              borderColor: 'var(--color-red)',
+              background: 'var(--color-red-soft)',
+              color: 'var(--color-red)',
+            }}
+          >
+            <div className="text-sm font-semibold">
+              ⚠{' '}
+              {mkbReview?.reason === 'missing_code'
+                ? 'Липсва код по МКБ-10'
+                : 'Невалиден код по МКБ-10'}
+            </div>
+            <div className="text-xs mt-0.5">
+              {mkbReview?.reason === 'missing_code'
+                ? 'Добавете валиден код за основната диагноза (въведете или 🔍). Потвърждаването и експортът са блокирани, докато кодът липсва.'
+                : `Кодът „${mkbReview?.code || osnovnaMkb}“ не е в МКБ-10 регистъра. Коригирайте го (въведете нов или 🔍). Потвърждаването и експортът са блокирани.`}
+            </div>
+          </div>
+        ) : osnovnaMkbTerm ? (
+          <div className="mt-2 flex items-baseline gap-1.5">
+            <span
+              className="text-[11px] uppercase tracking-wider flex-shrink-0"
+              style={{ color: 'var(--color-text-hint)' }}
+            >
+              {termSource === 'parent' ? 'Категория по МКБ-10' : 'По МКБ-10'}
+            </span>
+            <span
+              className="text-sm font-medium"
+              style={{ color: 'var(--color-ink)' }}
+            >
+              {osnovnaMkbTerm}
+            </span>
+          </div>
+        ) : null}
         {!hasMain && (
           <div
             className="text-xs mt-2 px-1"

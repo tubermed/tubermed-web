@@ -20,6 +20,7 @@ export interface Medication {
 export interface ComorbidDiagnosis {
   diagnoza: string;
   mkb: string;
+  mkb_term?: string;          // official label for a valid comorbidity code (derived)
 }
 
 export interface MedAlert {
@@ -27,6 +28,14 @@ export interface MedAlert {
   severity: 'CRITICAL' | 'WARNING' | 'INFO';
   reason: string;
   action: string;
+}
+
+// МКБ code-validity gate state (Bug 1). NOTE: divergence_advisory is deliberately
+// NOT part of the client surface — it must never be shown to the doctor.
+export interface MkbReview {
+  needs_review: boolean;
+  reason?: 'invalid_code' | 'missing_code';
+  code?: string;
 }
 
 export interface TranscribeFields {
@@ -38,11 +47,14 @@ export interface TranscribeFields {
   medications_list?: Medication[];
   osnovna_diagnoza?: string;
   osnovna_mkb?: string;
+  osnovna_mkb_term?: string;                      // derived: canonical official label
+  osnovna_mkb_term_source?: 'exact' | 'parent';   // derived: which form matched the register
   pridruzhavashti?: ComorbidDiagnosis[];
   napravlenia?: string;
   naznacheni?: string;
   uncertain_spans?: UncertainSpan[];
   med_alerts?: MedAlert[];
+  mkb_review?: MkbReview;                          // derived: code-validity gate state
   _disclaimer?: string;
 }
 
@@ -323,6 +335,17 @@ export interface ApproveResponse {
   note_approved: true;
   note_approved_at: string;       // ISO-8601 / TIMESTAMPTZ
   idempotent: boolean;
+}
+
+// Mirrors POST /api/consultations/:id/edit. The backend re-runs validateMkbCodes
+// on the edited fields and echoes the re-validated МКБ state so the frontend can
+// reflect the (cleared/set) block without a re-fetch.
+export interface EditConsultationResponse {
+  ok: boolean;
+  edit_count?: number;
+  mkb_review?: MkbReview | null;
+  osnovna_mkb_term?: string | null;
+  osnovna_mkb_term_source?: 'exact' | 'parent' | null;
 }
 
 // Response from POST /api/consultations/:id/patient-summary (A2).

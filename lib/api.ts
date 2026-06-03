@@ -18,6 +18,7 @@ import type {
   TodayResponse,
   ConsentResponse,
   ApproveResponse,
+  EditConsultationResponse,
   ExportSignalPayload,
   ConsultationDetailResponse,
   PatientConsultationsResponse,
@@ -151,7 +152,7 @@ export const api = {
      *  the count back toward 0 instead of inflating it. */
     charsChanged?: number,
   ) =>
-    request<{ ok: boolean }>(`/api/consultations/${consultationId}/edit`, {
+    request<EditConsultationResponse>(`/api/consultations/${consultationId}/edit`, {
       method: 'POST',
       body: JSON.stringify({ field, fields, chars_changed: charsChanged }),
     }),
