@@ -43,6 +43,7 @@ interface InitialFormValues {
   dose: string;
   regimen: string;
   duration: string;
+  route: string;   // начин на приложение — preserved through an edit, not a UI field here
 }
 
 export default function MedsPicker({
@@ -133,10 +134,11 @@ export default function MedsPicker({
   const initialFormValues: InitialFormValues | undefined = useMemo(() => {
     if (!isEditing || !initialMed) return undefined;
     return {
-      form: sanitizeInitial(initialMed.route),
+      form: sanitizeInitial(initialMed.form),
       dose: sanitizeInitial(initialMed.dose),
       regimen: sanitizeInitial(initialMed.regimen),
       duration: sanitizeInitial(initialMed.duration),
+      route: sanitizeInitial(initialMed.route),
     };
   }, [isEditing, initialMed]);
 
@@ -393,7 +395,7 @@ function ManualEditForm({
 }) {
   const seedInn = sanitizeInitial(initialMed.inn) || query.trim();
   const [inn, setInn] = useState(seedInn);
-  const [form, setForm] = useState(sanitizeInitial(initialMed.route));
+  const [form, setForm] = useState(sanitizeInitial(initialMed.form));
   const [dose, setDose] = useState(sanitizeInitial(initialMed.dose));
   const [regimen, setRegimen] = useState(
     sanitizeInitial(initialMed.regimen)
@@ -407,7 +409,7 @@ function ManualEditForm({
   // initialMed itself changes (i.e. picker reopened for a different row).
   useEffect(() => {
     setInn(sanitizeInitial(initialMed.inn) || query.trim());
-    setForm(sanitizeInitial(initialMed.route));
+    setForm(sanitizeInitial(initialMed.form));
     setDose(sanitizeInitial(initialMed.dose));
     setRegimen(sanitizeInitial(initialMed.regimen));
     setDuration(sanitizeInitial(initialMed.duration));
@@ -419,9 +421,11 @@ function ManualEditForm({
     if (!innVal) return;
     onCommit({
       inn: innVal,
+      form: form.trim() || undefined,
       dose: dose.trim() || undefined,
       regimen: regimen.trim() || undefined,
-      route: form.trim() || undefined,
+      // route (начин) is preserved through the edit but not edited here.
+      route: sanitizeInitial(initialMed.route) || undefined,
       duration: duration.trim() || undefined,
     });
   }
@@ -444,12 +448,12 @@ function ManualEditForm({
         />
       </FieldRow>
       <div className="grid grid-cols-2 gap-2">
-        <FieldRow label="Форма / Път">
+        <FieldRow label="Форма">
           <input
             type="text"
             value={form}
             onChange={(e) => setForm(e.target.value)}
-            placeholder="напр. таблетки, р.о."
+            placeholder="напр. таблетка, гел, сироп"
             className="w-full px-2 py-1.5 rounded text-sm border outline-none bg-white"
             style={{ borderColor: 'var(--color-border-mid)' }}
           />
@@ -649,9 +653,11 @@ function ExpandedForm({
   function commit() {
     onCommit({
       inn: entry.b, // Bulgarian as primary display
+      form: form || undefined,
       dose: dose || undefined,
       regimen: regimen.trim() || undefined,
-      route: form || undefined,
+      // route (начин) preserved through an edit; undefined for a fresh add.
+      route: initialValues?.route || undefined,
       duration: duration.trim() || undefined,
     });
   }

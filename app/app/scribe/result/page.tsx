@@ -25,6 +25,7 @@ import type {
   MkbReview,
 } from '@/lib/types';
 import { mergeBackendAlerts, type SafetyAlert } from '@/lib/drug-safety';
+import { computeMedsReview, medsBlockMessage } from '@/lib/meds-review';
 import { loadMkb, getMkbDataSync, resolveMkb } from '@/lib/mkb10';
 import { filedMainTerm, filedComorbidityTerm, spokenDivergesFromOfficial } from '@/lib/diagnosis';
 import { loadIal } from '@/lib/ial-meds';
@@ -62,11 +63,24 @@ function normalizeMedications(
   if (!list) return [];
   return list.map((m) => ({
     inn: m.inn,
+    form: normalizeMedField(m.form),
     dose: normalizeMedField(m.dose),
     regimen: normalizeMedField(m.regimen),
     route: normalizeMedField(m.route),
     duration: normalizeMedField(m.duration),
   }));
+}
+
+// Recompute the medication-completeness marker from the CURRENT medications_list,
+// preserving the doctor's dismissals carried in the incoming fields.meds_review
+// (index-aligned). Mirrors the backend: the gate + the yellow needs-input fields
+// both read fields.meds_review, and it rides along in the /edit POST so the
+// server re-validates against the same shape. Used at every load + meds-edit site.
+function withMedsReview(f: TranscribeFields): TranscribeFields {
+  return {
+    ...f,
+    meds_review: computeMedsReview(f.medications_list || [], f.meds_review),
+  };
 }
 
 type ReviewStatus = 'pending' | 'confirmed';
@@ -237,12 +251,12 @@ function ResultPageInner() {
     try {
       const parsed = JSON.parse(raw) as TranscribeResult;
       setOriginal(parsed);
-      setFields({
+      setFields(withMedsReview({
         ...parsed.fields,
         medications_list: normalizeMedications(
           parsed.fields.medications_list
         ),
-      });
+      }));
       // The blob is the AI output frozen at generation — it never carries the
       // doctor's later edits. Whenever ?visit= is present the server's
       // extracted_fields is the source of truth: we just painted the blob for an
@@ -287,10 +301,10 @@ function ResultPageInner() {
         transcript: '',
         fields: note,
       });
-      setFields({
+      setFields(withMedsReview({
         ...note,
         medications_list: normalizeMedications(note.medications_list),
-      });
+      }));
       setPendingVisit(recovery.pendingVisit);
     }
   }, [recovery, router]);
@@ -328,10 +342,10 @@ function ResultPageInner() {
           return;
         }
         if (editedFieldsRef.current.size > 0) return;
-        setFields({
+        setFields(withMedsReview({
           ...consultation.note,
           medications_list: normalizeMedications(consultation.note.medications_list),
-        });
+        }));
       } catch {
         /* transient fetch error → keep the blob paint, never blank the screen */
       }
@@ -511,9 +525,47 @@ function ResultPageInner() {
         const removed = before.find((b) => !nextNames.has(b.inn));
         if (removed) setLastRemovedMedName(removed.inn);
       }
-      updateField('medications_list', next);
+      // Recompute the completeness marker (Bug 2) alongside the meds write so the
+      // yellow needs-input fields + the approve gate update instantly; filling a
+      // missing component clears it. Dismissals (index-aligned) are preserved.
+      const charsChanged = computeCharsChanged('medications_list', next);
+      setFields((prev) => withMedsReview({ ...prev, medications_list: next }));
+      trackEdit('medications_list', charsChanged);
     },
-    [fields.medications_list, updateField]
+    [fields.medications_list, trackEdit, computeCharsChanged]
+  );
+
+  // ── Meds dismiss — "intentionally open" toggle for one component (Bug 2) ──
+  // Records the doctor's conscious choice to leave a component blank. NEVER
+  // writes a value into the medication ("не е посочено" is never recorded);
+  // recomputes meds_review (preserving the toggled dismissal, index-aligned) and
+  // persists via the edit flow so the gate clears. Toggling again un-dismisses.
+  const onMedsDismiss = useCallback(
+    (index: number, component: string) => {
+      setFields((prev) => {
+        const meds = prev.medications_list || [];
+        const prior = prev.meds_review ?? computeMedsReview(meds, null);
+        const nextMeds = prior.meds.map((m, i) => {
+          if (i !== index) return m;
+          const has = m.dismissed.includes(component);
+          return {
+            ...m,
+            dismissed: has
+              ? m.dismissed.filter((c) => c !== component)
+              : [...m.dismissed, component],
+          };
+        });
+        return {
+          ...prev,
+          meds_review: computeMedsReview(meds, {
+            needs_review: prior.needs_review,
+            meds: nextMeds,
+          }),
+        };
+      });
+      trackEdit('medications_list', 0);
+    },
+    [trackEdit]
   );
 
   // ── Safety alerts (derived from fields) ──────────────────────
@@ -748,6 +800,13 @@ function ResultPageInner() {
       setReviewPopupOpen(false);
       return;
     }
+    // Medication-completeness gate — never attempt approval while any med has an
+    // unresolved missing component (Bug 2). The doctor fills or dismisses each.
+    if (fieldsRef.current.meds_review?.needs_review) {
+      showToast('error', medsBlockMessage());
+      setReviewPopupOpen(false);
+      return;
+    }
     approvingRef.current = true;
     try {
       await api.approveConsultation(original.consultationId);
@@ -767,6 +826,18 @@ function ResultPageInner() {
           ...prev,
           mkb_review: { needs_review: true, reason: b.reason, code: b.mkb },
         }));
+        showToast('error', err.message);
+        setReviewPopupOpen(false);
+      } else if (
+        err instanceof ApiError &&
+        err.status === 409 &&
+        err.body && typeof err.body === 'object' &&
+        (err.body as { code?: string }).code === 'meds_review_required'
+      ) {
+        // Server backstop: a med still has an unresolved missing component.
+        // Recompute the marker from the current meds so the yellow needs-input
+        // fields surface; keep the doctor locked until they resolve them.
+        setFields((prev) => withMedsReview(prev));
         showToast('error', err.message);
         setReviewPopupOpen(false);
       } else {
@@ -970,11 +1041,13 @@ function ResultPageInner() {
           onClick={() => setReviewPopupOpen((o) => !o)}
           onConfirm={confirmReview}
           onDismiss={() => setReviewPopupOpen(false)}
-          blocked={!!fields.mkb_review?.needs_review}
+          blocked={!!fields.mkb_review?.needs_review || !!fields.meds_review?.needs_review}
           blockHint={
             fields.mkb_review?.needs_review
               ? mkbBlockMessage(fields.mkb_review)
-              : undefined
+              : fields.meds_review?.needs_review
+                ? medsBlockMessage()
+                : undefined
           }
         />
         {reviewItems.length > 0 && (
@@ -1291,6 +1364,8 @@ function ResultPageInner() {
             <MedsPanel
               meds={fields.medications_list || []}
               onChange={onMedsChange}
+              medsReview={fields.meds_review}
+              onDismiss={onMedsDismiss}
               terapiaText={fields.terapia || ''}
               inlineCriticals={criticals}
               lastRemovedName={lastRemovedMedName}
