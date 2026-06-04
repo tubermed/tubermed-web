@@ -9,8 +9,8 @@ export function Hero() {
   return (
     <section className="relative overflow-hidden" style={{ background: 'var(--lp-bg)' }}>
       <AmbientOrbs />
-      <Container className="relative z-10 grid items-center gap-12 py-16 md:py-24 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12">
-        <Reveal>
+      <Container className="relative z-10 grid items-center gap-12 py-16 md:py-24 lg:grid-cols-2 lg:gap-12">
+        <Reveal className="min-w-0">
           <h1
             className="font-[family-name:var(--font-inter-tight)] text-4xl font-bold leading-[1.08] tracking-[-0.025em] sm:text-5xl md:text-6xl"
             style={{ color: 'var(--lp-ink)' }}
@@ -37,10 +37,11 @@ export function Hero() {
           </p>
         </Reveal>
 
-        <Reveal delay={120}>
+        <Reveal delay={120} className="min-w-0">
           {/* Dimitar's product walkthrough; loops continuously, static end-frame
-              on mobile / reduced-motion. Swap-in point for a real <video>. */}
-          <Parallax from={24} to={-24}>
+              on mobile / reduced-motion. Swap-in point for a real <video>.
+              min-w-0 stops the fixed-width mock from starving the copy column. */}
+          <Parallax from={24} to={-24} className="min-w-0">
             <TuberMedHeroDesktop />
           </Parallax>
         </Reveal>

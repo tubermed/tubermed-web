@@ -635,7 +635,10 @@ const CSS = `
 }
 
 .tmd-wrap{ position:relative; z-index:2; width:min(940px,100%); }
-.tmd-fit{ transform-origin:top center; }
+/* origin top-left so the scaled 920px frame fills its (possibly narrow) grid
+   track from the left; the empty layout overflow is clipped by the hero
+   section's overflow-hidden. */
+.tmd-fit{ transform-origin:top left; }
 .tmd-frame{
   width:${APP_W}px; height:${APP_H}px; background:var(--surface);
   border:1px solid var(--line); border-radius:16px; overflow:hidden;
