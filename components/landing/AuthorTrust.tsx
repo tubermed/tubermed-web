@@ -50,10 +50,11 @@ function NoteMock() {
           </span>
         </div>
 
+        {/* Section order mirrors the real /app/scribe/result note: diagnosis first. */}
         <dl className="mt-5 space-y-4">
+          <Field label="Диагноза · МКБ-10" value="Есенциална (първична) хипертония · I10" />
           <Field label="Анамнеза" value="Главоболие и световъртеж от 3 дни. Хипертония в анамнезата." editable />
           <Field label="Обективен статус" value="RR: 150/95 mmHg · ЧСС: 82/min · t°: 36.6°C" />
-          <Field label="Диагноза · МКБ-10" value="Есенциална (първична) хипертония · I10" />
           <Field label="Терапия" value="Периндоприл 5 mg · Ибупрофен при болка" editable />
         </dl>
       </div>
