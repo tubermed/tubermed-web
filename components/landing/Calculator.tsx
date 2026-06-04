@@ -23,7 +23,11 @@ function useCountUp(target: number, active: boolean, reduce: boolean) {
   return reduce ? target : val;
 }
 
-const fmt = (n: number, dec: number) => n.toFixed(dec).replace('.', ',');
+// Whole-number hours with an honest ≈ prefix; "<1 ч" instead of "0 ч".
+const formatHours = (n: number) => {
+  const r = Math.round(n);
+  return r < 1 ? '<1 ч' : `≈${r} ч`;
+};
 
 export function Calculator() {
   const reduce = !!useReducedMotion();
@@ -75,9 +79,9 @@ export function Calculator() {
 
             {/* outputs */}
             <div className="flex flex-col justify-center gap-5 rounded-xl bg-white p-6" style={{ border: '1px solid var(--lp-border)' }}>
-              <Output label="Спестено време на седмица" value={`${fmt(weeklyShown, 1)} ч`} />
+              <Output label="Спестено време на седмица" value={formatHours(weeklyShown)} />
               <div style={{ height: 1, background: 'var(--lp-border)' }} />
-              <Output label="Спестено време на месец" value={`${fmt(monthlyShown, 0)} ч`} big />
+              <Output label="Спестено време на месец" value={formatHours(monthlyShown)} big />
               <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--lp-text-muted)' }}>
                 Приблизителна оценка спрямо въведеното (преглед ≈ {REVIEW_MIN} мин/лист).
                 Не е гаранция.
