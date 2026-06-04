@@ -219,6 +219,14 @@
   .lp-faq-chev { transition: none; }
 }
 
+/* Lenis smooth-scroll (classes added to <html> only while a landing page is
+   mounted; removed on unmount, so the workspace app is unaffected). */
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
+.lenis.lenis-stopped { overflow: hidden; }
+.lenis.lenis-smooth iframe { pointer-events: none; }
+
 * { box-sizing: border-box; }
 
 html, body {

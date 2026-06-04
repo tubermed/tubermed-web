@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { interTight } from '@/lib/landing-fonts';
+import { LenisProvider } from '@/components/landing/LenisProvider';
+import { ScrollProgress } from '@/components/landing/ScrollProgress';
 import { Header } from '@/components/landing/Header';
 import { Footer } from '@/components/landing/Footer';
 import { Container } from '@/components/landing/ui';
@@ -31,6 +33,8 @@ const SECTIONS = [
 export default function PrivacyPage() {
   return (
     <div className={`lp ${interTight.variable}`}>
+      <LenisProvider />
+      <ScrollProgress />
       <Header anchorBase="/" />
 
       <main>

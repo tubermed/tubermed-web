@@ -1,4 +1,6 @@
 import { interTight } from '@/lib/landing-fonts';
+import { LenisProvider } from '@/components/landing/LenisProvider';
+import { ScrollProgress } from '@/components/landing/ScrollProgress';
 import { Header } from '@/components/landing/Header';
 import { Hero } from '@/components/landing/Hero';
 import { TrustStrip } from '@/components/landing/TrustStrip';
@@ -24,6 +26,8 @@ export default function Home() {
         />
       </noscript>
 
+      <LenisProvider />
+      <ScrollProgress />
       <Header />
       <main>
         <Hero />
