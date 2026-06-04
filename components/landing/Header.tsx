@@ -1,0 +1,138 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { Logo } from './brand';
+
+const NAV = [
+  { href: '#how', label: 'Как работи' },
+  { href: '#why', label: 'Защо TuberMed' },
+  { href: '#security', label: 'Сигурност' },
+  { href: '#pricing', label: 'Цени' },
+  { href: '#faq', label: 'Въпроси' },
+];
+
+export function Header() {
+  const [scrolled, setScrolled] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  return (
+    <header
+      className="sticky top-0 z-50 transition-shadow duration-200"
+      style={{
+        background: 'rgba(255,255,255,0.86)',
+        backdropFilter: 'saturate(150%) blur(10px)',
+        WebkitBackdropFilter: 'saturate(150%) blur(10px)',
+        borderBottom: `1px solid ${scrolled ? 'var(--lp-border)' : 'transparent'}`,
+        boxShadow: scrolled ? '0 6px 24px rgba(20,39,64,0.06)' : 'none',
+      }}
+    >
+      <div
+        className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 transition-[padding] duration-200"
+        style={{ paddingTop: scrolled ? '0.6rem' : '1rem', paddingBottom: scrolled ? '0.6rem' : '1rem' }}
+      >
+        <Link href="/" aria-label="TuberMed — начало" className="shrink-0">
+          <Logo variant="light" size={32} />
+        </Link>
+
+        {/* Desktop nav */}
+        <nav aria-label="Основна навигация" className="hidden items-center gap-1 lg:flex">
+          {NAV.map((item) => (
+            <a
+              key={item.href}
+              href={item.href}
+              className="rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--lp-bg-soft)]"
+              style={{ color: 'var(--lp-text)' }}
+            >
+              {item.label}
+            </a>
+          ))}
+          <Link
+            href="/app/login"
+            className="lp-cta-secondary ml-2 rounded-[var(--lp-radius)] px-4 py-2 text-sm font-semibold transition-colors"
+          >
+            Вход за лекари
+          </Link>
+          <a
+            href="#access"
+            className="lp-cta-primary rounded-[var(--lp-radius)] px-4 py-2 text-sm font-semibold transition-colors"
+          >
+            Заявка за достъп
+          </a>
+        </nav>
+
+        {/* Mobile toggle */}
+        <button
+          type="button"
+          className="rounded-md p-2 lg:hidden"
+          aria-label={open ? 'Затвори менюто' : 'Отвори менюто'}
+          aria-expanded={open}
+          aria-controls="lp-mobile-menu"
+          onClick={() => setOpen((v) => !v)}
+          style={{ color: 'var(--lp-navy)' }}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            {open ? (
+              <>
+                <path d="M6 6 L18 18" />
+                <path d="M18 6 L6 18" />
+              </>
+            ) : (
+              <>
+                <path d="M3 6h18" />
+                <path d="M3 12h18" />
+                <path d="M3 18h18" />
+              </>
+            )}
+          </svg>
+        </button>
+      </div>
+
+      {/* Mobile menu panel */}
+      {open ? (
+        <div
+          id="lp-mobile-menu"
+          className="lg:hidden"
+          style={{ background: '#fff', borderTop: '1px solid var(--lp-border)' }}
+        >
+          <nav aria-label="Мобилна навигация" className="mx-auto flex w-full max-w-6xl flex-col gap-1 px-6 py-4">
+            {NAV.map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                onClick={() => setOpen(false)}
+                className="rounded-md px-3 py-3 text-base font-medium transition-colors hover:bg-[var(--lp-bg-soft)]"
+                style={{ color: 'var(--lp-text)' }}
+              >
+                {item.label}
+              </a>
+            ))}
+            <div className="mt-2 flex flex-col gap-2">
+              <Link
+                href="/app/login"
+                onClick={() => setOpen(false)}
+                className="lp-cta-secondary rounded-[var(--lp-radius)] px-4 py-3 text-center text-base font-semibold transition-colors"
+              >
+                Вход за лекари
+              </Link>
+              <a
+                href="#access"
+                onClick={() => setOpen(false)}
+                className="lp-cta-primary rounded-[var(--lp-radius)] px-4 py-3 text-center text-base font-semibold transition-colors"
+              >
+                Заявка за достъп
+              </a>
+            </div>
+          </nav>
+        </div>
+      ) : null}
+    </header>
+  );
+}
