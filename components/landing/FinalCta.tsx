@@ -1,11 +1,13 @@
 import { Container } from './ui';
 import { Reveal } from './Reveal';
 import { AccessForm } from './AccessForm';
+import { AmbientOrbs } from './AmbientOrbs';
 
 export function FinalCta() {
   return (
-    <section id="access" style={{ background: 'var(--lp-navy-deep)' }}>
-      <Container className="grid items-center gap-12 py-20 md:py-28 lg:grid-cols-2 lg:gap-16">
+    <section id="access" className="relative overflow-hidden" style={{ background: 'var(--lp-navy-deep)' }}>
+      <AmbientOrbs subtle />
+      <Container className="relative z-10 grid items-center gap-12 py-20 md:py-28 lg:grid-cols-2 lg:gap-16">
         <Reveal>
           <h2
             className="font-[family-name:var(--font-inter-tight)] text-3xl font-bold leading-[1.12] tracking-[-0.02em] md:text-[2.6rem]"

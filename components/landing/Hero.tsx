@@ -1,19 +1,12 @@
 import { Container, Eyebrow, Cta } from './ui';
 import { Reveal } from './Reveal';
+import { AmbientOrbs } from './AmbientOrbs';
 
 export function Hero() {
   return (
     <section className="relative overflow-hidden" style={{ background: 'var(--lp-bg)' }}>
-      {/* soft brand glow behind the hero */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-[420px]"
-        style={{
-          background:
-            'radial-gradient(60% 120% at 70% 0%, rgba(143,192,232,0.20) 0%, rgba(143,192,232,0) 60%)',
-        }}
-      />
-      <Container className="relative grid items-center gap-12 py-16 md:py-24 lg:grid-cols-[1.05fr_0.95fr] lg:gap-10">
+      <AmbientOrbs />
+      <Container className="relative z-10 grid items-center gap-12 py-16 md:py-24 lg:grid-cols-[1.05fr_0.95fr] lg:gap-10">
         <Reveal>
           <Eyebrow>AI медицински скрайб · България</Eyebrow>
           <h1
