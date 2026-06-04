@@ -5,6 +5,7 @@ import { Header } from '@/components/landing/Header';
 import { Hero } from '@/components/landing/Hero';
 import { TrustStrip } from '@/components/landing/TrustStrip';
 import { Problem } from '@/components/landing/Problem';
+import { Calculator } from '@/components/landing/Calculator';
 import { HowItWorks } from '@/components/landing/HowItWorks';
 import { WhyTuberMed } from '@/components/landing/WhyTuberMed';
 import { Marquee } from '@/components/landing/Marquee';
@@ -35,6 +36,7 @@ export default function Home() {
         <Hero />
         <TrustStrip />
         <Problem />
+        <Calculator />
         <HowItWorks />
         <WhyTuberMed />
         <Marquee />
