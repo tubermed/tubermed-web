@@ -12,9 +12,12 @@ const NAV = [
   { href: '#faq', label: 'Въпроси' },
 ];
 
-export function Header() {
+export function Header({ anchorBase = '' }: { anchorBase?: string }) {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
+
+  // On sub-pages (e.g. /privacy) anchors must point back to the landing.
+  const anchor = (href: string) => (href.startsWith('#') ? `${anchorBase}${href}` : href);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -47,7 +50,7 @@ export function Header() {
           {NAV.map((item) => (
             <a
               key={item.href}
-              href={item.href}
+              href={anchor(item.href)}
               className="rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--lp-bg-soft)]"
               style={{ color: 'var(--lp-text)' }}
             >
@@ -61,7 +64,7 @@ export function Header() {
             Вход за лекари
           </Link>
           <a
-            href="#access"
+            href={anchor('#access')}
             className="lp-cta-primary rounded-[var(--lp-radius)] px-4 py-2 text-sm font-semibold transition-colors"
           >
             Заявка за достъп
@@ -106,7 +109,7 @@ export function Header() {
             {NAV.map((item) => (
               <a
                 key={item.href}
-                href={item.href}
+                href={anchor(item.href)}
                 onClick={() => setOpen(false)}
                 className="rounded-md px-3 py-3 text-base font-medium transition-colors hover:bg-[var(--lp-bg-soft)]"
                 style={{ color: 'var(--lp-text)' }}
@@ -123,7 +126,7 @@ export function Header() {
                 Вход за лекари
               </Link>
               <a
-                href="#access"
+                href={anchor('#access')}
                 onClick={() => setOpen(false)}
                 className="lp-cta-primary rounded-[var(--lp-radius)] px-4 py-3 text-center text-base font-semibold transition-colors"
               >
