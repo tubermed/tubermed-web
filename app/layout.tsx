@@ -17,8 +17,38 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TuberMed — AI Медицински скрайб",
-  description: "AI медицински скрайб за български лекари. GDPR-съвместим.",
+  metadataBase: new URL("https://app.tubermed.com"),
+  title: {
+    default: "TuberMed — AI медицински скрайб за български лекари",
+    template: "%s · TuberMed",
+  },
+  description:
+    "TuberMed записва консултацията и я превръща в готов, структуриран амбулаторен лист на български. Вие преглеждате и одобрявате. GDPR-съвместим, обработка в ЕС.",
+  applicationName: "TuberMed",
+  icons: {
+    icon: [
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16.png", sizes: "16x16", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
+  openGraph: {
+    type: "website",
+    locale: "bg_BG",
+    siteName: "TuberMed",
+    url: "https://app.tubermed.com",
+    title: "TuberMed — AI медицински скрайб за български лекари",
+    description:
+      "От разговор до амбулаторен лист за секунди. GDPR-съвместим, обработка в ЕС. Лекарят остава авторът.",
+    images: [{ url: "/brand/og-image.png", alt: "TuberMed" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "TuberMed — AI медицински скрайб за български лекари",
+    description:
+      "От разговор до амбулаторен лист за секунди. GDPR-съвместим, обработка в ЕС. Лекарят остава авторът.",
+    images: ["/brand/og-image.png"],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
