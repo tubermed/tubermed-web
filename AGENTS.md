@@ -265,6 +265,63 @@ cue (`няма`, `без`, `не `, `не е`, `отрича`, `отсъстви
   nomenclature. Logic regressions: `npx tsx scripts/diagnosis-term.ts` +
   `scripts/mkb-validity.ts`.
 
+# Public marketing landing (2026-06-04)
+
+The public landing was rebuilt and given an "alive & smooth" motion pass. It is
+**landing-only** — none of it touches the workspace/clinical app. Source of
+truth: `app/page.tsx`.
+
+- **Structure.** `app/page.tsx` (server component) composes `components/landing/*`
+  in order: `Header` → `Hero` → `TrustStrip` → `Problem` → `Calculator` →
+  `HowItWorks` → `WhyTuberMed` → `Comparison` → `Marquee` → `AuthorTrust` →
+  `Security` → `Pricing` → `Faq` → `FinalCta` → `Footer`. Motion primitives:
+  `Reveal` (framer-motion `whileInView`, once), `AmbientOrbs`, `MagneticCta`,
+  `Parallax`, `ScrollProgress`, `LenisProvider`; the hero is
+  `TuberMedHeroDesktop`; shared bits in `brand.tsx` / `ui.tsx`. Second landing
+  route: `app/privacy/page.tsx`.
+- **Deps (landing-only).** `framer-motion` + `lenis` — used ONLY in landing
+  client islands. Deliberate, scoped exception to the earlier "CSS-first, no
+  Framer Motion" stance; do NOT pull either into the workspace app.
+- **⚠ Landing tokens are SEPARATE from the workspace palette.** `app/globals.css`
+  defines a landing-only `--lp-*` Navy token set (`#274C77` / `#1D3B5C` /
+  `#4F8FBF` / `#8FC0E8`) scoped under the `.lp` wrapper on the landing root. The
+  workspace `--color-*` tokens are UNTOUCHED — the landing leads the rebrand; the
+  app keeps its existing palette. **Do NOT "unify" `--lp-*` and `--color-*`** —
+  they are intentionally distinct.
+- **Fonts (landing-only).** Inter Tight (display/wordmark) + self-hosted Golos
+  Text (hero in-mock body) via `next/font` (`lib/landing-fonts.ts`), applied only
+  on the landing — the workspace font payload is unchanged. A Google-Fonts
+  `@import` in the hero component was REMOVED on purpose: it fetched from
+  fonts.googleapis.com at runtime, leaking the visitor IP to the US and
+  contradicting the page's own EU / no-US-transfer claim. Keep fonts self-hosted.
+- **⚠ Lenis is mounted ONLY on the landing routes.** `LenisProvider` runs in
+  `app/page.tsx` + `app/privacy/page.tsx`, NEVER the root layout — so the
+  logged-in workspace app's scrolling is unaffected (it tears down on nav away).
+  Do NOT move it to the root layout.
+- **Motion guardrails (conventions).** `prefers-reduced-motion` HARD-STOPS
+  everything: Lenis off, hero shows a static end-frame, and orbs / marquee /
+  reveals / parallax / count-up all disabled. Motion also pauses when off-screen
+  (IntersectionObserver) and when the tab is hidden (`visibilitychange`). No
+  scroll-jacking (Lenis smooths native scroll; anchors + keyboard still work).
+  **The hero waveform is driven by `requestAnimationFrame` writing
+  `transform:scaleY` to bar refs — NOT React state per tick** (the per-tick
+  `setState` re-rendered the whole hero mock and caused top-of-page jank; do NOT
+  reintroduce it). `AmbientOrbs` use a baked radial-gradient on their own
+  composited layer — NO animated `filter:blur()` (it re-rasterizes every frame).
+- **Hero fidelity.** `TuberMedHeroDesktop` mirrors the real product: the
+  recording screen matches `/app/scribe` PcMode (label → waveform → 80px mic
+  button → mono timer → status), and the result screen + the section-7
+  `AuthorTrust` note follow the real `/app/scribe/result` order (its `NAV_ITEMS`)
+  — **diagnosis first**. Loops continuously; mobile / reduced-motion render a
+  static readable end-frame. There is a marked swap-in point for a real
+  anonymized `<video>`.
+- **Lead form.** `AccessForm` POSTs to the backend directly —
+  `fetch(`${NEXT_PUBLIC_BACKEND_URL}/api/pilot-leads`)`, a plain fetch, NOT the
+  authed `lib/api.ts` wrapper (the endpoint is public). Honeypot field + required
+  consent checkbox; field values are kept on error.
+- **`/privacy`.** Placeholder structure only, `robots: { index: false }`; flagged
+  TODO for the real legal copy — do NOT auto-generate legal text.
+
 # Known issues / gotchas
 
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
