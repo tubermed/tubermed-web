@@ -189,6 +189,16 @@
 .lp-cta-light:hover     { background: var(--lp-accent-light); color: var(--lp-navy-deep); }
 .lp-cta-light:focus-visible     { box-shadow: 0 0 0 2px var(--lp-navy-deep), 0 0 0 4px #fff; }
 
+/* Nav link with an animated underline (header desktop nav) */
+.lp-navlink { position: relative; }
+.lp-navlink::after {
+  content: ""; position: absolute; left: 12px; right: 12px; bottom: 6px; height: 2px;
+  background: var(--lp-accent); border-radius: 2px;
+  transform: scaleX(0); transform-origin: left; transition: transform .25s ease;
+}
+.lp-navlink:hover::after, .lp-navlink:focus-visible::after { transform: scaleX(1); }
+@media (prefers-reduced-motion: reduce) { .lp-navlink::after { transition: none; } }
+
 /* FAQ (native <details> accordion) */
 .lp-faq summary { list-style: none; cursor: pointer; }
 .lp-faq summary::-webkit-details-marker { display: none; }

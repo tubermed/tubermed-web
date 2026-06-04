@@ -1,5 +1,6 @@
-import { Container, Cta } from './ui';
+import { Container } from './ui';
 import { Reveal } from './Reveal';
+import { MagneticCta } from './MagneticCta';
 
 export function Pricing() {
   return (
@@ -21,9 +22,7 @@ export function Pricing() {
               практика. Месечен абонамент според обема консултации — индивидуална оферта.
             </p>
             <div className="mt-8 flex justify-center">
-              <Cta href="#access" variant="primary">
-                Заявка за достъп
-              </Cta>
+              <MagneticCta href="#access">Заявка за достъп</MagneticCta>
             </div>
           </div>
         </Reveal>

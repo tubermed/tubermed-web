@@ -51,7 +51,7 @@ export function Header({ anchorBase = '' }: { anchorBase?: string }) {
             <a
               key={item.href}
               href={anchor(item.href)}
-              className="rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--lp-bg-soft)]"
+              className="lp-navlink rounded-md px-3 py-2 text-sm font-medium transition-colors"
               style={{ color: 'var(--lp-text)' }}
             >
               {item.label}
