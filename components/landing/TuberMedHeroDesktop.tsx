@@ -305,30 +305,35 @@ export default function TuberMedHeroDesktop() {
                       </div>
                     </Screen>
 
-                    {/* recording */}
+                    {/* recording — mirrors the real /app/scribe PcMode UI */}
                     <Screen show={phase.screen === 'rec'}>
                       <HeaderStrip rec={phase.id === 'recording'} />
                       <div className="tmd-rec">
-                        <div className="tmd-recwrap">
-                          <button className={`tmd-recbtn ${phase.id === 'recording' ? 'live' : ''} ${phase.id === 'record_press' ? 'press' : ''}`} ref={recRef}>
-                            {phase.id === 'recording' ? <span className="tmd-sq" /> : <span className="tmd-mic" />}
-                          </button>
-                          {phase.id === 'recording' && (<><span className="tmd-ring" /><span className="tmd-ring r2" /></>)}
+                        <div className="tmd-reclabel">Запис от микрофон</div>
+                        <div className="tmd-wavewrap">
+                          <SpeechWave running={phase.id === 'recording'} />
                         </div>
-                        {phase.id === 'recording' ? (
-                          <>
-                            <div className="tmd-timer"><span className="tmd-bd" /> 00:03</div>
-                            <SpeechWave running={true} />
-                            <p className="tmd-tline" style={{ animationDelay: '300ms' }}>
-                              „…боли ме кръстът от три дни…”
-                            </p>
-                            <p className="tmd-tline" style={{ animationDelay: '1400ms' }}>
-                              „…взимам <b>Варфарин</b> всеки ден…”
-                            </p>
-                          </>
-                        ) : (
-                          <div className="tmd-recidle">Натисни, за да започне записът</div>
-                        )}
+                        <button
+                          ref={recRef}
+                          aria-label={phase.id === 'recording' ? 'Стоп запис' : 'Започни запис'}
+                          className={`tmd-recbtn ${phase.id === 'recording' ? 'live' : ''} ${phase.id === 'record_press' ? 'press' : ''}`}
+                        >
+                          {phase.id === 'recording' ? (
+                            <svg viewBox="0 0 24 24" width="26" height="26" fill="#fff" aria-hidden="true">
+                              <path d="M6 6h12v12H6z" />
+                            </svg>
+                          ) : (
+                            <svg viewBox="0 0 24 24" width="30" height="30" fill="#fff" aria-hidden="true">
+                              <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm6-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+                            </svg>
+                          )}
+                        </button>
+                        <div className={`tmd-timer ${phase.id === 'recording' ? 'on' : ''}`}>
+                          {phase.id === 'recording' ? '00:03' : '00:00'}
+                        </div>
+                        <div className="tmd-recstatus">
+                          {phase.id === 'recording' ? 'Записва се — натиснете за стоп' : 'Натиснете за запис'}
+                        </div>
                       </div>
                     </Screen>
 
@@ -528,50 +533,74 @@ const Card = React.forwardRef<HTMLDivElement, { i: number; title: string; childr
   },
 );
 
+// Waveform driven by requestAnimationFrame writing transform:scaleY directly to
+// the bar refs — NO per-tick React setState (that high-frequency re-render of
+// the whole app mock was a top-of-page jank source). Compositor-only (scaleY),
+// reduced-motion + tab-hidden safe.
+const WAVE_N = 40;
+
 function SpeechWave({ running }: { running: boolean }) {
-  const N = 48;
-  const [amps, setAmps] = useState<number[]>(() => Array(N).fill(0.05));
-  const m = useRef({ mode: 'pause', left: 3, len: 1, pos: 0, syl: 3, loud: 0.8 });
+  const barsRef = useRef<(HTMLSpanElement | null)[]>([]);
   useEffect(() => {
-    if (!running) return; // amps stay at the quiet floor (useState initial)
-    const iv = setInterval(() => {
-      const s = m.current;
-      if (s.left <= 0) {
-        if (s.mode === 'word') {
-          s.mode = 'pause';
-          s.left = Math.random() < 0.22 ? 6 + Math.floor(Math.random() * 5) : 2 + Math.floor(Math.random() * 3);
-        } else {
-          s.mode = 'word';
-          s.len = 4 + Math.floor(Math.random() * 9);
-          s.left = s.len;
-          s.pos = 0;
-          s.syl = 2 + Math.floor(Math.random() * 4);
-          s.loud = 0.55 + Math.random() * 0.45;
+    if (!running) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const amps = new Array(WAVE_N).fill(0.06);
+    const m = { mode: 'pause', left: 3, len: 1, pos: 0, syl: 3, loud: 0.8 };
+    let raf = 0;
+    let last = 0;
+    let live = true;
+    const apply = () => {
+      for (let i = 0; i < WAVE_N; i++) {
+        const el = barsRef.current[i];
+        if (el) el.style.transform = `scaleY(${Math.max(0.06, amps[i])})`;
+      }
+    };
+    const step = (t: number) => {
+      if (!live) return;
+      if (t - last >= 70) {
+        last = t;
+        if (m.left <= 0) {
+          if (m.mode === 'word') {
+            m.mode = 'pause';
+            m.left = Math.random() < 0.22 ? 6 + Math.floor(Math.random() * 5) : 2 + Math.floor(Math.random() * 3);
+          } else {
+            m.mode = 'word';
+            m.len = 4 + Math.floor(Math.random() * 9);
+            m.left = m.len;
+            m.pos = 0;
+            m.syl = 2 + Math.floor(Math.random() * 4);
+            m.loud = 0.55 + Math.random() * 0.45;
+          }
         }
+        let a: number;
+        if (m.mode === 'word') {
+          const tt = m.len ? m.pos / m.len : 0;
+          const env = Math.sin(Math.PI * Math.min(1, Math.max(0, tt)));
+          const syl = 0.5 + 0.5 * Math.abs(Math.sin(tt * m.syl * Math.PI));
+          a = Math.min(1, env * syl * m.loud * (0.8 + Math.random() * 0.35));
+          m.pos++;
+        } else {
+          a = 0.03 + Math.random() * 0.05;
+        }
+        m.left--;
+        amps.shift();
+        amps.push(a);
+        apply();
       }
-      let a: number;
-      if (s.mode === 'word') {
-        const t = s.len ? s.pos / s.len : 0;
-        const env = Math.sin(Math.PI * Math.min(1, Math.max(0, t)));
-        const syl = 0.5 + 0.5 * Math.abs(Math.sin(t * s.syl * Math.PI));
-        a = Math.min(1, env * syl * s.loud * (0.8 + Math.random() * 0.35));
-        s.pos++;
-      } else {
-        a = 0.02 + Math.random() * 0.05;
-      }
-      s.left--;
-      setAmps((prev) => {
-        const next = prev.slice(1);
-        next.push(a);
-        return next;
-      });
-    }, 75);
-    return () => clearInterval(iv);
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    const onVis = () => {
+      if (document.hidden) { live = false; cancelAnimationFrame(raf); }
+      else if (!live) { live = true; last = 0; raf = requestAnimationFrame(step); }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { live = false; cancelAnimationFrame(raf); document.removeEventListener('visibilitychange', onVis); };
   }, [running]);
   return (
-    <div className="tmd-wave2">
-      {amps.map((a, i) => (
-        <span key={i} style={{ height: 4 + a * 38 + 'px', opacity: 0.45 + 0.55 * (i / (N - 1)) }} />
+    <div className="tmd-wave2" aria-hidden="true">
+      {Array.from({ length: WAVE_N }).map((_, i) => (
+        <span key={i} ref={(el) => { barsRef.current[i] = el; }} style={{ opacity: 0.4 + 0.6 * (i / (WAVE_N - 1)) }} />
       ))}
     </div>
   );
@@ -701,28 +730,21 @@ const CSS = `
 .tmd-modet{ font-size:14.5px;font-weight:600;color:var(--ink); }
 .tmd-moded{ font-size:12px;color:var(--muted);margin-top:4px; }
 
-.tmd-rec{ display:flex;flex-direction:column;align-items:center;padding-top:6px; }
-.tmd-recwrap{ position:relative;width:70px;height:70px;display:flex;align-items:center;justify-content:center;margin-top:8px; }
-.tmd-recbtn{ width:60px;height:60px;border-radius:50%;border:none;cursor:pointer;z-index:2;
-  background:linear-gradient(135deg,#2E5A8F,#1D3B5C);box-shadow:0 8px 20px -8px rgba(39,76,119,.6);
+.tmd-rec{ display:flex;flex-direction:column;align-items:center;padding-top:10px; }
+.tmd-reclabel{ font-size:13px;color:var(--muted);margin-bottom:20px; }
+.tmd-wavewrap{ display:flex;align-items:flex-end;justify-content:center;height:64px;margin-bottom:24px; }
+.tmd-recbtn{ width:80px;height:80px;border-radius:50%;border:none;cursor:pointer;
+  background:linear-gradient(135deg,#2E5A8F,#1D3B5C);box-shadow:0 10px 24px -8px rgba(39,76,119,.55);
   display:flex;align-items:center;justify-content:center;transition:background .35s ease,transform .18s ease; }
-.tmd-recbtn.live{ background:linear-gradient(135deg,#ec5b60,#e5484d);box-shadow:0 8px 20px -8px rgba(229,72,77,.65); }
+.tmd-recbtn.live{ background:linear-gradient(135deg,#ec5b60,#e5484d);box-shadow:0 10px 24px -8px rgba(229,72,77,.6); }
 .tmd-recbtn.press{ animation:tmd-press .4s ease 0.85s; }
-.tmd-mic{ width:16px;height:23px;border-radius:8px;background:#fff;position:relative; }
-.tmd-mic:after{ content:"";position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);
-  width:16px;height:8px;border:2px solid #fff;border-top:none;border-radius:0 0 8px 8px; }
-.tmd-recidle{ margin-top:16px;font-size:13.5px;color:var(--muted); }
-.tmd-sq{ width:19px;height:19px;border-radius:5px;background:#fff;animation:tmd-sq 1s ease-in-out infinite; }
-.tmd-ring{ position:absolute;inset:0;border-radius:50%;border:2px solid var(--rec);animation:tmd-rip 1.8s ease-out infinite; }
-.tmd-ring.r2{ animation-delay:.9s; }
-.tmd-timer{ margin-top:16px;display:flex;align-items:center;gap:8px;color:var(--rec);font-weight:600;
-  font-variant-numeric:tabular-nums;font-size:15px; }
-.tmd-bd{ width:9px;height:9px;border-radius:50%;background:var(--rec);animation:tmd-blink 1s infinite; }
-.tmd-wave2{ display:flex;align-items:center;gap:2px;height:48px;margin-top:18px; }
-.tmd-wave2 span{ width:3px;border-radius:3px;background:linear-gradient(180deg,#8FC0E8,#4F8FBF);
-  transition:height .07s linear; }
-.tmd-tline{ margin:4px 0;font-size:13px;color:var(--ink2);opacity:0;animation:tmd-fu .5s ease forwards;text-align:center; }
-.tmd-tline b{ color:var(--rec); }
+.tmd-timer{ margin-top:20px;color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums;
+  font-family:var(--font-jetbrains),ui-monospace,monospace;font-size:24px; }
+.tmd-timer.on{ color:var(--rec); }
+.tmd-recstatus{ margin-top:8px;font-size:13px;color:var(--muted); }
+.tmd-wave2{ display:flex;align-items:flex-end;gap:2px;height:64px; }
+.tmd-wave2 span{ width:3px;height:56px;border-radius:3px;background:linear-gradient(180deg,#8FC0E8,#4F8FBF);
+  transform-origin:bottom;transform:scaleY(.06);will-change:transform; }
 
 .tmd-proc{ display:flex;flex-direction:column;align-items:center;justify-content:center;padding-top:46px; }
 .tmd-spin{ width:34px;height:34px;border-radius:50%;border:3.5px solid var(--s3);border-top-color:var(--steel);
@@ -769,10 +791,7 @@ const CSS = `
 .tmd-clickr{ position:absolute;left:-8px;top:-6px;width:40px;height:40px;border-radius:50%;
   background:rgba(39,76,119,.18);border:2px solid var(--steel);opacity:0;animation:tmd-clk .65s ease 0.85s; }
 
-@keyframes tmd-rip{ 0%{transform:scale(.9);opacity:.7} 100%{transform:scale(1.7);opacity:0} }
-@keyframes tmd-blink{ 0%,100%{opacity:1} 50%{opacity:.25} }
 @keyframes tmd-spin{ to{transform:rotate(360deg)} }
-@keyframes tmd-sq{ 0%,100%{transform:scale(1)} 50%{transform:scale(.82)} }
 @keyframes tmd-fu{ from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 @keyframes tmd-rf{ from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
 @keyframes tmd-al{ from{opacity:0;transform:translateY(14px) scale(.97)} to{opacity:1;transform:translateY(0) scale(1)} }
