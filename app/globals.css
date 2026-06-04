@@ -190,6 +190,35 @@
 .lp-cta-light:hover     { background: var(--lp-accent-light); color: var(--lp-navy-deep); }
 .lp-cta-light:focus-visible     { box-shadow: 0 0 0 2px var(--lp-navy-deep), 0 0 0 4px #fff; }
 
+/* FAQ (native <details> accordion) */
+.lp-faq summary { list-style: none; cursor: pointer; }
+.lp-faq summary::-webkit-details-marker { display: none; }
+.lp-faq-chev { transition: transform .2s ease; }
+.lp details[open] .lp-faq-chev { transform: rotate(180deg); }
+
+/* Access form */
+.lp-label { font-size: .875rem; font-weight: 600; color: var(--lp-text); }
+.lp-input {
+  width: 100%;
+  border-radius: var(--lp-radius-sm);
+  border: 1px solid var(--lp-border);
+  background: #fff;
+  color: var(--lp-text);
+  padding: .65rem .8rem;
+  font-size: 1rem;
+  line-height: 1.4;
+  transition: border-color .15s, box-shadow .15s;
+}
+.lp-input::placeholder { color: #9aa7b4; }
+.lp-input:focus { outline: none; border-color: var(--lp-accent); box-shadow: 0 0 0 3px rgba(79,143,191,.18); }
+.lp-input[aria-invalid="true"] { border-color: #C0392B; }
+.lp-input[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px rgba(192,57,43,.16); }
+.lp-form-error { font-size: .8rem; color: #C0392B; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-faq-chev { transition: none; }
+}
+
 * { box-sizing: border-box; }
 
 html, body {

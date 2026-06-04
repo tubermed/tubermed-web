@@ -8,6 +8,8 @@ import { WhyTuberMed } from '@/components/landing/WhyTuberMed';
 import { AuthorTrust } from '@/components/landing/AuthorTrust';
 import { Security } from '@/components/landing/Security';
 import { Pricing } from '@/components/landing/Pricing';
+import { Faq } from '@/components/landing/Faq';
+import { FinalCta } from '@/components/landing/FinalCta';
 import { Footer } from '@/components/landing/Footer';
 
 export default function Home() {
@@ -32,6 +34,8 @@ export default function Home() {
         <AuthorTrust />
         <Security />
         <Pricing />
+        <Faq />
+        <FinalCta />
       </main>
       <Footer />
     </div>
