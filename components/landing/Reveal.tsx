@@ -1,58 +1,65 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import type { ElementType, CSSProperties, ReactNode } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
+import type { CSSProperties, ReactNode, ElementType } from 'react';
 
-// Reveal-on-scroll wrapper. Adds `.lp-reveal` (hidden state, defined in
-// globals.css) on the server-rendered element; on mount it observes itself and
-// flips to `.is-visible` when it scrolls into view. Reduced-motion users get
-// the content shown instantly (media query in globals.css), and a <noscript>
-// override in the page keeps content visible when JS is off.
+// Scroll-reveal wrapper (framer-motion whileInView, once). Staggering is done
+// by passing increasing `delay` to sibling Reveals. Guardrails:
+//  - prefers-reduced-motion → render the element instantly, no animation.
+//  - no JS → the element carries data-reveal; a <noscript> rule in the landing
+//    pages forces [data-reveal] visible (framer's inline opacity:0 has no
+//    !important, so the noscript !important rule wins).
+const EASE: [number, number, number, number] = [0.2, 0.7, 0.3, 1];
+
+const TAGS = {
+  div: motion.div,
+  section: motion.section,
+  article: motion.article,
+  ul: motion.ul,
+  ol: motion.ol,
+  li: motion.li,
+  span: motion.span,
+} as const;
+
+type RevealTag = keyof typeof TAGS;
+
 export function Reveal({
   children,
-  as: Tag = 'div',
+  as = 'div',
   className = '',
   delay = 0,
   style,
 }: {
   children: ReactNode;
-  as?: ElementType;
+  as?: RevealTag;
   className?: string;
   /** stagger delay in ms */
   delay?: number;
   style?: CSSProperties;
 }) {
-  const ref = useRef<HTMLElement>(null);
+  const reduce = useReducedMotion();
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (typeof IntersectionObserver === 'undefined') {
-      el.classList.add('is-visible');
-      return;
-    }
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            el.classList.add('is-visible');
-            io.unobserve(el);
-          }
-        }
-      },
-      { threshold: 0.12, rootMargin: '0px 0px -8% 0px' },
+  if (reduce) {
+    const Tag = as as ElementType;
+    return (
+      <Tag className={className} style={style}>
+        {children}
+      </Tag>
     );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
+  }
 
+  const M = TAGS[as] ?? motion.div;
   return (
-    <Tag
-      ref={ref}
-      className={`lp-reveal ${className}`}
-      style={{ transitionDelay: delay ? `${delay}ms` : undefined, ...style }}
+    <M
+      data-reveal=""
+      className={className}
+      style={style}
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '0px 0px -8% 0px' }}
+      transition={{ duration: 0.6, ease: EASE, delay: delay / 1000 }}
     >
       {children}
-    </Tag>
+    </M>
   );
 }

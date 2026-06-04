@@ -17,11 +17,12 @@ import { Footer } from '@/components/landing/Footer';
 export default function Home() {
   return (
     <div className={`lp ${interTight.variable}`}>
-      {/* Without JS, keep reveal-on-scroll content visible. */}
+      {/* Without JS, keep reveal-on-scroll content visible (framer-motion sets
+          inline opacity:0; this !important rule overrides it when JS is off). */}
       <noscript>
         <style
           dangerouslySetInnerHTML={{
-            __html: '.lp-reveal{opacity:1!important;transform:none!important}',
+            __html: '[data-reveal]{opacity:1!important;transform:none!important}',
           }}
         />
       </noscript>

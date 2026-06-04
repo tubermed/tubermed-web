@@ -141,15 +141,9 @@
 .lp { scroll-behavior: smooth; }
 .lp section[id] { scroll-margin-top: 84px; } /* clear the sticky header on anchor jumps */
 
-/* Reveal-on-scroll (toggled by components/landing/Reveal.tsx). A <noscript>
-   override in the landing pages keeps content visible when JS is disabled. */
-.lp-reveal {
-  opacity: 0;
-  transform: translateY(18px);
-  transition: opacity .6s cubic-bezier(.16, .84, .44, 1),
-              transform .6s cubic-bezier(.16, .84, .44, 1);
-}
-.lp-reveal.is-visible { opacity: 1; transform: none; }
+/* Scroll reveals are handled by framer-motion (components/landing/Reveal.tsx),
+   which tags each element with data-reveal; a <noscript> rule in the landing
+   pages forces [data-reveal] visible when JS is disabled. */
 
 /* Hero device-frame loop: запис → AI обработка → готов лист. CSS-only
    placeholder; swap for the real anonymized screen-capture <video> later.
@@ -171,9 +165,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .lp { scroll-behavior: auto; }
-  .lp-reveal, .lp-reveal.is-visible {
-    opacity: 1 !important; transform: none !important; transition: none !important;
-  }
+  [data-reveal] { opacity: 1 !important; transform: none !important; }
   .lp-anim, .lp-anim * { animation: none !important; }
 }
 
