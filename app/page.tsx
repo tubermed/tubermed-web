@@ -8,6 +8,7 @@ import { Problem } from '@/components/landing/Problem';
 import { Calculator } from '@/components/landing/Calculator';
 import { HowItWorks } from '@/components/landing/HowItWorks';
 import { WhyTuberMed } from '@/components/landing/WhyTuberMed';
+import { Comparison } from '@/components/landing/Comparison';
 import { Marquee } from '@/components/landing/Marquee';
 import { AuthorTrust } from '@/components/landing/AuthorTrust';
 import { Security } from '@/components/landing/Security';
@@ -39,6 +40,7 @@ export default function Home() {
         <Calculator />
         <HowItWorks />
         <WhyTuberMed />
+        <Comparison />
         <Marquee />
         <AuthorTrust />
         <Security />
