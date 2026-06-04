@@ -1,4 +1,4 @@
-import { Container, Eyebrow, Cta } from './ui';
+import { Container, Cta } from './ui';
 import { Reveal } from './Reveal';
 import { AmbientOrbs } from './AmbientOrbs';
 import { MagneticCta } from './MagneticCta';
@@ -9,11 +9,10 @@ export function Hero() {
   return (
     <section className="relative overflow-hidden" style={{ background: 'var(--lp-bg)' }}>
       <AmbientOrbs />
-      <Container className="relative z-10 grid items-center gap-12 py-16 md:py-24 lg:grid-cols-[0.92fr_1.08fr] lg:gap-10">
+      <Container className="relative z-10 grid items-center gap-12 py-16 md:py-24 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12">
         <Reveal>
-          <Eyebrow>AI медицински скрайб · България</Eyebrow>
           <h1
-            className="font-[family-name:var(--font-inter-tight)] mt-5 text-4xl font-bold leading-[1.08] tracking-[-0.025em] sm:text-5xl md:text-6xl"
+            className="font-[family-name:var(--font-inter-tight)] text-4xl font-bold leading-[1.08] tracking-[-0.025em] sm:text-5xl md:text-6xl"
             style={{ color: 'var(--lp-ink)' }}
           >
             От разговор до амбулаторен лист{' '}
