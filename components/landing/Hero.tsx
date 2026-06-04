@@ -8,9 +8,7 @@ import TuberMedHeroDesktop from './TuberMedHeroDesktop';
 export function Hero() {
   return (
     <section className="relative overflow-hidden" style={{ background: 'var(--lp-bg)' }}>
-      <Parallax from={-30} to={60} className="absolute inset-0 z-0">
-        <AmbientOrbs />
-      </Parallax>
+      <AmbientOrbs />
       <Container className="relative z-10 grid items-center gap-12 py-16 md:py-24 lg:grid-cols-[0.92fr_1.08fr] lg:gap-10">
         <Reveal>
           <Eyebrow>AI медицински скрайб · България</Eyebrow>
