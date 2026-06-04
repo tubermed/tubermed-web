@@ -145,24 +145,6 @@
    which tags each element with data-reveal; a <noscript> rule in the landing
    pages forces [data-reveal] visible when JS is disabled. */
 
-/* Hero device-frame loop: запис → AI обработка → готов лист. CSS-only
-   placeholder; swap for the real anonymized screen-capture <video> later.
-   Base state (and reduced-motion) shows the finished note. */
-.lp-stage { position: absolute; inset: 0; opacity: 0; }
-.lp-stage--note { opacity: 1; }
-.lp-anim.lp-stage--record  { animation: lp-stage-a 12s ease-in-out infinite; }
-.lp-anim.lp-stage--process { animation: lp-stage-b 12s ease-in-out infinite; }
-.lp-anim.lp-stage--note    { animation: lp-stage-c 12s ease-in-out infinite; }
-@keyframes lp-stage-a { 0%,27% { opacity: 1 } 33%,94% { opacity: 0 } 99%,100% { opacity: 1 } }
-@keyframes lp-stage-b { 0%,29% { opacity: 0 } 35%,60% { opacity: 1 } 66%,100% { opacity: 0 } }
-@keyframes lp-stage-c { 0%,62% { opacity: 0 } 68%,93% { opacity: 1 } 99%,100% { opacity: 0 } }
-
-.lp-anim.lp-wave > span { transform-origin: bottom; animation: lp-wave 1.1s ease-in-out infinite; }
-@keyframes lp-wave { 0%,100% { transform: scaleY(.3) } 50% { transform: scaleY(1) } }
-
-.lp-anim.lp-spin { animation: lp-spin 1.1s linear infinite; }
-@keyframes lp-spin { to { transform: rotate(360deg) } }
-
 /* Ambient orbs (components/landing/AmbientOrbs.tsx) — drifting blurred
    navy/accent shapes behind content; GPU transforms only. */
 .lp-orbs { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
@@ -191,7 +173,6 @@
 @media (prefers-reduced-motion: reduce) {
   .lp { scroll-behavior: auto; }
   [data-reveal] { opacity: 1 !important; transform: none !important; }
-  .lp-anim, .lp-anim * { animation: none !important; }
   .lp-orb { animation: none !important; }
 }
 
