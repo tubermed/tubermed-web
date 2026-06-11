@@ -138,23 +138,28 @@ export interface LoginResponse {
   doctor: DoctorInfo;
 }
 
+// The wizard's three-band workload answer (backend migration 016 — closed
+// list, mirrored by a DB CHECK constraint).
+export type ConsultationsBand = 'under_100' | '100_200' | 'over_200';
+
 // GET/PATCH /api/auth/me (A4 onboarding). The onboarding keys are ABSENT
-// (undefined) when backend migration 015 isn't applied — the wizard must
-// treat undefined as "unknown → show nothing"; only an explicit null means
-// "new doctor → show the wizard".
+// (undefined) when the backing migration isn't applied (015 for the
+// onboarding stamp, 016 for the band — each degrades independently) — the
+// wizard must treat undefined as "unknown → show nothing"; only an explicit
+// null means "new doctor → show the wizard".
 export interface MeResponse {
   id: string;
   name: string;
   specialty: string | null;
   organizationName: string | null;
   onboarding_completed_at?: string | null;
-  avg_monthly_consultations?: number | null;
+  consultations_band?: ConsultationsBand | null;
 }
 
 export interface UpdateMePayload {
   specialty?: string;
   org_name?: string;
-  avg_monthly_consultations?: number;
+  consultations_band?: ConsultationsBand;
   onboarding_completed?: boolean;
 }
 

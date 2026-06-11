@@ -1,14 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, type MeResponse, type UpdateMePayload } from '@/lib/api';
+import Image from 'next/image';
+import SpecialtyTypeahead from '@/components/SpecialtyTypeahead';
+import { api, type ConsultationsBand, type MeResponse, type UpdateMePayload } from '@/lib/api';
 
 // ── A4 first-run wizard ──────────────────────────────────────────────────────
 // Shown ONCE EVER, server-tracked: the new-visit page opens it only when
 // GET /me returns onboarding_completed_at === null (explicitly — an ABSENT key
 // means backend migration 015 isn't applied and nothing is shown). EVERY path
-// out of the wizard (Пропусни on any step, Esc, backdrop, Не сега, Започни)
-// fires PATCH { onboarding_completed: true } exactly once — first-write-wins
+// out of the wizard (Пропусни on step 1, Esc, Не сега, Започни) fires
+// PATCH { onboarding_completed: true } exactly once — first-write-wins
 // server-side — so a doctor is never nagged twice, even after skipping all of
 // it. The PATCH is best-effort: if it fails (offline), the wizard may appear
 // once more next session; it never blocks the doctor.
@@ -19,17 +21,10 @@ import { api, type MeResponse, type UpdateMePayload } from '@/lib/api';
 // Styling mirrors PatientLoadConfirmModal (fixed inset overlay, --color-bg-card
 // card, --color-brand primary action).
 
-const SPECIALTIES = [
-  'Общопрактикуващ лекар',
-  'Кардиолог',
-  'Педиатър',
-  'Невролог',
-  'Ендокринолог',
-  'Пулмолог',
-  'Гастроентеролог',
-  'Акушер-гинеколог',
-  'Уролог',
-  'Дерматолог',
+const BANDS: { value: ConsultationsBand; label: string }[] = [
+  { value: 'under_100', label: 'До 100' },
+  { value: '100_200', label: '100–200' },
+  { value: 'over_200', label: 'Над 200' },
 ];
 
 interface OnboardingWizardProps {
@@ -39,13 +34,19 @@ interface OnboardingWizardProps {
   /** Close AND start the spotlight tour (purely visual — the completion PATCH
    *  has already been fired by the wizard before this is invoked). */
   onStartTour: () => void;
+  /** ── MEDIA SLOT ──────────────────────────────────────────────────────────
+   *  Drop-in for the real welcome photo/video Dimitar plans to supply: pass
+   *  any node (e.g. <video … /> or <Image …/> from /public) and it REPLACES
+   *  the default gradient-waveform header band on step 1, same 152px frame.
+   *  Until then leave unset. */
+  welcomeMedia?: React.ReactNode;
 }
 
-export default function OnboardingWizard({ me, onClose, onStartTour }: OnboardingWizardProps) {
+export default function OnboardingWizard({ me, onClose, onStartTour, welcomeMedia }: OnboardingWizardProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [specialty, setSpecialty] = useState('');
   const [orgName, setOrgName] = useState(me.organizationName ?? '');
-  const [avg, setAvg] = useState('');
+  const [band, setBand] = useState<ConsultationsBand | null>(null);
   const [saving, setSaving] = useState(false);
 
   // The single exit point — marks onboarding complete (once; the wizard
@@ -60,7 +61,13 @@ export default function OnboardingWizard({ me, onClose, onStartTour }: Onboardin
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') finish(false);
+      // defaultPrevented = some inner control already consumed this Esc (the
+      // SpecialtyTypeahead closing its dropdown). stopPropagation can NOT
+      // shield us: Next's App Router hydrates the whole document, so React's
+      // delegated listeners sit ON document — the same node as this listener,
+      // and stopPropagation only blocks FURTHER nodes, never same-node
+      // listeners. preventDefault is the ordering-independent handshake.
+      if (e.key === 'Escape' && !e.defaultPrevented) finish(false);
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -74,10 +81,7 @@ export default function OnboardingWizard({ me, onClose, onStartTour }: Onboardin
     if (trimmedOrg && trimmedOrg !== (me.organizationName ?? '')) {
       payload.org_name = trimmedOrg;
     }
-    const n = Number(avg);
-    if (avg.trim() && Number.isInteger(n) && n >= 1 && n <= 5000) {
-      payload.avg_monthly_consultations = n;
-    }
+    if (band) payload.consultations_band = band;
     if (Object.keys(payload).length > 0) {
       setSaving(true);
       try {
@@ -104,16 +108,23 @@ export default function OnboardingWizard({ me, onClose, onStartTour }: Onboardin
       style={{ background: 'rgba(27, 42, 65, 0.55)' }}
     >
       <div
-        className="rounded-2xl shadow-2xl max-w-md w-full"
+        className="rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
         style={{ background: 'var(--color-bg-card)' }}
       >
         {step === 1 && (
           <>
-            <div className="p-6">
-              <h2 className="text-xl font-semibold" style={{ color: 'var(--color-ink)' }}>
+            {welcomeMedia ?? <WelcomeBand />}
+            <div className="px-7 pt-6 pb-7">
+              <h2
+                className="font-semibold"
+                style={{ color: 'var(--color-ink)', fontSize: 22, letterSpacing: '-0.01em' }}
+              >
                 Добре дошли в TuberMed
               </h2>
-              <p className="text-sm mt-2" style={{ color: 'var(--color-text-muted)' }}>
+              <p
+                className="mt-2 leading-relaxed"
+                style={{ color: 'var(--color-text-muted)', fontSize: 14 }}
+              >
                 Говорете с пациента — амбулаторният лист се пише сам.
               </p>
             </div>
@@ -129,29 +140,16 @@ export default function OnboardingWizard({ me, onClose, onStartTour }: Onboardin
 
         {step === 2 && (
           <>
-            <div className="p-6">
+            <div className="px-7 pt-6 pb-7">
               <h2 className="text-lg font-semibold" style={{ color: 'var(--color-ink)' }}>
                 Няколко думи за вас
               </h2>
-              <p className="text-sm mt-1 mb-4" style={{ color: 'var(--color-text-muted)' }}>
+              <p className="text-sm mt-1 mb-5" style={{ color: 'var(--color-text-muted)' }}>
                 Всичко е по избор — помага ни да настроим TuberMed за вашата практика.
               </p>
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <WizardField label="Специалност">
-                  <input
-                    type="text"
-                    list="onboarding-specialties"
-                    value={specialty}
-                    onChange={(e) => setSpecialty(e.target.value)}
-                    disabled={saving}
-                    className="w-full px-3 outline-none rounded-md"
-                    style={fieldStyle}
-                  />
-                  <datalist id="onboarding-specialties">
-                    {SPECIALTIES.map((s) => (
-                      <option key={s} value={s} />
-                    ))}
-                  </datalist>
+                  <SpecialtyTypeahead value={specialty} onChange={setSpecialty} disabled={saving} />
                 </WizardField>
                 <WizardField label="Място на работа">
                   <input
@@ -164,17 +162,31 @@ export default function OnboardingWizard({ me, onClose, onStartTour }: Onboardin
                     style={fieldStyle}
                   />
                 </WizardField>
-                <WizardField label="Среден брой консултации на месец">
-                  <input
-                    type="number"
-                    min={1}
-                    max={5000}
-                    value={avg}
-                    onChange={(e) => setAvg(e.target.value)}
-                    disabled={saving}
-                    className="w-full px-3 outline-none rounded-md"
-                    style={fieldStyle}
-                  />
+                <WizardField label="Среден брой прегледи на месец">
+                  <div role="group" aria-label="Среден брой прегледи на месец" className="grid grid-cols-3 gap-2">
+                    {BANDS.map((b) => {
+                      const selected = band === b.value;
+                      return (
+                        <button
+                          key={b.value}
+                          type="button"
+                          aria-pressed={selected}
+                          disabled={saving}
+                          // tap again to deselect — the field stays optional
+                          onClick={() => setBand(selected ? null : b.value)}
+                          className="rounded-lg text-sm font-medium transition disabled:opacity-50"
+                          style={{
+                            height: 42,
+                            border: `1px solid ${selected ? 'var(--color-brand)' : 'var(--color-border-strong)'}`,
+                            background: selected ? 'var(--color-brand)' : 'white',
+                            color: selected ? 'white' : 'var(--color-text)',
+                          }}
+                        >
+                          {b.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </WizardField>
               </div>
             </div>
@@ -191,11 +203,11 @@ export default function OnboardingWizard({ me, onClose, onStartTour }: Onboardin
 
         {step === 3 && (
           <>
-            <div className="p-6">
+            <div className="px-7 pt-6 pb-7">
               <h2 className="text-lg font-semibold" style={{ color: 'var(--color-ink)' }}>
                 Кратка обиколка? (30 секунди)
               </h2>
-              <p className="text-sm mt-2" style={{ color: 'var(--color-text-muted)' }}>
+              <p className="text-sm mt-2 leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
                 Четири бързи стъпки върху екрана за нов преглед.
               </p>
             </div>
@@ -213,6 +225,51 @@ export default function OnboardingWizard({ me, onClose, onStartTour }: Onboardin
   );
 }
 
+// Default step-1 visual: deep navy gradient + the white TuberMed mark + a
+// quiet CSS/SVG waveform motif echoing the recording UI. Pure local assets —
+// no third-party origins (EU invariant). Replaced wholesale by the
+// `welcomeMedia` prop when a real photo/video lands.
+function WelcomeBand() {
+  // Static bar heights — an abstract "voice" waveform, calm by design.
+  const bars = [10, 18, 26, 38, 30, 46, 34, 52, 40, 28, 44, 32, 22, 36, 26, 16, 24, 14, 20, 12];
+  return (
+    <div
+      className="relative"
+      style={{
+        height: 152,
+        background: 'linear-gradient(135deg, #16263D 0%, #1D3B5C 55%, #2E5A8F 100%)',
+      }}
+    >
+      <Image
+        src="/brand/tubermed-mark-white.svg"
+        alt=""
+        width={42}
+        height={42}
+        priority
+        style={{ position: 'absolute', top: 24, left: 28 }}
+      />
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 400 60"
+        preserveAspectRatio="none"
+        style={{ position: 'absolute', insetInline: 0, bottom: 0, width: '100%', height: 60 }}
+      >
+        {bars.map((h, i) => (
+          <rect
+            key={i}
+            x={i * 20 + 6}
+            y={60 - h}
+            width={8}
+            rx={4}
+            height={h}
+            fill="rgba(143, 192, 232, 0.28)"
+          />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 const fieldStyle: React.CSSProperties = {
   height: 38,
   background: 'white',
@@ -225,7 +282,7 @@ function WizardField({ label, children }: { label: string; children: React.React
   return (
     <label className="block">
       <span
-        className="block mb-1 font-medium"
+        className="block mb-1.5 font-medium"
         style={{ color: 'var(--color-text-secondary)', fontSize: 13 }}
       >
         {label}
@@ -252,7 +309,7 @@ function Footer({
 }) {
   return (
     <div
-      className="px-6 py-4 flex items-center justify-between border-t"
+      className="px-7 py-4 flex items-center justify-between border-t"
       style={{ borderColor: 'var(--color-border)' }}
     >
       <div className="flex items-center gap-1.5" aria-hidden="true">
@@ -261,9 +318,10 @@ function Footer({
             key={i}
             className="rounded-full"
             style={{
-              width: 6,
+              width: i === dots ? 18 : 6,
               height: 6,
               background: i === dots ? 'var(--color-brand)' : 'var(--color-border)',
+              transition: 'width 200ms ease, background 200ms ease',
             }}
           />
         ))}
@@ -272,7 +330,7 @@ function Footer({
         <button
           type="button"
           onClick={onSecondary}
-          className="text-sm px-3 py-2 rounded-md"
+          className="text-sm px-3 py-2 rounded-md transition hover:bg-[var(--color-bg)]"
           style={{ color: 'var(--color-text-muted)' }}
         >
           {secondary}
@@ -281,7 +339,7 @@ function Footer({
           type="button"
           onClick={onPrimary}
           disabled={primaryDisabled}
-          className="text-sm px-4 py-2 rounded-md font-medium text-white disabled:opacity-50"
+          className="text-sm px-5 py-2 rounded-md font-medium text-white disabled:opacity-50 transition hover:opacity-95"
           style={{ background: 'var(--color-brand)' }}
         >
           {primary}
