@@ -353,6 +353,29 @@ clean Bulgarian 503 in the UI (verified live in dev).
   ONLY — run the web dev server on :3000 (and the backend on :4000 per
   `.env.local`), or every API call fails preflight with a network-level error.
 
+Auth UX polish (2026-06-11, follow-up session — frontend-only):
+
+- **`components/PasswordInput.tsx`** — shared hold-to-reveal password field
+  (signup password + confirm, login email-mode password; the 6-digit PIN field
+  deliberately keeps the plain masked Input). Pointer press-and-hold reveals
+  (mousedown/touchstart `preventDefault` so the button never steals focus from
+  the input); Space/Enter TOGGLES for keyboard users; `aria-pressed` +
+  `aria-label="Покажи паролата"`; `type="button"`. Styling mirrors the pages'
+  local Input helper byte-for-byte.
+- **Confirm-password (signup only).** "Повтори паролата" errors
+  ("Паролите не съвпадат") on confirm-BLUR and on submit (blocking it) — never
+  while typing; the change handlers only CLEAR a shown error once values match.
+  The confirm value is client-side only — the signup request body is unchanged
+  (verified by fetch interception: keys are exactly invite_code/name/email/
+  password [+org_name when filled]).
+- **"Запомни ме" (login both modes + signup, `components/RememberMe.tsx`).**
+  `setSession(s, remember = true)` in lib/api.ts: checked (default — the prior
+  behavior) → localStorage; unchecked → sessionStorage (dies with the browser
+  session). Each write clears the OTHER location; `getSession` reads both;
+  `clearSession` (logout) wipes both. Token access is fully centralized in
+  these three helpers — keep it that way (no direct `tuber_auth` reads
+  anywhere else). The JWT + its 30-day expiry are untouched.
+
 # Known issues / gotchas
 
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
