@@ -103,6 +103,23 @@ export interface LoginPayload {
   pin: string;
 }
 
+// A4 — the same /api/auth/login endpoint also accepts email + password
+// (self-serve accounts). The backend picks the path off the body shape.
+export interface EmailLoginPayload {
+  email: string;
+  password: string;
+}
+
+// A4 — invite-gated self-serve signup. Responds with the exact LoginResponse
+// shape, so session handling is shared with login.
+export interface SignupPayload {
+  invite_code: string;
+  name: string;
+  email: string;
+  password: string;
+  org_name?: string;
+}
+
 export interface LoginResponse {
   token: string;
   doctor: DoctorInfo;
@@ -116,8 +133,13 @@ export type CreatePatientResult =
 
 export const api = {
   health: () => request<{ status: string }>('/health'),
-  login: (payload: LoginPayload) =>
+  login: (payload: LoginPayload | EmailLoginPayload) =>
     request<LoginResponse>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  signup: (payload: SignupPayload) =>
+    request<LoginResponse>('/api/auth/signup', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
