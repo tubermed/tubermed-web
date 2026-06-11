@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, setSession, ApiError } from "@/lib/api";
 import PasswordInput from "@/components/PasswordInput";
+import RememberMe from "@/components/RememberMe";
 
 // A4 — invite-gated self-serve signup. Mirrors /app/login: same workspace
 // tokens, same session storage (setSession), same post-auth redirect. The
@@ -21,6 +22,9 @@ export default function SignupPage() {
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [orgName, setOrgName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
+  // Checked (default) = current behavior: localStorage, survives a browser
+  // restart. Unchecked: sessionStorage, dies with the browser session.
+  const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +50,7 @@ export default function SignupPage() {
         password,
         org_name: orgName.trim() || undefined,
       });
-      setSession({ token: res.token, doctor: res.doctor });
+      setSession({ token: res.token, doctor: res.doctor }, remember);
       router.push("/app/new-visit");
     } catch (err) {
       if (err instanceof ApiError) {
@@ -216,6 +220,8 @@ export default function SignupPage() {
                   mono
                 />
               </Field>
+
+              <RememberMe checked={remember} onChange={setRemember} disabled={loading} />
 
               {error && (
                 <div

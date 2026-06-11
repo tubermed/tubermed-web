@@ -42,9 +42,18 @@ export interface Session {
   doctor: DoctorInfo;
 }
 
+// "Запомни ме" (A4 UX): remember=true (the default — and the pre-checkbox
+// behavior) keeps the session in localStorage, surviving a browser restart
+// for the JWT's 30 days; remember=false keeps it in sessionStorage, gone when
+// the browser session ends. Purely WHERE the client stores the token — the
+// JWT itself and its expiry are untouched. getSession reads both locations;
+// setSession always clears the other one so a stale copy can't resurrect an
+// older identity; clearSession (logout) wipes both.
+
 export function getSession(): Session | null {
   if (typeof window === 'undefined') return null;
-  const raw = localStorage.getItem(STORAGE_KEY);
+  const raw =
+    localStorage.getItem(STORAGE_KEY) ?? sessionStorage.getItem(STORAGE_KEY);
   if (!raw) return null;
   try {
     return JSON.parse(raw) as Session;
@@ -53,12 +62,16 @@ export function getSession(): Session | null {
   }
 }
 
-export function setSession(s: Session): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+export function setSession(s: Session, remember: boolean = true): void {
+  const target = remember ? localStorage : sessionStorage;
+  const other = remember ? sessionStorage : localStorage;
+  target.setItem(STORAGE_KEY, JSON.stringify(s));
+  other.removeItem(STORAGE_KEY);
 }
 
 export function clearSession(): void {
   localStorage.removeItem(STORAGE_KEY);
+  sessionStorage.removeItem(STORAGE_KEY);
 }
 
 export function getToken(): string | null {

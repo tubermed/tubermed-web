@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, setSession, ApiError } from "@/lib/api";
 import PasswordInput from "@/components/PasswordInput";
+import RememberMe from "@/components/RememberMe";
 
 type LoginMode = "email" | "pin";
 
@@ -20,6 +21,9 @@ export default function LoginPage() {
   const [organizationSlug, setOrganizationSlug] = useState("");
   const [doctorId, setDoctorId] = useState("");
   const [pin, setPin] = useState("");
+  // Checked (default) = current behavior: localStorage, survives a browser
+  // restart. Unchecked: sessionStorage, dies with the browser session.
+  const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,7 +40,7 @@ export default function LoginPage() {
               doctorId: doctorId.trim(),
               pin: pin.trim(),
             });
-      setSession({ token: res.token, doctor: res.doctor });
+      setSession({ token: res.token, doctor: res.doctor }, remember);
       router.push("/app/new-visit");
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Грешка при вход";
@@ -195,6 +199,8 @@ export default function LoginPage() {
                   </Field>
                 </>
               )}
+
+              <RememberMe checked={remember} onChange={setRemember} disabled={loading} />
 
               {error && (
                 <div
