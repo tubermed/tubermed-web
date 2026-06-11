@@ -407,6 +407,19 @@ until then nothing shows anywhere (see the trigger contract below).
   renders. This is load-bearing: null-on-degradation would nag every existing
   doctor with a wizard whose close-PATCH can't persist. Existing doctors are
   also backfilled as onboarded by the migration itself.
+- **⚠ The wizard has NO backdrop click-to-close — deliberate bug fix
+  (2026-06-11, observed live by Dimitar).** Mechanism: browsers fire `click`
+  on the nearest COMMON ANCESTOR of the mousedown and mouseup targets, so
+  selecting/clearing text in a wizard input with a mouse drag that releases
+  outside the card landed a `click` whose target was the backdrop — the old
+  `onClick={() => finish(false)}` then closed the wizard AND permanently
+  marked onboarding complete (finish() PATCHes by design — the doctor could
+  never see the wizard again). The wizard closes ONLY via its explicit
+  controls (Пропусни / Не сега / Esc / Започни). Do NOT reintroduce a
+  backdrop close here; any modal WITH text inputs needs mousedown+mouseup
+  both-on-backdrop tracking if it ever wants one. (PatientLoadConfirmModal
+  keeps its backdrop close — no text inputs, the latent drag case is
+  irrelevant there.)
 - **Wizard (3 steps):** welcome → optional profile (Специалност datalist,
   Място на работа prefilled with `organizationName`, среден брой консултации;
   "Продължи" PATCHes only what was filled; step-2 "Пропусни" skips the save

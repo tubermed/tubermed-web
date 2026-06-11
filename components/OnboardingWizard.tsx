@@ -92,15 +92,20 @@ export default function OnboardingWizard({ me, onClose, onStartTour }: Onboardin
   }
 
   return (
+    // ⚠ NO backdrop click-to-close — deliberate (bug fix, 2026-06-11). The
+    // browser fires `click` on the nearest COMMON ANCESTOR of the mousedown
+    // and mouseup targets, so selecting text in a wizard input with a drag
+    // that releases outside the card landed a click on this backdrop — which
+    // closed the wizard AND (by design of finish()) permanently marked
+    // onboarding complete. Verified live. The wizard closes ONLY via its
+    // explicit controls: Пропусни / Не сега / Esc / Започни.
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(27, 42, 65, 0.55)' }}
-      onClick={() => finish(false)}
     >
       <div
         className="rounded-2xl shadow-2xl max-w-md w-full"
         style={{ background: 'var(--color-bg-card)' }}
-        onClick={(e) => e.stopPropagation()}
       >
         {step === 1 && (
           <>
