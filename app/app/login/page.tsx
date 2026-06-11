@@ -2,11 +2,20 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, setSession, ApiError } from "@/lib/api";
 
+type LoginMode = "email" | "pin";
+
 export default function LoginPage() {
   const router = useRouter();
+  // A4: two credential modes on one endpoint. "Имейл" is the self-serve
+  // default; "Клиника + ПИН" is the original admin-provisioned flow,
+  // unchanged, one click away.
+  const [mode, setMode] = useState<LoginMode>("email");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [organizationSlug, setOrganizationSlug] = useState("");
   const [doctorId, setDoctorId] = useState("");
   const [pin, setPin] = useState("");
@@ -18,11 +27,14 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const res = await api.login({
-        organizationSlug: organizationSlug.trim(),
-        doctorId: doctorId.trim(),
-        pin: pin.trim(),
-      });
+      const res =
+        mode === "email"
+          ? await api.login({ email: email.trim(), password })
+          : await api.login({
+              organizationSlug: organizationSlug.trim(),
+              doctorId: doctorId.trim(),
+              pin: pin.trim(),
+            });
       setSession({ token: res.token, doctor: res.doctor });
       router.push("/app/new-visit");
     } catch (err) {
@@ -31,6 +43,11 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function switchMode(next: LoginMode) {
+    setMode(next);
+    setError(null);
   }
 
   return (
@@ -97,41 +114,87 @@ export default function LoginPage() {
               Вход в портала за лекари
             </h1>
 
+            {/* Mode switch — Имейл (self-serve) / Клиника + ПИН (original) */}
+            <div
+              className="flex gap-1 mb-5 p-1"
+              style={{
+                background: "var(--color-bg-surface)",
+                border: "1px solid var(--color-border-soft)",
+                borderRadius: "var(--radius-md)",
+              }}
+            >
+              <ModeTab active={mode === "email"} onClick={() => switchMode("email")}>
+                Имейл
+              </ModeTab>
+              <ModeTab active={mode === "pin"} onClick={() => switchMode("pin")}>
+                Клиника + ПИН
+              </ModeTab>
+            </div>
+
             <form onSubmit={handleSubmit} className="space-y-4">
-              <Field label="Кабинет (slug)">
-                <Input
-                  type="text"
-                  value={organizationSlug}
-                  onChange={(e) => setOrganizationSlug(e.target.value)}
-                  autoFocus
-                  required
-                  disabled={loading}
-                />
-              </Field>
+              {mode === "email" ? (
+                <>
+                  <Field label="Имейл">
+                    <Input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      autoFocus
+                      required
+                      disabled={loading}
+                      autoComplete="email"
+                    />
+                  </Field>
 
-              <Field label="ID на лекар (UUID)">
-                <Input
-                  type="text"
-                  value={doctorId}
-                  onChange={(e) => setDoctorId(e.target.value)}
-                  required
-                  disabled={loading}
-                  mono
-                />
-              </Field>
+                  <Field label="Парола">
+                    <Input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      disabled={loading}
+                      autoComplete="current-password"
+                    />
+                  </Field>
+                </>
+              ) : (
+                <>
+                  <Field label="Кабинет (slug)">
+                    <Input
+                      type="text"
+                      value={organizationSlug}
+                      onChange={(e) => setOrganizationSlug(e.target.value)}
+                      autoFocus
+                      required
+                      disabled={loading}
+                    />
+                  </Field>
 
-              <Field label="ПИН">
-                <Input
-                  type="password"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  required
-                  disabled={loading}
-                  inputMode="numeric"
-                  mono
-                  spaced
-                />
-              </Field>
+                  <Field label="ID на лекар (UUID)">
+                    <Input
+                      type="text"
+                      value={doctorId}
+                      onChange={(e) => setDoctorId(e.target.value)}
+                      required
+                      disabled={loading}
+                      mono
+                    />
+                  </Field>
+
+                  <Field label="ПИН">
+                    <Input
+                      type="password"
+                      value={pin}
+                      onChange={(e) => setPin(e.target.value)}
+                      required
+                      disabled={loading}
+                      inputMode="numeric"
+                      mono
+                      spaced
+                    />
+                  </Field>
+                </>
+              )}
 
               {error && (
                 <div
@@ -168,10 +231,53 @@ export default function LoginPage() {
                 {loading ? "Влизане…" : "Вход"}
               </button>
             </form>
+
+            <p
+              className="mt-6 text-center"
+              style={{ color: "var(--color-text-secondary)", fontSize: 13 }}
+            >
+              Нямате акаунт?{" "}
+              <Link
+                href="/signup"
+                style={{ color: "var(--color-accent)", fontWeight: 500 }}
+              >
+                Регистрация
+              </Link>
+            </p>
           </div>
         </div>
       </main>
     </div>
+  );
+}
+
+function ModeTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex-1 transition"
+      style={{
+        height: 32,
+        fontSize: 13,
+        fontWeight: 500,
+        borderRadius: "var(--radius-sm)",
+        background: active ? "white" : "transparent",
+        color: active ? "var(--color-ink)" : "var(--color-text-secondary)",
+        boxShadow: active ? "0 1px 2px rgba(0,0,0,0.08)" : "none",
+        border: active ? "1px solid var(--color-border-soft)" : "1px solid transparent",
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
