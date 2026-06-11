@@ -376,6 +376,39 @@ Auth UX polish (2026-06-11, follow-up session — frontend-only):
   these three helpers — keep it that way (no direct `tuber_auth` reads
   anywhere else). The JWT + its 30-day expiry are untouched.
 
+# Canonical app domain (2026-06-11)
+
+ONE Vercel project answers on THREE hosts: `www.tubermed.com` + apex
+`tubermed.com` (marketing) and `app.tubermed.com` (the product). The backend
+CORS allowlist trusts ONLY `https://app.tubermed.com`, and sessions live in
+per-origin storage — so an app page opened on www RENDERS but every API fetch
+dies in preflight (observed live 2026-06-11: doctor lands on www, clicks
+Вход, product looks broken), and allowing both origins instead would split
+logins. **Decision: `app.tubermed.com` is the one canonical app origin. Do NOT
+"fix" www breakage by adding www to the backend CORS allowlist.**
+
+- **Where the redirects live:** `next.config.ts` `redirects()` —
+  host-matched (`has: [{ type: 'host', … }]`, one entry per marketing host;
+  Next host matchers take a single value, not alternation) permanent 308s for
+  `APP_PATHS` (`/signup`, `/app/:path*`) to `https://app.tubermed.com` with
+  path + query preserved. Landing routes (`/`, `/privacy`, `#anchors`) stay on
+  www/apex; the host matcher keeps `app.tubermed.com` itself redirect-free.
+- **RULE: a NEW app/auth route OUTSIDE `/app/*` must be added to `APP_PATHS`**
+  (for both hosts automatically — the list is host×path flatMapped). Routes
+  under `/app/*` are already covered. `/mobile` is deliberately absent — the
+  QR phone page is served by the BACKEND (Railway `routes/sessions.js`), it is
+  not a route in this app.
+- Landing links to the app may stay same-origin relative (`/app/login` in
+  Header/Footer) — the redirect catches them on www. Audited 2026-06-11: no
+  absolute-www or protocol-relative links exist; the only absolute URLs are
+  the `app/layout.tsx` metadata already pointing at the app origin.
+- Verified via `next build` + `next start` with spoofed `Host:` headers (308 +
+  exact Location on www/apex incl. `?visit=` passthrough; 200 no-redirect on
+  app host / localhost / landing paths). Real-DNS behavior needs a post-deploy
+  check on the live domains.
+- **For Dimitar (out of scope here):** long-term cleanup is making www serve
+  ONLY the landing — a Vercel project/domain config decision, not code.
+
 # Known issues / gotchas
 
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
