@@ -376,6 +376,64 @@ Auth UX polish (2026-06-11, follow-up session — frontend-only):
   these three helpers — keep it that way (no direct `tuber_auth` reads
   anywhere else). The JWT + its 30-day expiry are untouched.
 
+# Login/signup auto-forward (2026-06-11, follow-up session)
+
+An already-authenticated doctor opening `/app/login` or `/signup` is forwarded
+into the workspace instead of seeing the form. On mount both pages read the
+token via `getToken()` (covers both Запомни ме storage modes) through a
+hydration-safe `useSyncExternalStore` (server snapshot `false` — the
+logged-out static prerender stays byte-identical), then VALIDATE with
+`GET /api/auth/me` before forwarding: 200 → `router.replace('/app/new-visit')`
+behind a neutral background (no form flash); 401 → `clearSession()` + form
+(dead token can't shadow the next login); network/5xx → form, session KEPT
+(never block login on a failed probe). Loop-free with the workspace guard.
+Related fix: `lib/use-cold-start-recovery.ts` carves 401 out of its
+catch-all — `clearSession()` + `/app/login` (other failures keep the
+new-visit + notice behavior). All invalid-token bounces now clear storage
+(scribe `me()` probe, PcMode `onAuthError`, recovery hook, logout).
+
+# A4 onboarding — first-run wizard + spotlight tour (2026-06-11)
+
+A new self-serve doctor lands in the workspace and gets a once-ever, fully
+skippable first-run flow. Backend contract: `tubermed-backend/CLAUDE.md`
+(migration 015 + the `/me` endpoints). **Needs migration 015 applied** —
+until then nothing shows anywhere (see the trigger contract below).
+
+- **Trigger (`app/(workspace)/app/new-visit/page.tsx`):** the page fetches
+  `/me` once on mount and opens `components/OnboardingWizard.tsx` ONLY when
+  `onboarding_completed_at === null` EXPLICITLY. An ABSENT key (backend
+  migration 015 unapplied — the degraded `GET /me` OMITS the onboarding keys
+  rather than nulling them) or a failed fetch means "unknown" → nothing
+  renders. This is load-bearing: null-on-degradation would nag every existing
+  doctor with a wizard whose close-PATCH can't persist. Existing doctors are
+  also backfilled as onboarded by the migration itself.
+- **Wizard (3 steps):** welcome → optional profile (Специалност datalist,
+  Място на работа prefilled with `organizationName`, среден брой консултации;
+  "Продължи" PATCHes only what was filled; step-2 "Пропусни" skips the save
+  but still offers the tour) → tour offer. EVERY exit path (Пропусни step 1,
+  Esc, backdrop click, Не сега, Започни) fires
+  `PATCH /api/auth/me { onboarding_completed: true }` exactly once —
+  server-side first-write-wins makes it once-ever even across devices.
+  "Започни" fires the PATCH BEFORE starting the tour: the tour is purely
+  visual, closing it calls nothing.
+- **Spotlight tour (`components/SpotlightTour.tsx`):** in-repo, NO new deps
+  (no react-joyride; framer-motion stays landing-only). The spotlight is a
+  positioned rounded div whose oversized `box-shadow: 0 0 0 9999px` dims
+  around the target's `getBoundingClientRect()`; anchors are `data-tour`
+  attributes ("egn" on the Идентификация SectionCard via its new optional
+  `dataTour` prop, "visit-context" on a layout-neutral wrapper around
+  VisitType+ChiefComplaint, "start" on the Започни запис button, "today" on
+  the rail div in the page). Напред/Пропусни + dots; Esc + overlay-click
+  close; resize/scroll re-measure; a missing anchor skips its step. All
+  measurement runs inside rAF/event callbacks — the react-compiler
+  `set-state-in-effect` rule forbids synchronous setState in effect bodies,
+  and render-time ref writes are banned too (`react-hooks/refs`).
+- **Signup slimmed:** the "Име на практиката" field is gone from `/signup`
+  (backend falls back to the doctor's name; the wizard's Място на работа is
+  where the practice gets named via `PATCH /me org_name`).
+- **lib/api.ts:** `MeResponse` (onboarding keys OPTIONAL — see trigger
+  contract), typed `api.me()`, new `api.updateMe()`.
+
 # Canonical app domain (2026-06-11)
 
 ONE Vercel project answers on THREE hosts: `www.tubermed.com` + apex
