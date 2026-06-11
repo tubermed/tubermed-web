@@ -138,6 +138,26 @@ export interface LoginResponse {
   doctor: DoctorInfo;
 }
 
+// GET/PATCH /api/auth/me (A4 onboarding). The onboarding keys are ABSENT
+// (undefined) when backend migration 015 isn't applied — the wizard must
+// treat undefined as "unknown → show nothing"; only an explicit null means
+// "new doctor → show the wizard".
+export interface MeResponse {
+  id: string;
+  name: string;
+  specialty: string | null;
+  organizationName: string | null;
+  onboarding_completed_at?: string | null;
+  avg_monthly_consultations?: number | null;
+}
+
+export interface UpdateMePayload {
+  specialty?: string;
+  org_name?: string;
+  avg_monthly_consultations?: number;
+  onboarding_completed?: boolean;
+}
+
 // Discriminated union for createPatient — the 409 dedup response is data,
 // not an exception. Callers render the DedupModal directly from the conflict.
 export type CreatePatientResult =
@@ -156,7 +176,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  me: () => request<unknown>('/api/auth/me'),
+  me: () => request<MeResponse>('/api/auth/me'),
+  updateMe: (payload: UpdateMePayload) =>
+    request<MeResponse>('/api/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
 
   // ── Sessions / transcription (extended to forward consultation_id) ─────
   createSession: (opts?: { consultationId?: string }) =>
