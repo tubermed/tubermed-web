@@ -19,7 +19,7 @@
 // header-less / faked screen.
 
 import { useEffect, useState } from 'react';
-import { api } from '@/lib/api';
+import { api, ApiError, clearSession } from '@/lib/api';
 import type { PendingVisit, TranscribeFields } from '@/lib/types';
 
 export type RecoveryPage = 'scribe' | 'result';
@@ -144,7 +144,17 @@ export function useColdStartRecovery(
           pendingVisit,
           note: consultation.note,
         });
-      } catch {
+      } catch (err) {
+        // Invalid/expired token → clear the dead session BEFORE bouncing to
+        // login (same clear-before-redirect rule as the scribe me() probe and
+        // PcMode onAuthError). Leaving it parked rendered a broken workspace
+        // on /app/new-visit and shadowed the next login. Loop-free: login
+        // finds no token after the clear and just shows the form.
+        if (err instanceof ApiError && err.status === 401) {
+          clearSession();
+          redirect('/app/login');
+          return;
+        }
         // 404 / cross-org / network / decrypt failure → unrecoverable.
         redirect('/app/new-visit', 'visit_unavailable');
       }
