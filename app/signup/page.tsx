@@ -25,7 +25,6 @@ export default function SignupPage() {
   // Mismatch errors surface on confirm-blur and on submit only — never while
   // the user is still typing (onChange below only CLEARS a shown error).
   const [confirmError, setConfirmError] = useState<string | null>(null);
-  const [orgName, setOrgName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   // Checked (default) = current behavior: localStorage, survives a browser
   // restart. Unchecked: sessionStorage, dies with the browser session.
@@ -85,12 +84,14 @@ export default function SignupPage() {
 
     setLoading(true);
     try {
+      // org_name deliberately omitted — the backend falls back to the
+      // doctor's name for the org; the wizard's profile step (Място на
+      // работа) is where the practice name gets set post-signup.
       const res = await api.signup({
         invite_code: inviteCode.trim(),
         name: name.trim(),
         email: email.trim(),
         password,
-        org_name: orgName.trim() || undefined,
       });
       setSession({ token: res.token, doctor: res.doctor }, remember);
       router.push("/app/new-visit");
@@ -252,15 +253,6 @@ export default function SignupPage() {
                     </p>
                   )}
                 </>
-              </Field>
-
-              <Field label="Име на практиката (по избор)">
-                <Input
-                  type="text"
-                  value={orgName}
-                  onChange={(e) => setOrgName(e.target.value)}
-                  disabled={loading}
-                />
               </Field>
 
               <Field label="Код за достъп">
