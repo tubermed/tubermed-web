@@ -1,16 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { api, setSession, ApiError } from "@/lib/api";
+import { api, setSession, clearSession, getToken, ApiError } from "@/lib/api";
 import PasswordInput from "@/components/PasswordInput";
 import RememberMe from "@/components/RememberMe";
 
 // A4 — invite-gated self-serve signup. Mirrors /app/login: same workspace
 // tokens, same session storage (setSession), same post-auth redirect. The
 // backend returns the exact /login response shape, so nothing else changes.
+
+// Stable no-op subscribe for useSyncExternalStore — the token only changes
+// through this page's own navigation, so no store notifications are needed.
+const subscribeNoop = () => () => {};
+
 export default function SignupPage() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -27,6 +32,43 @@ export default function SignupPage() {
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Auto-forward: an already-authenticated doctor opening /signup goes
+  // straight into the workspace. Same inline probe as /app/login (these two
+  // pages deliberately keep local copies — see AGENTS.md). useSyncExternalStore
+  // is the hydration-safe storage read: server/hydration snapshot false (the
+  // statically prerendered logged-out form stays byte-identical), client
+  // snapshot kicks in post-hydration.
+  const hasToken = useSyncExternalStore(
+    subscribeNoop,
+    () => !!getToken(),
+    () => false
+  );
+  // Flipped (asynchronously, in the probe's catch) when the probe fails and
+  // the form should render after all.
+  const [probeFailed, setProbeFailed] = useState(false);
+  const probing = hasToken && !probeFailed;
+
+  useEffect(() => {
+    if (!hasToken) return; // nothing stored — render the form as today
+    let cancelled = false;
+    api
+      .me() // validate before forwarding
+      .then(() => {
+        if (!cancelled) router.replace("/app/new-visit"); // same destination as a fresh signup
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status === 401) {
+          clearSession(); // dead/stale token — clear it so nothing shadows the next login
+        }
+        // Network failure / 5xx: keep the (possibly valid) session and render
+        // the form — never block signup on a failed probe.
+        setProbeFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasToken, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -68,6 +110,17 @@ export default function SignupPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Neutral state while the session probe is in flight — page background
+  // only, no flash of the full form mid-forward.
+  if (probing) {
+    return (
+      <div
+        className="min-h-screen"
+        style={{ background: "var(--color-bg-surface)" }}
+      />
+    );
   }
 
   return (
