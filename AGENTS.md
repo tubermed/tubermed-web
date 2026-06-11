@@ -322,6 +322,37 @@ truth: `app/page.tsx`.
 - **`/privacy`.** Placeholder structure only, `robots: { index: false }`; flagged
   TODO for the real legal copy — do NOT auto-generate legal text.
 
+# A4 — self-serve signup + email login (2026-06-11)
+
+Invite-gated self-serve registration next to the untouched org/PIN flow.
+Backend contract: `tubermed-backend/CLAUDE.md` (routes/auth.js row + migration
+014). **Migration 014 must be applied and `SIGNUP_INVITE_CODE` set on the
+backend before the happy path works** — until then both new paths surface a
+clean Bulgarian 503 in the UI (verified live in dev).
+
+- **`app/signup/page.tsx`** (route `/signup`, top-level — outside the
+  `(workspace)` auth gate, like `/app/login`). Bulgarian form: Име / Имейл /
+  Парола (≥10 знака, client-checked before POST) / Име на практиката (по
+  избор) / Код за достъп. Mirrors the login page exactly: same workspace
+  `--color-*` tokens + local Field/Input/Wordmark helpers (deliberately
+  duplicated — login keeps its own private copies), `setSession` storage,
+  `router.push('/app/new-visit')`. NO landing `--lp-*` tokens / framer-motion /
+  Lenis. Backend errors surface honestly; the 503 body literal
+  `signup_disabled` is translated to Bulgarian in the page, everything else
+  (403 wrong code, 409 duplicate email) is already user-facing Bulgarian.
+- **`app/app/login/page.tsx`** — segmented Имейл / Клиника + ПИН switch.
+  "Имейл" is the DEFAULT tab (self-serve is the forward path); the ПИН tab
+  keeps the original three fields and submit payload untouched, one click
+  away. Errors clear on mode switch. Cross-links: login "Нямате акаунт?
+  Регистрация" → `/signup`; signup "Вече имате акаунт? Вход" → `/app/login`.
+- **`lib/api.ts`** — `api.signup(SignupPayload)`; `api.login()` widened to
+  `LoginPayload | EmailLoginPayload` (additive). Both return `LoginResponse` —
+  the backend responds with the byte-identical shape on all three auth calls,
+  so session handling is one code path.
+- **Dev gotcha:** the backend's dev CORS allowlist is `http://localhost:3000`
+  ONLY — run the web dev server on :3000 (and the backend on :4000 per
+  `.env.local`), or every API call fails preflight with a network-level error.
+
 # Known issues / gotchas
 
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
