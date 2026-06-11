@@ -420,10 +420,26 @@ until then nothing shows anywhere (see the trigger contract below).
   both-on-backdrop tracking if it ever wants one. (PatientLoadConfirmModal
   keeps its backdrop close — no text inputs, the latent drag case is
   irrelevant there.)
-- **Wizard (3 steps):** welcome → optional profile (Специалност datalist,
-  Място на работа prefilled with `organizationName`, среден брой консултации;
-  "Продължи" PATCHes only what was filled; step-2 "Пропусни" skips the save
-  but still offers the tour) → tour offer. EVERY exit path (Пропусни step 1,
+- **Wizard (3 steps):** welcome → optional profile (Специалност via
+  `SpecialtyTypeahead`, Място на работа prefilled with `organizationName`,
+  three-band 'Среден брой прегледи на месец' segmented control — backend
+  migration 016, `consultations_band` ∈ under_100/100_200/over_200,
+  tap-again-to-deselect; "Продължи" PATCHes only what was filled; step-2
+  "Пропусни" skips the save but still offers the tour) → tour offer.
+- **Welcome visual (polish session):** step 1 carries a navy-gradient band
+  with the white mark from `/public/brand` + a pure-SVG waveform — local
+  assets only, zero third-party origins (verified). The `welcomeMedia` prop
+  on OnboardingWizard is the marked slot for the real photo/video Dimitar
+  will supply (replaces the default band wholesale, same 152px frame).
+- **⚠ Esc handling gotcha (Next App Router specific, found live):** React
+  hydrates the WHOLE document here, so React's delegated listeners sit ON
+  `document` — the same node as any manual `document.addEventListener`. A
+  React handler's `stopPropagation()` therefore can NEVER shield a manual
+  document-level listener (same-node listeners always run; only further
+  nodes are stoppable). Convention: a component that consumes a key calls
+  `preventDefault()`, and document-level handlers skip
+  `e.defaultPrevented` events — that's how closing the SpecialtyTypeahead
+  dropdown with Esc stopped also closing the wizard. EVERY exit path (Пропусни step 1,
   Esc, backdrop click, Не сега, Започни) fires
   `PATCH /api/auth/me { onboarding_completed: true }` exactly once —
   server-side first-write-wins makes it once-ever even across devices.
