@@ -15,6 +15,10 @@ export default function SignupPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  // Mismatch errors surface on confirm-blur and on submit only — never while
+  // the user is still typing (onChange below only CLEARS a shown error).
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const [orgName, setOrgName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -26,6 +30,10 @@ export default function SignupPage() {
 
     if (password.length < 10) {
       setError("Паролата трябва да е поне 10 знака.");
+      return;
+    }
+    if (password !== confirm) {
+      setConfirmError("Паролите не съвпадат");
       return;
     }
 
@@ -147,12 +155,46 @@ export default function SignupPage() {
               <Field label="Парола (поне 10 знака)">
                 <PasswordInput
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setPassword(v);
+                    if (confirmError && v === confirm) setConfirmError(null);
+                  }}
                   required
                   disabled={loading}
                   minLength={10}
                   autoComplete="new-password"
                 />
+              </Field>
+
+              <Field label="Повтори паролата">
+                <>
+                  <PasswordInput
+                    value={confirm}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setConfirm(v);
+                      if (confirmError && v === password) setConfirmError(null);
+                    }}
+                    onBlur={() => {
+                      if (confirm && confirm !== password) {
+                        setConfirmError("Паролите не съвпадат");
+                      }
+                    }}
+                    required
+                    disabled={loading}
+                    autoComplete="new-password"
+                    aria-invalid={!!confirmError}
+                  />
+                  {confirmError && (
+                    <p
+                      className="mt-1.5"
+                      style={{ color: "var(--color-danger)", fontSize: 13 }}
+                    >
+                      {confirmError}
+                    </p>
+                  )}
+                </>
               </Field>
 
               <Field label="Име на практиката (по избор)">
