@@ -17,7 +17,9 @@ import DedupModal from '@/components/DedupModal';
 import EgnSwitchGuardModal from '@/components/EgnSwitchGuardModal';
 import TodayConsultations from '@/components/TodayConsultations';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
-import { api, ApiError, getSession } from '@/lib/api';
+import OnboardingWizard from '@/components/OnboardingWizard';
+import SpotlightTour, { type TourStep } from '@/components/SpotlightTour';
+import { api, ApiError, getSession, type MeResponse } from '@/lib/api';
 import type {
   DedupConflict,
   PatientSearchHit,
@@ -26,6 +28,15 @@ import type {
 } from '@/lib/types';
 
 const PENDING_VISIT_KEY = 'tuber_pending_visit';
+
+// A4 spotlight tour — anchored to data-tour attributes on this page +
+// PatientForm. One sentence per step (see AGENTS.md "A4 onboarding").
+const TOUR_STEPS: TourStep[] = [
+  { selector: '[data-tour="egn"]', text: 'Въведете ЕГН — данните на пациента се попълват автоматично.' },
+  { selector: '[data-tour="visit-context"]', text: 'Една кратка причина за визитата е достатъчна.' },
+  { selector: '[data-tour="start"]', text: 'Натиснете тук и говорете с пациента както обикновено.' },
+  { selector: '[data-tour="today"]', text: 'Готовите прегледи се появяват тук през целия ден.' },
+];
 
 export default function NewVisitPage() {
   const router = useRouter();
@@ -40,6 +51,32 @@ export default function NewVisitPage() {
   const [saving, setSaving]         = useState(false);
   const [toast, setToast]           = useState<ToastData | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // ── A4 first-run wizard + tour ───────────────────────────────────────────
+  // The wizard opens ONLY on an explicit onboarding_completed_at === null
+  // from /me (fresh post-015 signup). An ABSENT key (backend migration 015
+  // not applied) or a failed fetch means "unknown" → show nothing — an
+  // existing doctor must never see a wizard flash.
+  const [me, setMe] = useState<MeResponse | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [tourOpen, setTourOpen]     = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .me()
+      .then((m) => {
+        if (cancelled) return;
+        setMe(m);
+        if (m.onboarding_completed_at === null) setWizardOpen(true);
+      })
+      .catch(() => {
+        /* unknown — show nothing */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Held ЕГН change: set when the doctor edits national_id away from a loaded
   // patient that has unsaved edits. `pendingForm` is the not-yet-applied form
@@ -382,10 +419,22 @@ export default function NewVisitPage() {
             onClearSelection={handleClearSelection}
           />
         </div>
-        <div>
+        <div data-tour="today">
           <TodayConsultations refreshKey={refreshKey} />
         </div>
       </div>
+
+      {wizardOpen && me && (
+        <OnboardingWizard
+          me={me}
+          onClose={() => setWizardOpen(false)}
+          onStartTour={() => {
+            setWizardOpen(false);
+            setTourOpen(true);
+          }}
+        />
+      )}
+      {tourOpen && <SpotlightTour steps={TOUR_STEPS} onClose={() => setTourOpen(false)} />}
 
       <DedupModal
         conflict={dedup}

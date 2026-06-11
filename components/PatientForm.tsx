@@ -217,8 +217,12 @@ export default function PatientForm({
         onClearSelection={onClearSelection}
       />
       <ClinicalContextSection state={state} set={set} />
-      <VisitTypeSection state={state} set={set} />
-      <ChiefComplaintSection state={state} set={set} />
+      {/* Layout-neutral wrapper (same flex/gap as the parent) — the A4
+          spotlight tour highlights visit type + chief complaint as ONE step. */}
+      <div data-tour="visit-context" className="flex flex-col gap-6">
+        <VisitTypeSection state={state} set={set} />
+        <ChiefComplaintSection state={state} set={set} />
+      </div>
       <DocumentationSection state={state} set={set} />
 
       <div
@@ -240,6 +244,7 @@ export default function PatientForm({
         </button>
         <button
           type="button"
+          data-tour="start"
           onClick={onStartVisit}
           disabled={!canSubmit || isSaving}
           className="text-sm px-5 py-2.5 rounded-md text-white font-medium transition hover:opacity-95 disabled:opacity-50"
@@ -255,9 +260,10 @@ export default function PatientForm({
 // ── Section: Идентификация ──────────────────────────────────────────────────
 type SetFn = <K extends keyof PatientFormState>(key: K, value: PatientFormState[K]) => void;
 
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionCard({ title, children, dataTour }: { title: string; children: React.ReactNode; dataTour?: string }) {
   return (
     <section
+      data-tour={dataTour}
       className="rounded-xl"
       style={{ background: 'var(--color-bg-card)', border: '1px solid var(--color-border)' }}
     >
@@ -413,7 +419,7 @@ function IdentificationSection({
 
   return (
     <>
-    <SectionCard title="Идентификация">
+    <SectionCard title="Идентификация" dataTour="egn">
       {/* Loaded-patient banner + clear control. The search bar that used to host
           the patient chip is gone; clearing here returns the form to the empty
           NEW-patient state (page resets dirty state in the same pass). */}
