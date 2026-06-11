@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, setSession, ApiError } from "@/lib/api";
+import PasswordInput from "@/components/PasswordInput";
 
 type LoginMode = "email" | "pin";
 
@@ -147,8 +148,7 @@ export default function LoginPage() {
                   </Field>
 
                   <Field label="Парола">
-                    <Input
-                      type="password"
+                    <PasswordInput
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required

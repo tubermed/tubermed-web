@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, setSession, ApiError } from "@/lib/api";
+import PasswordInput from "@/components/PasswordInput";
 
 // A4 — invite-gated self-serve signup. Mirrors /app/login: same workspace
 // tokens, same session storage (setSession), same post-auth redirect. The
@@ -144,8 +145,7 @@ export default function SignupPage() {
               </Field>
 
               <Field label="Парола (поне 10 знака)">
-                <Input
-                  type="password"
+                <PasswordInput
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
