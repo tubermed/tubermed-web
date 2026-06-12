@@ -24,7 +24,7 @@ export function Hero() {
           >
             TuberMed записва консултацията и я превръща в готов, структуриран
             амбулаторен лист на български. Вие преглеждате, поправяте и
-            одобрявате — за минута, не за вечер.
+            одобрявате за минута след прегледа.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <MagneticCta href="#access">Заявка за достъп</MagneticCta>
