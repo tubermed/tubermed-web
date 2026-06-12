@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 
 // Password field with a hold-to-reveal eye button — shared by /signup and the
 // /app/login email mode (NOT the 6-digit PIN field). Styling mirrors the local
@@ -16,11 +16,47 @@ type PasswordInputProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'typ
 
 export default function PasswordInput({ className, ...rest }: PasswordInputProps) {
   const [revealed, setRevealed] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Swapping <input type> between password/text RESETS the selection in some
+  // browsers (Firefox collapses it to 0 — caret jumps to the FRONT and the
+  // doctor's next keystrokes insert at the start; observed live 2026-06-12).
+  // Every toggle path captures the selection first; the layout effect below
+  // restores it after the re-rendered type swap commits, before paint.
+  const pendingSelection = useRef<{
+    start: number | null;
+    end: number | null;
+    direction: 'forward' | 'backward' | 'none';
+  } | null>(null);
+
+  function setRevealedPreservingCaret(next: boolean | ((v: boolean) => boolean)) {
+    const el = inputRef.current;
+    if (el) {
+      pendingSelection.current = {
+        start: el.selectionStart,
+        end: el.selectionEnd,
+        direction: el.selectionDirection ?? 'none',
+      };
+    }
+    setRevealed(next);
+  }
+
+  useLayoutEffect(() => {
+    const sel = pendingSelection.current;
+    if (!sel) return;
+    pendingSelection.current = null;
+    const el = inputRef.current;
+    if (el && sel.start !== null && sel.end !== null) {
+      // setSelectionRange does not move focus — safe on the keyboard-toggle
+      // path too, where focus is on the eye button, not the input.
+      el.setSelectionRange(sel.start, sel.end, sel.direction);
+    }
+  }, [revealed]);
 
   return (
     <div className="relative">
       <input
         {...rest}
+        ref={inputRef}
         type={revealed ? 'text' : 'password'}
         className={['w-full pl-3 pr-10 outline-none', className ?? ''].filter(Boolean).join(' ')}
         style={{
@@ -51,20 +87,20 @@ export default function PasswordInput({ className, ...rest }: PasswordInputProps
         style={{ color: 'var(--color-text-secondary)' }}
         onMouseDown={(e) => {
           e.preventDefault(); // keep focus in the input
-          setRevealed(true);
+          setRevealedPreservingCaret(true);
         }}
-        onMouseUp={() => setRevealed(false)}
-        onMouseLeave={() => setRevealed(false)}
+        onMouseUp={() => setRevealedPreservingCaret(false)}
+        onMouseLeave={() => setRevealedPreservingCaret(false)}
         onTouchStart={(e) => {
           e.preventDefault(); // suppress the synthetic mouse events
-          setRevealed(true);
+          setRevealedPreservingCaret(true);
         }}
-        onTouchEnd={() => setRevealed(false)}
-        onTouchCancel={() => setRevealed(false)}
+        onTouchEnd={() => setRevealedPreservingCaret(false)}
+        onTouchCancel={() => setRevealedPreservingCaret(false)}
         onKeyDown={(e) => {
           if (e.key === ' ' || e.key === 'Enter') {
             e.preventDefault(); // we own activation — no synthetic click
-            setRevealed((v) => !v);
+            setRevealedPreservingCaret((v) => !v);
           }
         }}
       >
