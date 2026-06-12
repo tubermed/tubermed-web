@@ -48,6 +48,12 @@ export default function OnboardingWizard({ me, onClose, onStartTour, welcomeMedi
   const [orgName, setOrgName] = useState(me.organizationName ?? '');
   const [band, setBand] = useState<ConsultationsBand | null>(null);
   const [saving, setSaving] = useState(false);
+  // Step-2 profile-PATCH failure — surfaced inline (was silently swallowed:
+  // the deployed pre-016 backend dropped consultations_band as an unknown
+  // field without erroring, but a real 4xx/5xx/network failure also vanished
+  // and the wizard advanced as if saved). Stay on step 2 so Продължи retries;
+  // Пропусни still skips the save entirely.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // The single exit point — marks onboarding complete (once; the wizard
   // unmounts immediately after) and routes to the tour or plain close.
@@ -84,13 +90,15 @@ export default function OnboardingWizard({ me, onClose, onStartTour, welcomeMedi
     if (band) payload.consultations_band = band;
     if (Object.keys(payload).length > 0) {
       setSaving(true);
+      setSaveError(null);
       try {
         await api.updateMe(payload);
       } catch {
-        /* non-blocking — profile details are optional */
-      } finally {
+        setSaveError('Запазването не успя. Опитайте отново или пропуснете тази стъпка.');
         setSaving(false);
+        return; // stay on step 2 — retry possible, Пропусни still works
       }
+      setSaving(false);
     }
     setStep(3);
   }
@@ -189,6 +197,15 @@ export default function OnboardingWizard({ me, onClose, onStartTour, welcomeMedi
                   </div>
                 </WizardField>
               </div>
+              {saveError && (
+                <p
+                  role="alert"
+                  className="mt-4"
+                  style={{ color: 'var(--color-danger)', fontSize: 13 }}
+                >
+                  {saveError}
+                </p>
+              )}
             </div>
             <Footer
               primary={saving ? 'Запазване…' : 'Продължи'}
