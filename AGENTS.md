@@ -561,6 +561,42 @@ fetches (verified: only origin loaded on either page is the app's own).
   Продължи retries, and Пропусни still skips the save. The completion PATCH
   (`onboarding_completed: true`) stays best-effort/silent by design.
 
+# SpotlightTour — input lockdown + conditional auto-scroll (2026-06-12)
+
+`components/SpotlightTour.tsx`, two refinements; look and step content
+unchanged. While the tour is open the ONLY interactive things are the
+tooltip's controls and Esc.
+
+- **Clicks:** the full-viewport catcher now SWALLOWS every click — including
+  inside the spotlight cutout (the box-shadow spotlight div is
+  pointer-events:none, so the catcher is what any click lands on). It
+  previously ADVANCED on any click; do not reintroduce that. Its mousedown is
+  preventDefault'ed so a stray click can't pull focus out of the tooltip.
+- **Scroll lock:** the workspace scrolls the DOCUMENT (AppShell is
+  min-h-screen flex — no inner overflow container), so the lock is
+  `overflow:hidden` on `<html>`, restored exactly on close (inline value +
+  scroll-position belt). Wheel/touchmove are blocked via NATIVE non-passive
+  listeners on the overlay root — **React root wheel/touch listeners are
+  passive; a React onWheel preventDefault is silently ignored** (same class
+  of gotcha as the Esc handshake). Scroll keys are swallowed at document
+  level when focus is outside the tooltip.
+- **Focus trap:** focus moves to the primary button ONCE PER STEP (guarded by
+  a ref — rect re-measures on scroll/resize must not re-steal focus) and Tab
+  cycles within the tooltip's buttons. The overlay root stays MOUNTED between
+  steps (rect=null only hides spotlight+tooltip) so the lockdown never blinks.
+- **Esc:** adopts the `!e.defaultPrevented` handshake (the OnboardingWizard
+  convention). Wizard untouched; the Esc-in-SpecialtyTypeahead regression
+  (dropdown closes, wizard stays, second Esc closes wizard) re-verified live.
+- **Conditional auto-scroll:** a step scrolls its target into view ONLY when
+  the target is closer than VIEW_MARGIN (16px) to any viewport edge —
+  `scrollIntoView({ block:'center', behavior:'auto' })`, instant on purpose
+  so the second rAF measures a settled position (smooth would need
+  scrollend/rect-polling). **The lock does not block this**: overflow:hidden
+  kills only USER scrolling; hidden boxes stay programmatically scrollable
+  (verified live at 1280×600 — no unlock→scroll→re-lock dance needed). The
+  today-rail anchor stretches taller than a short viewport, so "fully in
+  view" is impossible there — centered is the designed outcome.
+
 # Known issues / gotchas
 
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
