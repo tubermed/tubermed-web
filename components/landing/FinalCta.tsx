@@ -13,7 +13,7 @@ export function FinalCta() {
             className="font-[family-name:var(--font-inter-tight)] text-3xl font-bold leading-[1.12] tracking-[-0.02em] md:text-[2.6rem]"
             style={{ color: '#fff' }}
           >
-            Върнете си вечерите.
+            Върнете си прегледа.
           </h2>
           <p className="mt-5 max-w-md text-lg leading-relaxed" style={{ color: 'var(--lp-on-navy)' }}>
             Спрете да пишете амбулаторни листове ръчно. Започнете да преглеждате готови.
