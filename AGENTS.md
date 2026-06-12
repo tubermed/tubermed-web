@@ -521,6 +521,46 @@ fetches (verified: only origin loaded on either page is the app's own).
   logo header). Forms/flows byte-identical; verified live: PIN tab
   click-through, signup render, both pages serve a byte-identical `<aside>`.
 
+# Caret fix on password reveal + wizard no-show diagnosis (2026-06-12)
+
+- **`components/PasswordInput.tsx` — caret/selection preserved across the
+  reveal type swap.** Swapping `<input type>` between `password`/`text`
+  RESETS the selection in some browsers (Firefox collapses it to 0 — observed
+  live: pressing the eye mid-word moved the caret to the FRONT and continued
+  typing inserted at the start). Pattern: every toggle path (mousedown
+  reveal, mouseup/leave/touchend hide, keyboard Space/Enter toggle) goes
+  through `setRevealedPreservingCaret`, which captures
+  `selectionStart/End/Direction` BEFORE the state change; a `useLayoutEffect`
+  keyed on `revealed` restores them via `setSelectionRange` AFTER the
+  re-rendered type swap commits, before paint. `setSelectionRange` does not
+  move focus, so the keyboard path (focus on the button) is safe. The reset
+  did NOT reproduce in headless Chromium (it preserves selection natively —
+  the restore is a no-op there); verified post-fix in the harness: caret
+  holds through hold-type-release-type, a shift+arrows selection survives
+  both swap directions, keyboard toggle keeps the input caret.
+
+- **Wizard no-show (fresh account, 2026-06-12) — trigger logic verified
+  CORRECT; cause is the migration-015 backfill timing.** The show-trigger in
+  `app/(workspace)/app/new-visit/page.tsx` depends ONLY on
+  `onboarding_completed_at === null`; regression-tested live against a
+  mocked `/me` serving the exact shape deployed during the report (pre-016
+  backend + 015 applied: `onboarding_completed_at: null` +
+  `avg_monthly_consultations`, `consultations_band` ABSENT) — the wizard
+  OPENS; a timestamp or an absent key correctly shows nothing. An account
+  created after migration 014 but BEFORE the 015 apply counts as "existing"
+  and gets STAMPED onboarded by 015's backfill — that is the likely no-show
+  cause. Reset a test doctor with
+  `UPDATE doctors SET onboarding_completed_at = NULL WHERE email = '...';`.
+  The deployed pre-016 `PATCH /me` IGNORED unknown fields (no 400) — the
+  wizard's `consultations_band` was silently dropped, not rejected; resolved
+  by the 016 + backend-push alignment (2026-06-12).
+
+- **Wizard step-2 profile PATCH failures are now surfaced** (were silently
+  swallowed and the wizard advanced as if saved): an inline Bulgarian
+  `role="alert"` line shows under the fields, the wizard STAYS on step 2 so
+  Продължи retries, and Пропусни still skips the save. The completion PATCH
+  (`onboarding_completed: true`) stays best-effort/silent by design.
+
 # Known issues / gotchas
 
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
