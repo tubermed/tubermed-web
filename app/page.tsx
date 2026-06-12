@@ -17,6 +17,7 @@ import { Pricing } from '@/components/landing/Pricing';
 import { Faq } from '@/components/landing/Faq';
 import { FinalCta } from '@/components/landing/FinalCta';
 import { Footer } from '@/components/landing/Footer';
+import { JsonLd } from '@/components/landing/JsonLd';
 
 export const metadata: Metadata = {
   alternates: { canonical: 'https://www.tubermed.com' },
@@ -25,6 +26,7 @@ export const metadata: Metadata = {
 export default function Home() {
   return (
     <div className={`lp ${interTight.variable}`}>
+      <JsonLd />
       {/* Without JS, keep reveal-on-scroll content visible (framer-motion sets
           inline opacity:0; this !important rule overrides it when JS is off). */}
       <noscript>
