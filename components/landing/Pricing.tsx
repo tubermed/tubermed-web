@@ -19,7 +19,7 @@ export function Pricing() {
             </h2>
             <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed" style={{ color: 'var(--lp-text-muted)' }}>
               TuberMed е в ранна фаза. Приемаме заявки от избрани кабинети в частната
-              практика. Месечен абонамент според обема консултации — индивидуална оферта.
+              практика. Месечен абонамент според обема консултации - индивидуална оферта.
             </p>
             <div className="mt-8 flex justify-center">
               <MagneticCta href="#access">Заявка за достъп</MagneticCta>

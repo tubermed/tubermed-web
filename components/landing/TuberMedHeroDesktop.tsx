@@ -332,7 +332,7 @@ export default function TuberMedHeroDesktop() {
                           {phase.id === 'recording' ? '00:03' : '00:00'}
                         </div>
                         <div className="tmd-recstatus">
-                          {phase.id === 'recording' ? 'Записва се — натиснете за стоп' : 'Натиснете за запис'}
+                          {phase.id === 'recording' ? 'Записва се - натиснете за стоп' : 'Натиснете за запис'}
                         </div>
                       </div>
                     </Screen>

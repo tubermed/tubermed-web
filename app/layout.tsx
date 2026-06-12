@@ -19,7 +19,7 @@ const jetbrains = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.tubermed.com"),
   title: {
-    default: "TuberMed — AI медицински скрайб за български лекари",
+    default: "TuberMed - AI медицински скрайб за български лекари",
     template: "%s · TuberMed",
   },
   description:
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     locale: "bg_BG",
     siteName: "TuberMed",
     url: "https://www.tubermed.com",
-    title: "TuberMed — AI медицински скрайб за български лекари",
+    title: "TuberMed - AI медицински скрайб за български лекари",
     description:
       "От разговор до амбулаторен лист за секунди. GDPR-съвместим, обработка в ЕС. Лекарят остава авторът.",
     images: [
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "TuberMed — AI медицински скрайб за български лекари",
+    title: "TuberMed - AI медицински скрайб за български лекари",
     description:
       "От разговор до амбулаторен лист за секунди. GDPR-съвместим, обработка в ЕС. Лекарят остава авторът.",
     images: ["/brand/og-image.png"],

@@ -41,7 +41,7 @@ export function Header({ anchorBase = '' }: { anchorBase?: string }) {
         className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 transition-[padding] duration-200"
         style={{ paddingTop: scrolled ? '0.6rem' : '1rem', paddingBottom: scrolled ? '0.6rem' : '1rem' }}
       >
-        <Link href="/" aria-label="TuberMed — начало" className="shrink-0">
+        <Link href="/" aria-label="TuberMed - начало" className="shrink-0">
           <Logo variant="light" size={32} />
         </Link>
 
