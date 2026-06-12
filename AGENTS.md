@@ -496,6 +496,31 @@ logins. **Decision: `app.tubermed.com` is the one canonical app origin. Do NOT
 - **For Dimitar (out of scope here):** long-term cleanup is making www serve
   ONLY the landing — a Vercel project/domain config decision, not code.
 
+# Branded auth panel — shared AuthBrandPanel (2026-06-12)
+
+The dark-navy left panel on `/app/login` and `/signup` (previously duplicated
+plain-text markup in each page) is now ONE shared component,
+`components/AuthBrandPanel.tsx` — both pages render it identically; edit it
+there, never re-fork per-page copies. Composition: quiet navy gradient
+(anchored on `--color-nav-bg`, shading toward the wizard WelcomeBand's family
+navies) + monogram tile + live-text "TuberMed" lockup + tagline + the static
+waveform motif + the GDPR line with an inline shield glyph. Static — no
+animation, so nothing to gate on `prefers-reduced-motion`; zero network
+fetches (verified: only origin loaded on either page is the app's own).
+
+- **`AuthTileMark` is a deliberate workspace-local COPY of the landing
+  `TileMark`** (`components/landing/brand.tsx`) — auth must not import landing
+  code. Gradient id renamed `lpTileGrad` → `authTileGrad` so both tiles can
+  coexist in one document. If the mark changes, update BOTH copies. The lockup
+  follows the brand.tsx approach (tile inline SVG + live wordmark text — the
+  `/public/brand` lockup SVGs use `<text>` in Inter Tight, which falls back to
+  a generic font via `<img>`); the workspace has no Inter Tight, so the
+  wordmark uses `--font-ui`.
+- The pages' local `Field`/`Input`/`Wordmark` helpers and the mobile header
+  are untouched (the panel stays `hidden md:flex` — mobile keeps the compact
+  logo header). Forms/flows byte-identical; verified live: PIN tab
+  click-through, signup render, both pages serve a byte-identical `<aside>`.
+
 # Known issues / gotchas
 
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks

@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, setSession, clearSession, getToken, ApiError } from "@/lib/api";
+import AuthBrandPanel from "@/components/AuthBrandPanel";
 import PasswordInput from "@/components/PasswordInput";
 import RememberMe from "@/components/RememberMe";
 
@@ -109,41 +110,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex" style={{ background: "var(--color-bg-surface)" }}>
       {/* ── Left: brand panel (hidden on mobile) ─────────────────────── */}
-      <aside
-        className="hidden md:flex flex-col items-stretch justify-between px-10 py-12"
-        style={{
-          background: "var(--color-nav-bg)",
-          color: "var(--color-nav-text)",
-          width: "clamp(420px, 42vw, 560px)",
-          flexShrink: 0,
-        }}
-      >
-        <div />
-        <div className="flex flex-col items-start gap-4">
-          {/* Brand mark slot — drop a true white/mono asset at
-              public/logo-white.svg and uncomment the <Image> below.
-              The source /logo.png is opaque RGB on white, so any
-              filter-based recolor produces a solid white block on
-              the navy panel — do NOT reintroduce the filter. */}
-          {/*
-          <Image src="/logo-white.svg" alt="" width={40} height={40} priority />
-          */}
-          <Wordmark size="lg" onDark />
-          <p
-            className="leading-snug"
-            style={{
-              color: "var(--color-nav-text)",
-              fontSize: 15,
-              maxWidth: 340,
-            }}
-          >
-            Амбулаторни листове, генерирани от консултацията.
-          </p>
-        </div>
-        <p style={{ color: "var(--color-nav-text)", fontSize: 12 }}>
-          GDPR-съвместим · Данните се обработват в EU
-        </p>
-      </aside>
+      <AuthBrandPanel />
 
       {/* ── Right: form panel ─────────────────────────────────────────── */}
       <main className="flex-1 flex flex-col">
