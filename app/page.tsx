@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { interTight } from '@/lib/landing-fonts';
 import { LenisProvider } from '@/components/landing/LenisProvider';
 import { ScrollProgress } from '@/components/landing/ScrollProgress';
@@ -16,6 +17,10 @@ import { Pricing } from '@/components/landing/Pricing';
 import { Faq } from '@/components/landing/Faq';
 import { FinalCta } from '@/components/landing/FinalCta';
 import { Footer } from '@/components/landing/Footer';
+
+export const metadata: Metadata = {
+  alternates: { canonical: 'https://www.tubermed.com' },
+};
 
 export default function Home() {
   return (
