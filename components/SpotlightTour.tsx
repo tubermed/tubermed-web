@@ -37,6 +37,9 @@ export interface TourStep {
 }
 
 const PAD = 8; // spotlight padding around the target rect
+// A target counts as "in view" only when it sits at least this far inside
+// every viewport edge — otherwise the step scrolls it into view first.
+const VIEW_MARGIN = 16;
 
 export default function SpotlightTour({
   steps,
@@ -140,8 +143,26 @@ export default function SpotlightTour({
     };
 
     raf = requestAnimationFrame(() => {
+      // Auto-scroll an off-screen target into view BEFORE measuring — but
+      // only when it isn't already sufficiently visible (an unconditional
+      // re-center would shift the page on every step). behavior:'auto'
+      // (instant) on purpose: the rAF below measures a SETTLED position;
+      // smooth scrolling would need scrollend/rect-polling. The scroll-lock
+      // (overflow:hidden on html) does not block this — hidden boxes stay
+      // programmatically scrollable (verified live); only user scrolling is
+      // dead.
       const el = document.querySelector(steps[idx]?.selector ?? '');
-      if (el) el.scrollIntoView({ block: 'center' });
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const outOfView =
+          r.top < VIEW_MARGIN ||
+          r.bottom > window.innerHeight - VIEW_MARGIN ||
+          r.left < VIEW_MARGIN ||
+          r.right > window.innerWidth - VIEW_MARGIN;
+        if (outOfView) {
+          el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+        }
+      }
       // Second frame: measure AFTER the scroll has settled.
       raf = requestAnimationFrame(measure);
     });
