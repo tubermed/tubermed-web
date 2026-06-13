@@ -302,6 +302,75 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   New-visit (workspace) field + loading-skeleton primitives.
+   Hover/focus/invalid need real CSS (inline styles can't express
+   them), mirroring the landing's `.lp-input` but on the workspace
+   `--color-*` palette. Authored in @layer components so Tailwind
+   utilities still win where a field adds one (e.g. `pr-7` on the
+   ЕГН field reserving room for its ✓).
+   ───────────────────────────────────────────────────────────── */
+@layer components {
+  .nv-field {
+    width: 100%;
+    height: var(--control-h);
+    padding: 0 0.7rem;
+    border-radius: var(--radius-md);
+    border: 1.5px solid var(--color-input-border);
+    background: #fff;
+    color: #1F3552;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .nv-field::placeholder { color: var(--color-text-muted-new); }
+  .nv-field:hover { border-color: var(--color-input-border-hover); }
+  .nv-field:focus,
+  .nv-field:focus-visible {
+    border-color: var(--color-input-border-hover);
+    box-shadow: 0 0 0 3px var(--color-focus-ring);
+  }
+  /* Invalid — driven by the SAME aria-invalid the ЕГН validation already sets,
+     so the error styling reuses existing logic (no new conditionals). */
+  .nv-field[aria-invalid="true"] { border-color: var(--color-danger); }
+  .nv-field[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px var(--color-danger-soft); }
+  .nv-field:disabled {
+    background: var(--color-bg-subtle);
+    color: var(--color-text-muted-new);
+    border-color: var(--color-border-soft);
+    cursor: not-allowed;
+  }
+  /* Multiline (chief-complaint) — same outline, grows from a comfortable min. */
+  .nv-field--area { height: auto; min-height: 92px; padding: 0.55rem 0.7rem; resize: vertical; }
+  /* Read-only derived display (Възраст) — reads as settled, not editable. */
+  .nv-field--readonly {
+    border-color: var(--color-border-soft);
+    background: var(--color-bg-subtle);
+    color: var(--color-text-secondary);
+  }
+  .nv-field--readonly:hover { border-color: var(--color-border-soft); }
+
+  /* Loading skeleton — identical footprint to the control it replaces, so a
+     value landing causes ZERO reflow. Reduced-motion stops the shimmer below. */
+  .nv-skeleton {
+    border-radius: var(--radius-md);
+    background: linear-gradient(90deg, #EEF1F6 25%, #E2E7F0 37%, #EEF1F6 63%);
+    background-size: 400% 100%;
+    animation: nv-shimmer 1.3s ease infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nv-field { transition: none; }
+    .nv-skeleton { animation: none; background-position: 0 0; }
+  }
+}
+
+@keyframes nv-shimmer {
+  from { background-position: 100% 0; }
+  to   { background-position: 0 0; }
+}
+
 /* ── Result page 3-column grid ─────────────────────────────── */
 
 .result-grid {

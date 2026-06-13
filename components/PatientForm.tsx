@@ -283,19 +283,24 @@ function SectionCard({ title, children, dataTour }: { title: string; children: R
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <span
-      className="block text-xs mb-1.5"
-      style={{ color: 'var(--color-text-muted)' }}
+      className="block mb-1.5 font-medium"
+      style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}
     >
       {children}
     </span>
   );
 }
 
+// Shared field treatment. The visual styling (navy 1.5px outline, --control-h,
+// hover/focus ring, aria-invalid state) lives in `.nv-field` (globals.css) so the
+// hover/focus states inline styles can't express actually work. inputStyle() is
+// kept as an empty shim so the existing `style={inputStyle()}` call sites compile
+// unchanged; the few fields with real inline overrides set them explicitly.
 function inputClass() {
-  return 'w-full px-3 py-2 rounded-md outline-none text-sm';
+  return 'nv-field';
 }
 function inputStyle(): React.CSSProperties {
-  return { background: 'white', border: '1px solid var(--color-border-mid)', color: 'var(--color-text)' };
+  return {};
 }
 
 function IdentificationSection({
@@ -524,8 +529,7 @@ function IdentificationSection({
           <label>
             <FieldLabel>Възраст</FieldLabel>
             <div
-              className={`${inputClass()} flex items-center font-[family-name:var(--font-jetbrains)]`}
-              style={{ ...inputStyle(), background: 'var(--color-border-light)', color: 'var(--color-text-muted)' }}
+              className={`${inputClass()} nv-field--readonly flex items-center font-[family-name:var(--font-jetbrains)]`}
             >
               {age !== null ? `${age} г.` : '—'}
             </div>
@@ -658,10 +662,6 @@ function EgnField({
       <span className="relative block">
         <input
           className={`${inputClass()} font-[family-name:var(--font-jetbrains)] tracking-wider pr-7`}
-          style={{
-            ...inputStyle(),
-            borderColor: egnInvalid ? 'var(--color-red)' : 'var(--color-border-mid)',
-          }}
           value={state.national_id}
           onChange={(e) => handleNationalIdChange(e.target.value)}
           disabled={state.national_id_type === 'none'}
@@ -680,7 +680,7 @@ function EgnField({
         )}
       </span>
       {egnInvalid && (
-        <span className="block text-xs mt-1" style={{ color: 'var(--color-red)' }} role="alert">
+        <span className="block text-xs mt-1" style={{ color: 'var(--color-danger)' }} role="alert">
           Невалидно ЕГН — датата на раждане не може да бъде извлечена.
         </span>
       )}
@@ -791,8 +791,7 @@ function ChiefComplaintSection({ state, set }: { state: PatientFormState; set: S
   return (
     <SectionCard title="Главна жалба">
       <textarea
-        className="w-full px-3 py-2 rounded-md outline-none text-sm leading-relaxed resize-y"
-        style={{ ...inputStyle(), minHeight: '92px' }}
+        className={`${inputClass()} nv-field--area leading-relaxed`}
         value={state.chief_complaint}
         onChange={(e) => set('chief_complaint', e.target.value)}
         placeholder="напр. Болки в гърдите от 2 дни, задух при усилие…"
