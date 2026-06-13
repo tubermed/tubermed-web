@@ -260,22 +260,76 @@ export default function PatientForm({
 // ── Section: Идентификация ──────────────────────────────────────────────────
 type SetFn = <K extends keyof PatientFormState>(key: K, value: PatientFormState[K]) => void;
 
-function SectionCard({ title, children, dataTour }: { title: string; children: React.ReactNode; dataTour?: string }) {
+// Section icons — small Tabler-style glyphs shown white inside the 32px navy
+// header tile. Inline SVG (no new deps); presentational only.
+function SvgIcon({ children }: { children: React.ReactNode }) {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {children}
+    </svg>
+  );
+}
+function IconIdentity()  { return <SvgIcon><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="11" r="2" /><path d="M5.5 16.4a3 3 0 016 0" /><path d="M14 10h4M14 13.5h4" /></SvgIcon>; }
+function IconClinical()  { return <SvgIcon><path d="M3 12h3.5l2-5 4 10 2-5H21" /></SvgIcon>; }
+function IconVisit()     { return <SvgIcon><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2.5v3M16 2.5v3" /><path d="M8.5 14.5l2.2 2.2 4.3-4.3" /></SvgIcon>; }
+function IconComplaint() { return <SvgIcon><path d="M20 11.5a7.5 7.5 0 01-10.7 6.8L4 20l1.7-5.2A7.5 7.5 0 1120 11.5z" /></SvgIcon>; }
+function IconDoc()       { return <SvgIcon><path d="M14 3v5h5" /><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V8z" /><path d="M8.5 13h7M8.5 17h5" /></SvgIcon>; }
+
+// Elevated section card: surface + hairline + raised shadow, a tinted header
+// band (navy icon tile + heading + one-line subtitle), and a 16px body. Chrome
+// only — `dataTour` + `children` pass straight through (the A4 tour anchors and
+// every field/handler are unchanged). overflow stays VISIBLE so the name
+// typeahead dropdown (absolutely positioned inside the body) is never clipped.
+function SectionCard({
+  title, subtitle, icon, children, dataTour,
+}: {
+  title: string;
+  subtitle?: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+  dataTour?: string;
+}) {
   return (
     <section
       data-tour={dataTour}
-      className="rounded-xl"
-      style={{ background: 'var(--color-bg-card)', border: '1px solid var(--color-border)' }}
+      style={{
+        background: 'var(--color-bg-surface)',
+        border: '1px solid var(--color-border-soft)',
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-raised)',
+      }}
     >
-      <div className="px-6 pt-5 pb-2">
-        <h3
-          className="text-[10px] uppercase tracking-[0.22em] font-semibold"
-          style={{ color: 'var(--color-text-hint)' }}
-        >
-          {title}
-        </h3>
+      <div
+        className="flex items-center gap-3 px-4 py-3"
+        style={{
+          background: 'var(--color-surface-tint)',
+          borderBottom: '1px solid var(--color-border-soft)',
+          borderTopLeftRadius: 'var(--radius-lg)',
+          borderTopRightRadius: 'var(--radius-lg)',
+        }}
+      >
+        {icon && (
+          <span
+            aria-hidden
+            className="flex items-center justify-center flex-shrink-0"
+            style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--color-accent)', color: '#fff' }}
+          >
+            {icon}
+          </span>
+        )}
+        <div className="flex flex-col min-w-0">
+          <h3 className="font-medium leading-tight truncate" style={{ fontSize: '15px', color: 'var(--color-heading)' }}>
+            {title}
+          </h3>
+          {subtitle && (
+            <span className="leading-tight truncate" style={{ fontSize: '12px', color: 'var(--color-text-muted-new)', marginTop: '1px' }}>
+              {subtitle}
+            </span>
+          )}
+        </div>
       </div>
-      <div className="px-6 pb-5">{children}</div>
+      <div className="px-4 py-4">{children}</div>
     </section>
   );
 }
@@ -424,7 +478,7 @@ function IdentificationSection({
 
   return (
     <>
-    <SectionCard title="Идентификация" dataTour="egn">
+    <SectionCard title="Идентификация" subtitle="ЕГН, имена и основни данни" icon={<IconIdentity />} dataTour="egn">
       {/* Loaded-patient banner + clear control. The search bar that used to host
           the patient chip is gone; clearing here returns the form to the empty
           NEW-patient state (page resets dirty state in the same pass). */}
@@ -692,7 +746,7 @@ function EgnField({
 function ClinicalContextSection({ state, set }: { state: PatientFormState; set: SetFn }) {
   const [mkbOpen, setMkbOpen] = useState(false);
   return (
-    <SectionCard title="Клиничен контекст">
+    <SectionCard title="Клиничен контекст" subtitle="Осигуряване, алергии, хронични състояния" icon={<IconClinical />}>
       <div className="flex flex-col gap-4">
         <label className="md:max-w-sm">
           <FieldLabel>Здравно осигуряване</FieldLabel>
@@ -761,7 +815,7 @@ const VISIT_TYPES: Array<{ value: VisitType; label: string }> = [
 
 function VisitTypeSection({ state, set }: { state: PatientFormState; set: SetFn }) {
   return (
-    <SectionCard title="Тип на посещението">
+    <SectionCard title="Тип на посещението" subtitle="Характер на прегледа" icon={<IconVisit />}>
       <div className="flex flex-wrap gap-2">
         {VISIT_TYPES.map((t) => {
           const isActive = state.visit_type === t.value;
@@ -789,7 +843,7 @@ function VisitTypeSection({ state, set }: { state: PatientFormState; set: SetFn 
 // ── Section: Главна жалба ───────────────────────────────────────────────────
 function ChiefComplaintSection({ state, set }: { state: PatientFormState; set: SetFn }) {
   return (
-    <SectionCard title="Главна жалба">
+    <SectionCard title="Главна жалба" subtitle="Накратко защо идва пациентът" icon={<IconComplaint />}>
       <textarea
         className={`${inputClass()} nv-field--area leading-relaxed`}
         value={state.chief_complaint}
@@ -807,7 +861,7 @@ function ChiefComplaintSection({ state, set }: { state: PatientFormState; set: S
 // ── Section: Документация ───────────────────────────────────────────────────
 function DocumentationSection({ state, set }: { state: PatientFormState; set: SetFn }) {
   return (
-    <SectionCard title="Документация">
+    <SectionCard title="Документация" subtitle="Език на документа" icon={<IconDoc />}>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <label>
           <FieldLabel>Език</FieldLabel>
