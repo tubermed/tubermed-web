@@ -33,8 +33,10 @@ export interface DoctorInfo {
   id: string;
   name: string;
   specialty?: string;
-  clinic?: string;
-  org_slug?: string;
+  // Present on the login/signup response's doctor object at runtime (the backend
+  // nests the org name here). Optional + nullable: it can be absent on older
+  // sessions and null when the doctor's organization is unnamed.
+  organizationName?: string | null;
 }
 
 export interface Session {

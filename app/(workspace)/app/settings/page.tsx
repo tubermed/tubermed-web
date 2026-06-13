@@ -18,7 +18,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, clearSession, getSession, ApiError } from '@/lib/api';
-import type { MeResponse, UpdateMePayload, DoctorInfo } from '@/lib/api';
+import type { MeResponse, UpdateMePayload } from '@/lib/api';
 import SpecialtyTypeahead from '@/components/SpecialtyTypeahead';
 import PasswordInput from '@/components/PasswordInput';
 
@@ -66,12 +66,9 @@ function formFromMe(m: MeResponse): ProfileForm {
 
 // Instant seed from the cached login session so the common fields paint correct
 // on first render (no empty-then-fill). The runtime session doctor carries
-// organizationName (login response) even though the DoctorInfo type doesn't
-// declare it — read it via a localized cast (api.ts is out of scope here).
+// organizationName (login response), now declared on DoctorInfo.
 function seedFromSession(): ProfileForm {
-  const d = getSession()?.doctor as
-    | (DoctorInfo & { organizationName?: string | null })
-    | undefined;
+  const d = getSession()?.doctor;
   if (!d) return EMPTY_FORM;
   return {
     ...EMPTY_FORM,
