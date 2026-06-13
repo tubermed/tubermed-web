@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import type { TodayResponse, TodayConsultation } from '@/lib/types';
+import SkeletonInput from './SkeletonInput';
 
 interface TodayConsultationsProps {
   /** Bump this to force a refresh (e.g. after starting a visit). */
@@ -37,28 +38,49 @@ export default function TodayConsultations({ refreshKey, currentConsultationId }
 
   return (
     <aside
-      className="rounded-xl flex flex-col"
-      style={{ background: 'var(--color-bg-card)', border: '1px solid var(--color-border)' }}
+      className="flex flex-col"
+      style={{
+        background: 'var(--color-bg-surface)',
+        border: '1px solid var(--color-border-soft)',
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-raised)',
+      }}
     >
-      <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--color-border)' }}>
-        <div>
-          <div className="text-xs uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-hint)' }}>
+      <div
+        className="flex items-center gap-3 px-4 py-3"
+        style={{
+          background: 'var(--color-surface-tint)',
+          borderBottom: '1px solid var(--color-border-soft)',
+          borderTopLeftRadius: 'var(--radius-lg)',
+          borderTopRightRadius: 'var(--radius-lg)',
+        }}
+      >
+        <span
+          aria-hidden
+          className="flex items-center justify-center flex-shrink-0"
+          style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--color-accent)', color: '#fff' }}
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2.5v3M16 2.5v3" />
+          </svg>
+        </span>
+        <div className="flex flex-col min-w-0">
+          <span className="text-[10px] uppercase tracking-[0.18em] font-medium" style={{ color: 'var(--color-text-muted-new)' }}>
             График
-          </div>
-          <div
-            className="text-sm font-semibold"
-            style={{ color: 'var(--color-ink)' }}
-          >
-            {dateLabel}
-          </div>
+          </span>
+          <span className="text-sm font-semibold leading-tight truncate" style={{ color: 'var(--color-heading)' }}>
+            {dateLabel || '—'}
+          </span>
         </div>
+        <div className="flex-1" />
         {data && (
-          <div
-            className="text-sm font-[family-name:var(--font-jetbrains)] px-2 py-0.5 rounded"
-            style={{ background: 'var(--color-brand-soft)', color: 'var(--color-brand)' }}
+          <span
+            className="text-sm font-[family-name:var(--font-jetbrains)] px-2 py-0.5 rounded-md flex-shrink-0"
+            style={{ background: 'var(--color-accent-soft)', color: 'var(--color-accent)' }}
           >
             {data.done}/{data.total}
-          </div>
+          </span>
         )}
       </div>
 
@@ -68,18 +90,30 @@ export default function TodayConsultations({ refreshKey, currentConsultationId }
 
       <div className="flex-1 overflow-y-auto px-2 py-2 max-h-[60vh]">
         {err && (
-          <div className="px-2 py-3 text-xs" style={{ color: 'var(--color-red)' }}>
+          <div className="px-2 py-3 text-xs" style={{ color: 'var(--color-danger)' }}>
             {err}
           </div>
         )}
         {!err && !data && (
-          <div className="px-2 py-3 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-            Зареждане…
+          <div className="flex flex-col gap-2 px-2 py-2">
+            <SkeletonInput height="44px" />
+            <SkeletonInput height="44px" />
+            <SkeletonInput height="44px" />
           </div>
         )}
         {data && data.consultations.length === 0 && (
-          <div className="px-2 py-3 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-            Все още няма консултации днес.
+          <div className="flex flex-col items-center text-center gap-2 px-4 py-8">
+            <span aria-hidden style={{ color: 'var(--color-text-muted-new)' }}>
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2.5v3M16 2.5v3" />
+              </svg>
+            </span>
+            <div className="text-xs leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
+              Все още няма консултации днес.
+              <br />
+              Готовите прегледи ще се появят тук.
+            </div>
           </div>
         )}
         {data && data.consultations.map((c) => (
