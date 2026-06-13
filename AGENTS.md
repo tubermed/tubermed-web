@@ -601,6 +601,80 @@ tooltip's controls and Esc.
   today-rail anchor stretches taller than a short viewport, so "fully in
   view" is impossible there — centered is the designed outcome.
 
+# Настройки (settings) v1 + sidebar trim + gear (2026-06-13)
+
+The dead grey "Настройки" sidebar item became a real settings page, the sidebar
+was trimmed, and the top-bar gear was wired. Backend contract:
+`tubermed-backend/CLAUDE.md` (migration 017 + `/me` practice fields +
+`POST /api/auth/change-password`). Workspace `--color-*` tokens only (no landing
+`--lp-*`, no framer-motion/Lenis).
+
+- **Sidebar trim (`f442e3e`).** `components/AppShell.tsx` `NAV_ITEMS` dropped
+  "AI записи" + "График" (both disabled `скоро` placeholders) and their now-
+  orphaned local icon components (`SparkleIcon` / `CalendarIcon`). Sidebar is now
+  **Нов преглед · Пациенти · Шаблони · Настройки** (Шаблони still disabled).
+  Rationale: scheduling lives in the doctor's PMS; the AI-records item was
+  dropped. ⚠ Do NOT touch `components/TodayConsultations.tsx` — its "График" is
+  the "Днешен ден" right-rail header, a separate thing.
+
+- **Настройки v1 (`fc10ab1`, `0546bdb`, `7f11bbc`).** New
+  `app/(workspace)/app/settings/page.tsx` (route `/app/settings`, inside the
+  `(workspace)` group → auth gate + AppShell from the layout). Four sections:
+  **Профил** (Име · Специалност via `SpecialtyTypeahead` · Място на работа = the
+  org name) · **Практика и документ** (Адрес · Рег.№ РЗИ · Договор с НЗОК № ·
+  Телефон · УИН) · **Сигурност** (Смяна на парола via `PasswordInput` · Изход) ·
+  **За приложението** (claim-free: app name + version + a support-email
+  placeholder — NO data-retention/residency/processor wording, pre-attorney).
+  Loads via `api.me()`, saves via `api.updateMe()` (DIFF-based — only non-empty
+  CHANGED fields are sent; empty never blanks per the backend contract; an
+  unchanged `org_name` is skipped to avoid needless org-slug regeneration).
+  Password change via `api.changePassword`; the 400 `password_change_unavailable`
+  (PIN-only акаунт) surfaces as a Bulgarian line. Local `Card`/`Field`/`TextInput`
+  helpers — there is NO shared `SectionCard` export (that one is private to
+  `PatientForm.tsx`). AppShell flips Настройки to `href: '/app/settings'`.
+  - **`lib/api.ts` widened:** `MeResponse` + `UpdateMePayload` gained OPTIONAL
+    `uin` + the four practice fields (+ `name` on the payload); new
+    `api.changePassword({ current_password, new_password })` →
+    `POST /api/auth/change-password`. The new `MeResponse` keys are
+    `?: string | null` (undefined while migration 017 is unapplied — the same
+    absent-key contract as the onboarding keys).
+  - **Export header (`lib/exporters.ts`):** `generatePdfHtml` / `generateWordHtml`
+    take an OPTIONAL 3rd `ExportIdentity` param (`{ practiceName, address,
+    rziNumber, nzokContract, phone, doctorName, specialty, uin }`). With content
+    it renders a practice/doctor header block ABOVE "Амбулаторен лист" + a
+    "Подпис и печат" line near the bottom. **An empty/missing identity renders the
+    document BYTE-IDENTICAL to before** (the interpolations collapse to `''` —
+    verified). The result page fetches identity via `api.me()` best-effort and
+    NEVER blocks export on a failed `/me`.
+
+- **Настройки restructure + gear (`9957f8c`, `dff7636`).** The page was
+  reorganized from one long scroll into a **left sub-nav + one pane per section**
+  (local `useState<PaneKey>('profile')` — deliberately NO routing/query-param
+  panes; deep-linking is a future nice-to-have). Active sub-nav item:
+  `--color-accent-soft` bg + `--color-ink` text + medium weight + full radius;
+  responsive (vertical column ≥640px, a wrapping row below). **Mount flicker fix
+  ("fields pop-in"):** the form is SEEDED synchronously from `getSession()` in the
+  `useState` initializer (Име / Специалност / Място на работа paint correct on
+  first render); the me()-only practice fields render skeleton bars
+  (`--color-bg-subtle`, input height) until `api.me()` resolves — never an empty
+  input that then fills; a `userEditedRef` guards the me() reconcile from
+  clobbering an in-progress edit; a failed `me()` keeps the seeded values + an
+  inline error. Top-bar gear (`components/WorkspaceTopBar.tsx`) is now a real
+  `<Link href="/app/settings" aria-label="Настройки">` with a live hover
+  (`--color-ink` on `--color-accent-soft`), pulled OUT of the `aria-hidden`
+  placeholder cluster (a focusable element can't live under `aria-hidden`); the
+  bell + avatar remain non-functional placeholders. The top bar renders on
+  `/app/new-visit` (NOT on `/app/settings`, which has no top bar) — that's where
+  the gear is reached.
+
+- **`DoctorInfo` corrected to the runtime shape (`8614b25`).** `lib/api.ts`
+  `DoctorInfo` previously mis-declared `clinic` / `org_slug` (never sent by the
+  backend) and OMITTED `organizationName` (which the login/signup response
+  actually nests on `doctor`). It is now `{ id; name; specialty?;
+  organizationName?: string | null }` — so `getSession().doctor.organizationName`
+  is typed (the settings seed reads it directly, no cast) and `ClinicSidebar` now
+  shows the real clinic name instead of always falling back to its default.
+
 # Known issues / gotchas
 
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
