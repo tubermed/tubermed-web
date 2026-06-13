@@ -31,6 +31,7 @@ export default function PatientSearch({
   const [results, setResults] = useState<PatientSearchHit[]>([]);
   const [match, setMatch] = useState<PatientSearchResponse['match']>('none');
   const [hint, setHint] = useState<string | null>(null);
+  const [focused, setFocused] = useState(false);
   const reqIdRef = useRef(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const wrapRef  = useRef<HTMLDivElement | null>(null);
@@ -112,8 +113,12 @@ export default function PatientSearch({
   return (
     <div ref={wrapRef} className="relative w-full max-w-[420px]">
       <div
-        className="flex items-center gap-2 px-3 py-2 rounded-md"
-        style={{ background: 'white', border: '1px solid var(--color-border-mid)' }}
+        className="flex items-center gap-2 px-3 py-2 rounded-md transition-shadow"
+        style={{
+          background: 'white',
+          border: `1.5px solid ${focused ? 'var(--color-input-border-hover)' : 'var(--color-input-border)'}`,
+          boxShadow: focused ? '0 0 0 3px var(--color-focus-ring)' : 'none',
+        }}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
              style={{ color: 'var(--color-text-hint)' }}>
@@ -138,7 +143,8 @@ export default function PatientSearch({
               setLoading(false);
             }
           }}
-          onFocus={() => setOpen(true)}
+          onFocus={() => { setOpen(true); setFocused(true); }}
+          onBlur={() => setFocused(false)}
           placeholder={placeholder}
           className="flex-1 outline-none bg-transparent text-sm"
           style={{ color: 'var(--color-text)' }}

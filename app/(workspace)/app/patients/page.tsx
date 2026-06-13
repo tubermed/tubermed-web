@@ -21,6 +21,8 @@ import PatientSearch from '@/components/PatientSearch';
 import RevealEgnButton from '@/components/RevealEgnButton';
 import ChipInput from '@/components/ChipInput';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
+import SkeletonInput from '@/components/SkeletonInput';
+import { Button } from '@/components/ui/Button';
 import { api, ApiError } from '@/lib/api';
 import { ageFromBirthDate } from '@/lib/age';
 import type {
@@ -220,11 +222,11 @@ export default function PatientsPage() {
         <section className="flex flex-col gap-4 min-w-0">
           <div
             className="rounded-xl p-4"
-            style={{ background: 'var(--color-bg-card)', border: '1px solid var(--color-border)' }}
+            style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
           >
             <div
               className="text-xs uppercase tracking-[0.18em] mb-2 font-medium"
-              style={{ color: 'var(--color-text-hint)' }}
+              style={{ color: 'var(--color-heading)' }}
             >
               Търсене
             </div>
@@ -244,13 +246,13 @@ export default function PatientsPage() {
           {patient && (
             <div
               className="rounded-xl flex flex-col min-h-0"
-              style={{ background: 'var(--color-bg-card)', border: '1px solid var(--color-border)' }}
+              style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
             >
               <div
                 className="px-4 py-3 border-b flex items-center justify-between"
-                style={{ borderColor: 'var(--color-border)' }}
+                style={{ borderColor: 'var(--color-border-soft)' }}
               >
-                <div className="text-xs uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-hint)' }}>
+                <div className="text-xs uppercase tracking-[0.18em]" style={{ color: 'var(--color-heading)' }}>
                   Посещения
                 </div>
                 <div
@@ -262,8 +264,12 @@ export default function PatientsPage() {
               </div>
 
               {loadingList ? (
-                <div className="px-4 py-6 text-sm" style={{ color: 'var(--color-text-hint)' }}>
-                  Зареждане…
+                <div className="divide-y" style={{ borderColor: 'var(--color-border-soft)' }}>
+                  {[0, 1, 2, 3].map((i) => (
+                    <div key={i} className="px-4 py-3">
+                      <SkeletonInput height="52px" />
+                    </div>
+                  ))}
                 </div>
               ) : visits.length === 0 ? (
                 <div className="px-4 py-6 text-sm" style={{ color: 'var(--color-text-hint)' }}>
@@ -271,7 +277,7 @@ export default function PatientsPage() {
                 </div>
               ) : (
                 <>
-                  <ul className="divide-y" style={{ borderColor: 'var(--color-border)' }}>
+                  <ul className="divide-y" style={{ borderColor: 'var(--color-border-soft)' }}>
                     {visits.map((v) => (
                       <li key={v.id}>
                         <VisitRow
@@ -283,17 +289,14 @@ export default function PatientsPage() {
                     ))}
                   </ul>
                   {hasMore && (
-                    <button
+                    <Button
+                      variant="secondary"
+                      className="m-3"
                       onClick={handleLoadMore}
                       disabled={loadingMore}
-                      className="m-3 px-3 py-2 rounded-md text-sm font-medium border transition hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{
-                        borderColor: 'var(--color-border-mid)',
-                        color: 'var(--color-text-muted)',
-                      }}
                     >
                       {loadingMore ? 'Зарежда…' : 'Покажи още'}
-                    </button>
+                    </Button>
                   )}
                 </>
               )}
@@ -312,25 +315,24 @@ export default function PatientsPage() {
                   it's separate from the per-visit note below. */}
               <div
                 className="rounded-xl p-5"
-                style={{ background: 'var(--color-bg-card)', border: '1px solid var(--color-border)' }}
+                style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
               >
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between gap-3 mb-3">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-hint)' }}>
+                    <div className="text-xs uppercase tracking-[0.18em]" style={{ color: 'var(--color-heading)' }}>
                       Данни за пациента
                     </div>
                     <div className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-hint)' }}>
                       Промените тук не засягат предишни прегледи.
                     </div>
                   </div>
-                  <button
+                  <Button
+                    variant="primary"
                     onClick={handleSavePatient}
                     disabled={!dirty || savingPatient}
-                    className="px-3 py-1.5 rounded-md text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-                    style={{ background: 'var(--gradient-brand)' }}
                   >
                     {savingPatient ? 'Запазва…' : 'Запази'}
-                  </button>
+                  </Button>
                 </div>
 
                 <div className="space-y-3">
@@ -420,11 +422,13 @@ function VisitRow({
   return (
     <button
       onClick={onClick}
-      className="w-full text-left px-4 py-3 flex flex-col gap-1 transition"
+      className="w-full text-left px-4 py-3 flex flex-col gap-1 transition-colors"
       style={{
         background: active ? 'var(--color-brand-soft)' : 'transparent',
         borderLeft: active ? '3px solid var(--color-brand)' : '3px solid transparent',
       }}
+      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--color-bg-subtle)'; }}
+      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
     >
       <div className="flex items-center justify-between gap-2">
         <span
@@ -479,7 +483,7 @@ function PatientIdentityCard({ patient }: { patient: PatientSummary }) {
   return (
     <div
       className="rounded-xl px-5 py-4"
-      style={{ background: 'var(--color-bg-card)', border: '1px solid var(--color-border)' }}
+      style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <span className="text-xl font-semibold" style={{ color: 'var(--color-ink)' }}>
@@ -512,14 +516,27 @@ function PatientIdentityCard({ patient }: { patient: PatientSummary }) {
 function EmptyPanel({ message }: { message: string }) {
   return (
     <div
-      className="rounded-xl px-6 py-12 text-center text-sm"
+      className="rounded-xl px-6 py-12 flex flex-col items-center justify-center text-center gap-3"
       style={{
-        background: 'var(--color-bg-card)',
-        border: '1px dashed var(--color-border)',
-        color: 'var(--color-text-hint)',
+        background: 'var(--color-surface-tint)',
+        border: '1px dashed var(--color-border-strong)',
       }}
     >
-      {message}
+      <span
+        aria-hidden
+        className="flex items-center justify-center flex-shrink-0"
+        style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--color-accent-soft)', color: 'var(--color-accent)' }}
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M14 3v5h5" />
+          <path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V8z" />
+          <path d="M8.5 13h7M8.5 17h4" />
+        </svg>
+      </span>
+      <span className="text-sm max-w-[34ch]" style={{ color: 'var(--color-text-secondary)' }}>
+        {message}
+      </span>
     </div>
   );
 }
@@ -624,8 +641,8 @@ function NoteHeader({ detail, dateLabel }: { detail: ConsultationDetail; dateLab
   const vtype = detail.visit_type ? VISIT_TYPE_LABEL[detail.visit_type] : null;
   return (
     <div
-      className="bg-white rounded-2xl border p-6 flex items-baseline justify-between flex-wrap gap-3"
-      style={{ borderColor: 'var(--color-border)' }}
+      className="bg-white rounded-xl p-6 flex items-baseline justify-between flex-wrap gap-3"
+      style={{ border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
     >
       <div>
         <h2 className="text-2xl font-semibold" style={{ color: 'var(--color-ink)' }}>
@@ -660,8 +677,8 @@ function NoteHeader({ detail, dateLabel }: { detail: ConsultationDetail; dateLab
 function ReadOnlySection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div
-      className="bg-white rounded-2xl border p-6"
-      style={{ borderColor: 'var(--color-border)' }}
+      className="bg-white rounded-xl p-6"
+      style={{ border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
     >
       <h3 className="text-xl font-semibold mb-4" style={{ color: 'var(--color-ink)' }}>
         {title}
