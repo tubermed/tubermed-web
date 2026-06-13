@@ -282,12 +282,16 @@ truth: `app/page.tsx`.
 - **Deps (landing-only).** `framer-motion` + `lenis` — used ONLY in landing
   client islands. Deliberate, scoped exception to the earlier "CSS-first, no
   Framer Motion" stance; do NOT pull either into the workspace app.
-- **⚠ Landing tokens are SEPARATE from the workspace palette.** `app/globals.css`
-  defines a landing-only `--lp-*` Navy token set (`#274C77` / `#1D3B5C` /
-  `#4F8FBF` / `#8FC0E8`) scoped under the `.lp` wrapper on the landing root. The
-  workspace `--color-*` tokens are UNTOUCHED — the landing leads the rebrand; the
-  app keeps its existing palette. **Do NOT "unify" `--lp-*` and `--color-*`** —
-  they are intentionally distinct.
+- **⚠ Landing tokens (`--lp-*`) and workspace tokens (`--color-*`) are SEPARATE
+  SETS.** `app/globals.css` defines a landing-only `--lp-*` Navy token set
+  (`#274C77` / `#1D3B5C` / `#4F8FBF` / `#8FC0E8`) scoped under the `.lp` wrapper
+  on the landing root. As of 2026-06-13 the workspace `--color-*` VALUES were
+  shifted into the same brand-navy family (`#274C77` kit — accent/brand
+  `#274C77`, ink/brand-dark `#142740`, navy rail `#1B2D49`) so the app reads
+  on-brand with the landing. But the two token SETS stay deliberately distinct:
+  `--lp-*` is landing-only, `--color-*` is the app's. **Do NOT "unify" the two
+  sets / merge the variable names** — aligning their VALUES to the brand is
+  intentional; collapsing `--lp-*` and `--color-*` into one set is not.
 - **Fonts (landing-only).** Inter Tight (display/wordmark) + self-hosted Golos
   Text (hero in-mock body) via `next/font` (`lib/landing-fonts.ts`), applied only
   on the landing — the workspace font payload is unchanged. A Google-Fonts
