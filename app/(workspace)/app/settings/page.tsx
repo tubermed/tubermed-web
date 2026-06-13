@@ -1,18 +1,24 @@
 'use client';
 
-// Настройки v1 — doctor profile + practice/document identity + security.
+// Настройки — doctor profile + practice/document identity + security.
 // Lives in the (workspace) route group, so the auth gate + AppShell come from
 // app/(workspace)/layout.tsx; this page renders only the inner content. Uses the
 // workspace --color-* tokens (NOT the landing --lp-* set) and the shared
-// SpecialtyTypeahead / PasswordInput, matching the SectionCard look from
-// PatientForm. Loads via api.me(), saves via api.updateMe(); password change via
-// api.changePassword. Deliberately scoped to safe, durable settings — no
-// templates / data-retention / consent / team / billing / language selection.
+// SpecialtyTypeahead / PasswordInput. Loads via api.me(), saves via
+// api.updateMe(); password change via api.changePassword. Deliberately scoped to
+// safe, durable settings — no templates / data-retention / consent / team /
+// billing / language selection.
+//
+// Layout: a left sub-nav selects one of four panes (local state, no routing).
+// Flicker fix: the form is SEEDED synchronously from getSession() on first
+// render (Име / Специалност / Място на работа are correct immediately), and the
+// me()-only fields (practice/document) render skeletons until me() resolves —
+// never an empty input that then fills.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, clearSession, ApiError } from '@/lib/api';
-import type { MeResponse, UpdateMePayload } from '@/lib/api';
+import { api, clearSession, getSession, ApiError } from '@/lib/api';
+import type { MeResponse, UpdateMePayload, DoctorInfo } from '@/lib/api';
 import SpecialtyTypeahead from '@/components/SpecialtyTypeahead';
 import PasswordInput from '@/components/PasswordInput';
 
@@ -20,6 +26,8 @@ const APP_VERSION = '0.1.0';
 // Placeholder support address — confirm the real one before pilot. Claim-free:
 // no data-retention / residency / processor wording here (pre-attorney).
 const SUPPORT_EMAIL = 'support@tubermed.com';
+
+type PaneKey = 'profile' | 'practice' | 'security' | 'about';
 
 interface ProfileForm {
   name: string;
@@ -56,6 +64,23 @@ function formFromMe(m: MeResponse): ProfileForm {
   };
 }
 
+// Instant seed from the cached login session so the common fields paint correct
+// on first render (no empty-then-fill). The runtime session doctor carries
+// organizationName (login response) even though the DoctorInfo type doesn't
+// declare it — read it via a localized cast (api.ts is out of scope here).
+function seedFromSession(): ProfileForm {
+  const d = getSession()?.doctor as
+    | (DoctorInfo & { organizationName?: string | null })
+    | undefined;
+  if (!d) return EMPTY_FORM;
+  return {
+    ...EMPTY_FORM,
+    name: d.name ?? '',
+    specialty: d.specialty ?? '',
+    org_name: d.organizationName ?? '',
+  };
+}
+
 // Include a field in the PATCH only when it's non-empty AND changed from the
 // loaded value: empty never blanks (backend contract), and skipping an unchanged
 // org_name avoids needless org-slug regeneration on every save.
@@ -69,9 +94,14 @@ function changedValue(current: string, loaded: string | null | undefined): strin
 export default function SettingsPage() {
   const router = useRouter();
 
+  const [pane, setPane] = useState<PaneKey>('profile');
   const [me, setMe] = useState<MeResponse | null>(null);
-  const [form, setForm] = useState<ProfileForm>(EMPTY_FORM);
+  const [form, setForm] = useState<ProfileForm>(seedFromSession);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  // True once the user starts editing — guards the me() reconcile from
+  // clobbering an in-progress edit (the seed/reconcile races the fetch).
+  const userEditedRef = useRef(false);
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -90,13 +120,17 @@ export default function SettingsPage() {
     api
       .me()
       .then((m) => {
-        if (alive) {
-          setMe(m);
-          setForm(formFromMe(m));
-        }
+        if (!alive) return;
+        setMe(m);
+        // Reconcile to the server truth ONLY if the user hasn't started editing
+        // (otherwise the seed-vs-fetch race would wipe their in-progress edit).
+        if (!userEditedRef.current) setForm(formFromMe(m));
+        setLoading(false);
       })
       .catch(() => {
-        if (alive) setLoadError(true);
+        if (!alive) return;
+        setLoadError(true);
+        setLoading(false); // stop skeletons; keep the session-seeded values
       });
     return () => {
       alive = false;
@@ -104,6 +138,7 @@ export default function SettingsPage() {
   }, []);
 
   function setField(key: keyof ProfileForm, value: string) {
+    userEditedRef.current = true;
     setForm((f) => ({ ...f, [key]: value }));
     setSaveOk(false);
     setSaveError(null);
@@ -191,9 +226,33 @@ export default function SettingsPage() {
     router.replace('/app/login');
   }
 
+  const saveBar = (
+    <div className="flex items-center justify-end gap-3 mt-5">
+      {saveError && (
+        <span role="alert" className="text-sm mr-auto" style={{ color: 'var(--color-danger)' }}>
+          {saveError}
+        </span>
+      )}
+      {saveOk && !saveError && (
+        <span className="text-sm mr-auto" style={{ color: 'var(--color-ok)' }}>
+          Запазено.
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={saveProfile}
+        disabled={saving || loading}
+        className="px-4 h-10 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+        style={{ background: 'var(--color-accent)', color: 'white', borderRadius: 'var(--radius-sm)' }}
+      >
+        {saving ? 'Запазване…' : 'Запази промените'}
+      </button>
+    </div>
+  );
+
   return (
-    <div className="w-full max-w-3xl mx-auto px-6 py-8 flex flex-col gap-6">
-      <header>
+    <div className="w-full max-w-4xl mx-auto px-6 py-8">
+      <header className="mb-6">
         <h1 className="text-xl font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           Настройки
         </h1>
@@ -205,220 +264,283 @@ export default function SettingsPage() {
       {loadError && (
         <div
           role="alert"
-          className="text-sm px-4 py-3 rounded-md"
+          className="text-sm px-4 py-3 rounded-md mb-6"
           style={{ background: 'var(--color-danger-soft)', color: 'var(--color-danger)' }}
         >
           Профилът не можа да се зареди. Опитайте да презаредите страницата.
         </div>
       )}
 
-      {/* ── Профил ── */}
-      <Card title="Профил">
-        <div className="flex flex-col gap-4">
-          <Field label="Име">
-            <TextInput
-              value={form.name}
-              onChange={(e) => setField('name', e.target.value)}
-              placeholder="напр. д-р Мария Иванова"
-              autoComplete="name"
-              maxLength={120}
+      <div className="flex flex-col sm:flex-row gap-6">
+        {/* Left sub-nav — vertical on sm+, a wrapping row on narrow screens. */}
+        <nav className="flex flex-row sm:flex-col flex-wrap gap-1 sm:w-44 sm:flex-shrink-0">
+          {PANES.map((p) => (
+            <SubNavItem
+              key={p.key}
+              label={p.label}
+              icon={p.icon}
+              active={pane === p.key}
+              onClick={() => setPane(p.key)}
             />
-          </Field>
-          <Field label="Специалност">
-            <SpecialtyTypeahead value={form.specialty} onChange={(v) => setField('specialty', v)} />
-          </Field>
-          <Field label="Място на работа">
-            <TextInput
-              value={form.org_name}
-              onChange={(e) => setField('org_name', e.target.value)}
-              placeholder="напр. АИППМП Здраве"
-              maxLength={200}
-            />
-          </Field>
-        </div>
-      </Card>
+          ))}
+        </nav>
 
-      {/* ── Практика и документ ── */}
-      <Card title="Практика и документ">
-        <p className="text-xs mb-4" style={{ color: 'var(--color-text-hint)' }}>
-          Тези данни се отпечатват в горната част на Амбулаторния лист.
-        </p>
-        <div className="flex flex-col gap-4">
-          <Field label="Адрес">
-            <TextInput
-              value={form.practice_address}
-              onChange={(e) => setField('practice_address', e.target.value)}
-              placeholder="напр. гр. Пловдив, ул. Цар Борис III 12"
-              maxLength={200}
-            />
-          </Field>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Рег. № на лечебното заведение (РЗИ)">
-              <TextInput
-                value={form.rzi_number}
-                onChange={(e) => setField('rzi_number', e.target.value)}
-                maxLength={200}
-              />
-            </Field>
-            <Field label="Договор с НЗОК №">
-              <TextInput
-                value={form.nzok_contract}
-                onChange={(e) => setField('nzok_contract', e.target.value)}
-                maxLength={200}
-              />
-            </Field>
-            <Field label="Телефон">
-              <TextInput
-                value={form.practice_phone}
-                onChange={(e) => setField('practice_phone', e.target.value)}
-                placeholder="напр. 032 123 456"
-                autoComplete="tel"
-                maxLength={200}
-              />
-            </Field>
-            <Field label="УИН">
-              <TextInput
-                value={form.uin}
-                onChange={(e) => setField('uin', e.target.value)}
-                placeholder="Уникален идентификационен номер"
-                maxLength={32}
-              />
-            </Field>
-          </div>
-        </div>
-      </Card>
-
-      {/* Save bar — covers Профил + Практика (both go through api.updateMe). */}
-      <div className="flex items-center justify-end gap-3">
-        {saveError && (
-          <span role="alert" className="text-sm mr-auto" style={{ color: 'var(--color-danger)' }}>
-            {saveError}
-          </span>
-        )}
-        {saveOk && !saveError && (
-          <span className="text-sm mr-auto" style={{ color: 'var(--color-ok)' }}>
-            Запазено.
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={saveProfile}
-          disabled={saving}
-          className="px-4 h-10 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
-          style={{ background: 'var(--color-accent)', color: 'white', borderRadius: 'var(--radius-sm)' }}
-        >
-          {saving ? 'Запазване…' : 'Запази промените'}
-        </button>
-      </div>
-
-      {/* ── Сигурност ── */}
-      <Card title="Сигурност">
-        <div className="flex flex-col gap-6">
-          <div>
-            <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--color-text-primary)' }}>
-              Смяна на парола
-            </h3>
-            <div className="flex flex-col gap-4 max-w-sm">
-              <Field label="Текуща парола">
-                <PasswordInput
-                  value={pwCurrent}
-                  autoComplete="current-password"
-                  onChange={(e) => {
-                    setPwCurrent(e.target.value);
-                    setPwError(null);
-                    setPwOk(false);
-                  }}
-                />
-              </Field>
-              <Field label="Нова парола (поне 10 знака)">
-                <PasswordInput
-                  value={pwNext}
-                  autoComplete="new-password"
-                  onChange={(e) => {
-                    setPwNext(e.target.value);
-                    setPwError(null);
-                    setPwOk(false);
-                    if (pwConfirmError && e.target.value === pwConfirm) setPwConfirmError(null);
-                  }}
-                />
-              </Field>
-              <Field label="Повтори новата парола">
-                <PasswordInput
-                  value={pwConfirm}
-                  autoComplete="new-password"
-                  onChange={(e) => {
-                    setPwConfirm(e.target.value);
-                    if (pwConfirmError && pwNext === e.target.value) setPwConfirmError(null);
-                  }}
-                  onBlur={() => {
-                    if (pwConfirm && pwNext !== pwConfirm) setPwConfirmError('Паролите не съвпадат');
-                  }}
-                />
-              </Field>
-              {pwConfirmError && (
-                <span role="alert" className="text-sm" style={{ color: 'var(--color-danger)' }}>
-                  {pwConfirmError}
-                </span>
-              )}
-              {pwError && (
-                <span role="alert" className="text-sm" style={{ color: 'var(--color-danger)' }}>
-                  {pwError}
-                </span>
-              )}
-              {pwOk && (
-                <span className="text-sm" style={{ color: 'var(--color-ok)' }}>
-                  Паролата е сменена.
-                </span>
-              )}
-              <div>
-                <button
-                  type="button"
-                  onClick={changePassword}
-                  disabled={pwSaving}
-                  className="px-4 h-10 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
-                  style={{ background: 'var(--color-accent)', color: 'white', borderRadius: 'var(--radius-sm)' }}
-                >
-                  {pwSaving ? 'Запазване…' : 'Смени паролата'}
-                </button>
+        {/* Active pane */}
+        <div className="flex-1 min-w-0">
+          {pane === 'profile' && (
+            <Card title="Профил">
+              <div className="flex flex-col gap-4">
+                <Field label="Име">
+                  <TextInput
+                    value={form.name}
+                    onChange={(e) => setField('name', e.target.value)}
+                    placeholder="напр. д-р Мария Иванова"
+                    autoComplete="name"
+                    maxLength={120}
+                  />
+                </Field>
+                <Field label="Специалност">
+                  <SpecialtyTypeahead value={form.specialty} onChange={(v) => setField('specialty', v)} />
+                </Field>
+                <Field label="Място на работа">
+                  <TextInput
+                    value={form.org_name}
+                    onChange={(e) => setField('org_name', e.target.value)}
+                    placeholder="напр. АИППМП Здраве"
+                    maxLength={200}
+                  />
+                </Field>
               </div>
-            </div>
-          </div>
+              {saveBar}
+            </Card>
+          )}
 
-          <div className="pt-5" style={{ borderTop: '1px solid var(--color-border)' }}>
-            <button
-              type="button"
-              onClick={logout}
-              className="px-4 h-10 text-sm font-medium"
-              style={{
-                background: 'transparent',
-                color: 'var(--color-danger)',
-                border: '1px solid var(--color-border-strong)',
-                borderRadius: 'var(--radius-sm)',
-              }}
-            >
-              Изход
-            </button>
-          </div>
-        </div>
-      </Card>
+          {pane === 'practice' && (
+            <Card title="Практика и документ">
+              <p className="text-xs mb-4" style={{ color: 'var(--color-text-hint)' }}>
+                Тези данни се отпечатват в горната част на Амбулаторния лист.
+              </p>
+              <div className="flex flex-col gap-4">
+                <Field label="Адрес">
+                  {loading ? (
+                    <SkeletonInput />
+                  ) : (
+                    <TextInput
+                      value={form.practice_address}
+                      onChange={(e) => setField('practice_address', e.target.value)}
+                      placeholder="напр. гр. Пловдив, ул. Цар Борис III 12"
+                      maxLength={200}
+                    />
+                  )}
+                </Field>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Field label="Рег. № на лечебното заведение (РЗИ)">
+                    {loading ? (
+                      <SkeletonInput />
+                    ) : (
+                      <TextInput
+                        value={form.rzi_number}
+                        onChange={(e) => setField('rzi_number', e.target.value)}
+                        maxLength={200}
+                      />
+                    )}
+                  </Field>
+                  <Field label="Договор с НЗОК №">
+                    {loading ? (
+                      <SkeletonInput />
+                    ) : (
+                      <TextInput
+                        value={form.nzok_contract}
+                        onChange={(e) => setField('nzok_contract', e.target.value)}
+                        maxLength={200}
+                      />
+                    )}
+                  </Field>
+                  <Field label="Телефон">
+                    {loading ? (
+                      <SkeletonInput />
+                    ) : (
+                      <TextInput
+                        value={form.practice_phone}
+                        onChange={(e) => setField('practice_phone', e.target.value)}
+                        placeholder="напр. 032 123 456"
+                        autoComplete="tel"
+                        maxLength={200}
+                      />
+                    )}
+                  </Field>
+                  <Field label="УИН">
+                    {loading ? (
+                      <SkeletonInput />
+                    ) : (
+                      <TextInput
+                        value={form.uin}
+                        onChange={(e) => setField('uin', e.target.value)}
+                        placeholder="Уникален идентификационен номер"
+                        maxLength={32}
+                      />
+                    )}
+                  </Field>
+                </div>
+              </div>
+              {saveBar}
+            </Card>
+          )}
 
-      {/* ── За приложението — claim-free, neutral facts only ── */}
-      <Card title="За приложението">
-        <div className="text-sm flex flex-col gap-1" style={{ color: 'var(--color-text-muted)' }}>
-          <div>
-            <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
-              TuberMed
-            </span>{' '}
-            · версия {APP_VERSION}
-          </div>
-          <div>Поддръжка: {SUPPORT_EMAIL}</div>
+          {pane === 'security' && (
+            <Card title="Сигурност">
+              <div className="flex flex-col gap-6">
+                <div>
+                  <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--color-text-primary)' }}>
+                    Смяна на парола
+                  </h3>
+                  <div className="flex flex-col gap-4 max-w-sm">
+                    <Field label="Текуща парола">
+                      <PasswordInput
+                        value={pwCurrent}
+                        autoComplete="current-password"
+                        onChange={(e) => {
+                          setPwCurrent(e.target.value);
+                          setPwError(null);
+                          setPwOk(false);
+                        }}
+                      />
+                    </Field>
+                    <Field label="Нова парола (поне 10 знака)">
+                      <PasswordInput
+                        value={pwNext}
+                        autoComplete="new-password"
+                        onChange={(e) => {
+                          setPwNext(e.target.value);
+                          setPwError(null);
+                          setPwOk(false);
+                          if (pwConfirmError && e.target.value === pwConfirm) setPwConfirmError(null);
+                        }}
+                      />
+                    </Field>
+                    <Field label="Повтори новата парола">
+                      <PasswordInput
+                        value={pwConfirm}
+                        autoComplete="new-password"
+                        onChange={(e) => {
+                          setPwConfirm(e.target.value);
+                          if (pwConfirmError && pwNext === e.target.value) setPwConfirmError(null);
+                        }}
+                        onBlur={() => {
+                          if (pwConfirm && pwNext !== pwConfirm) setPwConfirmError('Паролите не съвпадат');
+                        }}
+                      />
+                    </Field>
+                    {pwConfirmError && (
+                      <span role="alert" className="text-sm" style={{ color: 'var(--color-danger)' }}>
+                        {pwConfirmError}
+                      </span>
+                    )}
+                    {pwError && (
+                      <span role="alert" className="text-sm" style={{ color: 'var(--color-danger)' }}>
+                        {pwError}
+                      </span>
+                    )}
+                    {pwOk && (
+                      <span className="text-sm" style={{ color: 'var(--color-ok)' }}>
+                        Паролата е сменена.
+                      </span>
+                    )}
+                    <div>
+                      <button
+                        type="button"
+                        onClick={changePassword}
+                        disabled={pwSaving}
+                        className="px-4 h-10 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+                        style={{ background: 'var(--color-accent)', color: 'white', borderRadius: 'var(--radius-sm)' }}
+                      >
+                        {pwSaving ? 'Запазване…' : 'Смени паролата'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-5" style={{ borderTop: '1px solid var(--color-border)' }}>
+                  <button
+                    type="button"
+                    onClick={logout}
+                    className="px-4 h-10 text-sm font-medium"
+                    style={{
+                      background: 'transparent',
+                      color: 'var(--color-danger)',
+                      border: '1px solid var(--color-border-strong)',
+                      borderRadius: 'var(--radius-sm)',
+                    }}
+                  >
+                    Изход
+                  </button>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {pane === 'about' && (
+            <Card title="За приложението">
+              <div className="text-sm flex flex-col gap-1" style={{ color: 'var(--color-text-muted)' }}>
+                <div>
+                  <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                    TuberMed
+                  </span>{' '}
+                  · версия {APP_VERSION}
+                </div>
+                <div>Поддръжка: {SUPPORT_EMAIL}</div>
+              </div>
+            </Card>
+          )}
         </div>
-      </Card>
+      </div>
     </div>
   );
 }
 
-// ── Local presentational helpers (mirror the workspace SectionCard look) ──
+// ── Sub-nav config + presentational helpers (workspace --color-* tokens) ──
+
+const PANES: { key: PaneKey; label: string; icon: React.ReactNode }[] = [
+  { key: 'profile', label: 'Профил', icon: <ProfileIcon /> },
+  { key: 'practice', label: 'Практика и документ', icon: <PracticeIcon /> },
+  { key: 'security', label: 'Сигурност', icon: <SecurityIcon /> },
+  { key: 'about', label: 'За приложението', icon: <AboutIcon /> },
+];
+
+function SubNavItem({
+  label,
+  icon,
+  active,
+  onClick,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? 'page' : undefined}
+      className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-left transition-colors"
+      style={
+        active
+          ? { background: 'var(--color-accent-soft)', color: 'var(--color-ink)', fontWeight: 500 }
+          : { background: 'transparent', color: 'var(--color-text-secondary)', fontWeight: 400 }
+      }
+      onMouseEnter={(e) => {
+        if (!active) e.currentTarget.style.background = 'var(--color-bg-subtle)';
+      }}
+      onMouseLeave={(e) => {
+        if (!active) e.currentTarget.style.background = 'transparent';
+      }}
+    >
+      <span className="w-4 h-4 flex items-center justify-center flex-shrink-0">{icon}</span>
+      <span className="whitespace-nowrap">{label}</span>
+    </button>
+  );
+}
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -450,6 +572,16 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+function SkeletonInput() {
+  return (
+    <div
+      className="w-full rounded-md animate-pulse"
+      style={{ height: 40, background: 'var(--color-bg-subtle)' }}
+      aria-hidden
+    />
+  );
+}
+
 function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   const { className, style, onFocus, onBlur, type, ...rest } = props;
   return (
@@ -477,5 +609,55 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
         onBlur?.(e);
       }}
     />
+  );
+}
+
+function NavIcon({ children }: { children: React.ReactNode }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {children}
+    </svg>
+  );
+}
+function ProfileIcon() {
+  return (
+    <NavIcon>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0116 0" />
+    </NavIcon>
+  );
+}
+function PracticeIcon() {
+  return (
+    <NavIcon>
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <path d="M8 7h8M8 11h8M8 15h5" />
+    </NavIcon>
+  );
+}
+function SecurityIcon() {
+  return (
+    <NavIcon>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 018 0v3" />
+    </NavIcon>
+  );
+}
+function AboutIcon() {
+  return (
+    <NavIcon>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5M12 8h.01" />
+    </NavIcon>
   );
 }
