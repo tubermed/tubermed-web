@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { RECOVERY_NOTICE_KEY } from '@/lib/use-cold-start-recovery';
 import WorkspaceTopBar from '@/components/WorkspaceTopBar';
 import { SCRIBE_FLOW_STEPS } from '@/lib/flow';
-import { dobFromEgn } from '@/lib/egn';
+import { dobFromEgn, isValidEgnChecksum } from '@/lib/egn';
 import PatientForm, {
   EMPTY_FORM,
   fromPatient,
@@ -193,7 +193,8 @@ export default function NewVisitPage() {
   //      change and surface EgnSwitchGuardModal (rule 4) — otherwise switching
   //      patients would silently discard the edits.
   //   2. No edits, and the edited ЕГН is no longer a valid 10-digit identity
-  //      (<10 digits OR digits don't decode to a real DOB) → DROP the patient:
+  //      (<10 digits, OR digits don't decode to a real DOB, OR the mod-11
+  //      control sum is wrong) → DROP the patient:
   //      a loaded name shown next to a now-mismatched/empty ЕГН is the
   //      wrong-identity hazard. Clear selection + reset to a FULL empty
   //      new-patient form, keeping ONLY the in-progress ЕГН (so re-typing a valid
@@ -217,10 +218,18 @@ export default function NewVisitPage() {
         return; // HOLD — input reverts to the loaded ЕГН until the doctor chooses
       }
 
+      // "Valid identity" must match EgnField's egnValid (the green-✓ / auto-load
+      // gate): 10 digits, a derivable DOB, AND a correct mod-11 control sum.
+      // Without the checksum clause a transposed/typo'd ЕГН that still decodes to
+      // a real date (e.g. 0802166621) would keep the loaded patient's banner +
+      // DOB/age pinned next to the new ЕГН's checksum warning — the contradictory
+      // stale-identity state. Treating a bad checksum as "no longer a valid
+      // identity" makes the drop fire consistently with the ✓ disappearing.
       const egnStillValid =
         next.national_id_type === 'egn' &&
         next.national_id.length === 10 &&
-        dobFromEgn(next.national_id) !== null;
+        dobFromEgn(next.national_id) !== null &&
+        isValidEgnChecksum(next.national_id);
       if (next.national_id_type === 'egn' && !egnStillValid) {
         setSelected(null);
         setForm({
