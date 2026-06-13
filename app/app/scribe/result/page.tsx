@@ -36,6 +36,7 @@ import {
   openPdfPreview,
   generateWordHtml,
   downloadWord,
+  type ExportIdentity,
 } from '@/lib/exporters';
 import CopyButton from '@/components/CopyButton';
 import PatientSummaryModal from '@/components/PatientSummaryModal';
@@ -178,6 +179,9 @@ function ResultPageInner() {
   // the rendered fields with the server's extracted_fields (the edited truth).
   const [reconcileVisitId, setReconcileVisitId] = useState<string | null>(null);
   const [doctor, setDoctor] = useState<DoctorInfo | null>(null);
+  // Practice/doctor identity for the exported document header. Best-effort —
+  // a failed /me leaves this undefined and the export renders the old header.
+  const [exportIdentity, setExportIdentity] = useState<ExportIdentity | undefined>(undefined);
   const [pendingVisit, setPendingVisit] = useState<PendingVisit | null>(null);
   const [original, setOriginal] = useState<TranscribeResult | null>(null);
   const [fields, setFields] = useState<TranscribeFields>({});
@@ -264,6 +268,35 @@ function ResultPageInner() {
       /* malformed — render without patient header */
     }
   }, [router, searchParams]);
+
+  // ── Export identity (practice/doctor header) ───────────────────────────
+  // Fetch the doctor's practice/document identity for the exported Амбулаторен
+  // лист header. Best-effort and non-blocking: a failed /me just renders the
+  // pre-header document (export is never gated on this).
+  useEffect(() => {
+    let alive = true;
+    api
+      .me()
+      .then((m) => {
+        if (!alive) return;
+        setExportIdentity({
+          practiceName: m.organizationName,
+          address: m.practice_address,
+          rziNumber: m.rzi_number,
+          nzokContract: m.nzok_contract,
+          phone: m.practice_phone,
+          doctorName: m.name,
+          specialty: m.specialty,
+          uin: m.uin,
+        });
+      })
+      .catch(() => {
+        /* keep the old header — never block export on /me */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // ── Cold-start recovery driver ─────────────────────────────────────────
   // Fires only when the bootstrap above set recoverVisitId (tuber_last_result
@@ -841,7 +874,7 @@ function ResultPageInner() {
       month: '2-digit',
       year: 'numeric',
     });
-    const html = generatePdfHtml(fields, dateStr);
+    const html = generatePdfHtml(fields, dateStr, exportIdentity);
     const opened = openPdfPreview(html);
     if (opened) {
       showToast('success', '✓ Преглед отворен — Запази като PDF от бутона');
@@ -852,7 +885,7 @@ function ResultPageInner() {
         'Изскачащият прозорец е блокиран — разрешете го за този сайт'
       );
     }
-  }, [fields, isLocked, showToast, signalExport]);
+  }, [fields, isLocked, showToast, signalExport, exportIdentity]);
 
   const handleWord = useCallback(() => {
     if (isLocked) return;
@@ -861,7 +894,7 @@ function ResultPageInner() {
       month: '2-digit',
       year: 'numeric',
     });
-    const html = generateWordHtml(fields, dateStr);
+    const html = generateWordHtml(fields, dateStr, exportIdentity);
     const filename =
       'ambulatoren-list-' +
       new Date().toISOString().slice(0, 10) +
@@ -873,7 +906,7 @@ function ResultPageInner() {
     } catch {
       showToast('error', 'Грешка при генериране на Word файла');
     }
-  }, [fields, isLocked, showToast, signalExport]);
+  }, [fields, isLocked, showToast, signalExport, exportIdentity]);
 
   const handlePrint = useCallback(() => {
     if (isLocked) return;
@@ -882,7 +915,7 @@ function ResultPageInner() {
       month: '2-digit',
       year: 'numeric',
     });
-    const html = generatePdfHtml(fields, dateStr);
+    const html = generatePdfHtml(fields, dateStr, exportIdentity);
     const opened = openPdfPreview(html, { autoPrint: true });
     if (opened) {
       signalExport('print');
@@ -892,7 +925,7 @@ function ResultPageInner() {
         'Изскачащият прозорец е блокиран — разрешете го за този сайт'
       );
     }
-  }, [fields, isLocked, showToast, signalExport]);
+  }, [fields, isLocked, showToast, signalExport, exportIdentity]);
 
   // ── Visible-section bookkeeping ──────────────────────────────
   const visibleSections = useMemo(() => {

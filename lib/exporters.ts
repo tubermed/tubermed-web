@@ -23,6 +23,30 @@ function fieldText(s: string | undefined): string {
   return clean((s || '').trim());
 }
 
+// ─── Practice / document identity (export header) ─────────────
+// The doctor's OWN practice identifiers, printed in the header of the exported
+// Амбулаторен лист (required on the НЗОК primary-document format). Sourced from
+// api.me() on the result page. EVERY field is optional — an empty identity (no
+// field set, or /me failed) renders the document BYTE-IDENTICAL to the
+// pre-header version (backward-compatible).
+export interface ExportIdentity {
+  practiceName?: string | null;
+  address?: string | null;
+  rziNumber?: string | null;
+  nzokContract?: string | null;
+  phone?: string | null;
+  doctorName?: string | null;
+  specialty?: string | null;
+  uin?: string | null;
+}
+
+function identityHasContent(id: ExportIdentity): boolean {
+  return [
+    id.practiceName, id.address, id.rziNumber, id.nzokContract,
+    id.phone, id.doctorName, id.specialty, id.uin,
+  ].some((s) => !!(s && s.trim()));
+}
+
 // ─── PLAIN TEXT (for copy) ────────────────────────────────────
 
 export function formatPlainText(f: TranscribeFields): string {
@@ -133,7 +157,45 @@ function pdfSection(title: string, content: string): string {
        <p style="margin:0;line-height:1.75;white-space:pre-wrap;font-size:11pt">${escapeHtml(v)}</p>`;
 }
 
-export function generatePdfHtml(f: TranscribeFields, dateStr: string): string {
+function pdfIdentityHeader(id: ExportIdentity): string {
+  const v = (s?: string | null) => escapeHtml((s || '').trim());
+  const pn = v(id.practiceName), addr = v(id.address), ph = v(id.phone);
+  const rzi = v(id.rziNumber), nzok = v(id.nzokContract);
+  const dn = v(id.doctorName), sp = v(id.specialty), uin = v(id.uin);
+  const left = [
+    pn   ? `<div style="font-weight:600;color:#1F3A5F;font-size:11pt">${pn}</div>` : '',
+    addr ? `<div>${addr}</div>` : '',
+    ph   ? `<div>тел.: ${ph}</div>` : '',
+    rzi  ? `<div>Рег. № (РЗИ): ${rzi}</div>` : '',
+    nzok ? `<div>Договор с НЗОК: ${nzok}</div>` : '',
+  ].filter(Boolean).join('');
+  const right = [
+    dn  ? `<div style="font-weight:600;color:#1F3A5F">${dn}</div>` : '',
+    sp  ? `<div>${sp}</div>` : '',
+    uin ? `<div>УИН: ${uin}</div>` : '',
+  ].filter(Boolean).join('');
+  if (!left && !right) return '';
+  return `<div style="display:flex;justify-content:space-between;gap:24px;font-size:9.5pt;color:#586472;line-height:1.5;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #DCE1E8">
+        <div>${left}</div>
+        <div style="text-align:right">${right}</div>
+      </div>`;
+}
+
+function pdfSignatureLine(id: ExportIdentity): string {
+  const dn = escapeHtml((id.doctorName || '').trim());
+  return `<div style="margin-top:40px;display:flex;justify-content:flex-end">
+        <div style="text-align:center;font-size:10pt;color:#586472">
+          <div style="border-top:1px solid #8893A1;width:240px;margin-bottom:4px"></div>
+          Подпис и печат${dn ? ' — ' + dn : ''}
+        </div>
+      </div>`;
+}
+
+export function generatePdfHtml(f: TranscribeFields, dateStr: string, identity?: ExportIdentity): string {
+  const hasId = !!identity && identityHasContent(identity);
+  const idHeader = hasId ? pdfIdentityHeader(identity!) : '';
+  const idSignature = hasId ? pdfSignatureLine(identity!) : '';
+
   let diagRows = '';
   const pdfMainTerm = filedMainTerm(f);
   if (pdfMainTerm) {
@@ -209,7 +271,7 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string): string {
       <button class="secondary" onclick="window.close()">Затвори</button>
       <button class="primary" onclick="window.print()">⬇ Запази като PDF</button>
     </div>
-    <div class="doc">
+    <div class="doc">${idHeader}
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
         <h1>Амбулаторен лист</h1>
         <div style="text-align:right;font-size:10pt;color:#8893A1">Дата: ${escapeHtml(dateStr)}</div>
@@ -230,7 +292,7 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string): string {
       ${medsBlock}
       ${izdadeniHeader}
       ${pdfSection('Направления', f.napravlenia || '')}
-      ${pdfSection('Назначени изследвания', f.naznacheni || '')}
+      ${pdfSection('Назначени изследвания', f.naznacheni || '')}${idSignature}
     </div>
   </body></html>`;
 }
@@ -281,7 +343,44 @@ export function openPdfPreview(html: string, opts?: OpenPreviewOpts): boolean {
 
 // ─── WORD (.doc download) ────────────────────────────────────
 
-export function generateWordHtml(f: TranscribeFields, dateStr: string): string {
+function wordIdentityHeader(id: ExportIdentity): string {
+  const v = (s?: string | null) => escapeHtml((s || '').trim());
+  const pn = v(id.practiceName), addr = v(id.address), ph = v(id.phone);
+  const rzi = v(id.rziNumber), nzok = v(id.nzokContract);
+  const dn = v(id.doctorName), sp = v(id.specialty), uin = v(id.uin);
+  const left = [
+    pn   ? `<div style="font-weight:bold;color:#1F3A5F">${pn}</div>` : '',
+    addr ? `<div>${addr}</div>` : '',
+    ph   ? `<div>тел.: ${ph}</div>` : '',
+    rzi  ? `<div>Рег. № (РЗИ): ${rzi}</div>` : '',
+    nzok ? `<div>Договор с НЗОК: ${nzok}</div>` : '',
+  ].filter(Boolean).join('');
+  const right = [
+    dn  ? `<div style="font-weight:bold;color:#1F3A5F">${dn}</div>` : '',
+    sp  ? `<div>${sp}</div>` : '',
+    uin ? `<div>УИН: ${uin}</div>` : '',
+  ].filter(Boolean).join('');
+  if (!left && !right) return '';
+  return `<table border="0" style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:9pt;color:#586472">
+  <tr>
+    <td style="vertical-align:top;border:none;padding:0">${left}</td>
+    <td style="vertical-align:top;border:none;padding:0;text-align:right">${right}</td>
+  </tr>
+</table>`;
+}
+
+function wordIdentitySignature(id: ExportIdentity): string {
+  const dn = escapeHtml((id.doctorName || '').trim());
+  return `<p style="margin-top:36pt;text-align:right">Подпис и печат: ____________________${
+    dn ? '<br><span style="font-size:9pt;color:#888">' + dn + '</span>' : ''
+  }</p>`;
+}
+
+export function generateWordHtml(f: TranscribeFields, dateStr: string, identity?: ExportIdentity): string {
+  const hasId = !!identity && identityHasContent(identity);
+  const idHeader = hasId ? wordIdentityHeader(identity!) : '';
+  const idSignature = hasId ? wordIdentitySignature(identity!) : '';
+
   let pdRows = '';
   (f.pridruzhavashti || []).forEach((d, i) => {
     const coTerm = filedComorbidityTerm(d);
@@ -326,7 +425,7 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string): string {
   .meta { font-size: 9pt; color: #888; text-align: right; margin-bottom: 20px; }
 </style>
 </head>
-<body>
+<body>${idHeader}
 <h1>АМБУЛАТОРЕН ЛИСТ</h1>
 <p class="meta">Дата: ${escapeHtml(dateStr)}</p>
 
@@ -354,7 +453,7 @@ ${medsRows ? `<h2>Медикаменти</h2><table>${medsRows}</table>` : ''}
 ${fieldText(f.napravlenia) || fieldText(f.naznacheni) ? '<h2>Издадени документи</h2>' : ''}
 ${para('Направления', f.napravlenia)}
 ${para('Назначени изследвания', f.naznacheni)}
-
+${idSignature}
 </body></html>`;
 }
 
