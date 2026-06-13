@@ -21,6 +21,10 @@ import { api, clearSession, getSession, ApiError } from '@/lib/api';
 import type { MeResponse, UpdateMePayload } from '@/lib/api';
 import SpecialtyTypeahead from '@/components/SpecialtyTypeahead';
 import PasswordInput from '@/components/PasswordInput';
+import SkeletonInput from '@/components/SkeletonInput';
+import { SectionCard } from '@/components/ui/Card';
+import { Field, TextInput } from '@/components/ui/Field';
+import { Button } from '@/components/ui/Button';
 
 const APP_VERSION = '0.1.0';
 // Placeholder support address — confirm the real one before pilot. Claim-free:
@@ -235,22 +239,16 @@ export default function SettingsPage() {
           Запазено.
         </span>
       )}
-      <button
-        type="button"
-        onClick={saveProfile}
-        disabled={saving || loading}
-        className="px-4 h-10 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
-        style={{ background: 'var(--color-accent)', color: 'white', borderRadius: 'var(--radius-sm)' }}
-      >
+      <Button variant="primary" onClick={saveProfile} disabled={saving || loading}>
         {saving ? 'Запазване…' : 'Запази промените'}
-      </button>
+      </Button>
     </div>
   );
 
   return (
     <div className="w-full max-w-4xl mx-auto px-6 py-8">
       <header className="mb-6">
-        <h1 className="text-xl font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+        <h1 className="text-xl font-semibold" style={{ color: 'var(--color-heading)' }}>
           Настройки
         </h1>
         <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>
@@ -285,7 +283,7 @@ export default function SettingsPage() {
         {/* Active pane */}
         <div className="flex-1 min-w-0">
           {pane === 'profile' && (
-            <Card title="Профил">
+            <SectionCard title="Профил" subtitle="Лични данни" icon={<ProfileIcon />}>
               <div className="flex flex-col gap-4">
                 <Field label="Име">
                   <TextInput
@@ -309,11 +307,11 @@ export default function SettingsPage() {
                 </Field>
               </div>
               {saveBar}
-            </Card>
+            </SectionCard>
           )}
 
           {pane === 'practice' && (
-            <Card title="Практика и документ">
+            <SectionCard title="Практика и документ" subtitle="Данни за документа" icon={<PracticeIcon />}>
               <p className="text-xs mb-4" style={{ color: 'var(--color-text-hint)' }}>
                 Тези данни се отпечатват в горната част на Амбулаторния лист.
               </p>
@@ -381,11 +379,11 @@ export default function SettingsPage() {
                 </div>
               </div>
               {saveBar}
-            </Card>
+            </SectionCard>
           )}
 
           {pane === 'security' && (
-            <Card title="Сигурност">
+            <SectionCard title="Сигурност" subtitle="Парола и изход" icon={<SecurityIcon />}>
               <div className="flex flex-col gap-6">
                 <div>
                   <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--color-text-primary)' }}>
@@ -444,40 +442,24 @@ export default function SettingsPage() {
                       </span>
                     )}
                     <div>
-                      <button
-                        type="button"
-                        onClick={changePassword}
-                        disabled={pwSaving}
-                        className="px-4 h-10 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
-                        style={{ background: 'var(--color-accent)', color: 'white', borderRadius: 'var(--radius-sm)' }}
-                      >
+                      <Button variant="primary" onClick={changePassword} disabled={pwSaving}>
                         {pwSaving ? 'Запазване…' : 'Смени паролата'}
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>
 
                 <div className="pt-5" style={{ borderTop: '1px solid var(--color-border)' }}>
-                  <button
-                    type="button"
-                    onClick={logout}
-                    className="px-4 h-10 text-sm font-medium"
-                    style={{
-                      background: 'transparent',
-                      color: 'var(--color-danger)',
-                      border: '1px solid var(--color-border-strong)',
-                      borderRadius: 'var(--radius-sm)',
-                    }}
-                  >
+                  <Button variant="danger" onClick={logout}>
                     Изход
-                  </button>
+                  </Button>
                 </div>
               </div>
-            </Card>
+            </SectionCard>
           )}
 
           {pane === 'about' && (
-            <Card title="За приложението">
+            <SectionCard title="За приложението" subtitle="Версия и поддръжка" icon={<AboutIcon />}>
               <div className="text-sm flex flex-col gap-1" style={{ color: 'var(--color-text-muted)' }}>
                 <div>
                   <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
@@ -487,7 +469,7 @@ export default function SettingsPage() {
                 </div>
                 <div>Поддръжка: {SUPPORT_EMAIL}</div>
               </div>
-            </Card>
+            </SectionCard>
           )}
         </div>
       </div>
@@ -536,76 +518,6 @@ function SubNavItem({
       <span className="w-4 h-4 flex items-center justify-center flex-shrink-0">{icon}</span>
       <span className="whitespace-nowrap">{label}</span>
     </button>
-  );
-}
-
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section
-      className="rounded-xl"
-      style={{ background: 'var(--color-bg-card)', border: '1px solid var(--color-border)' }}
-    >
-      <div className="px-6 pt-5 pb-2">
-        <h2
-          className="text-[10px] uppercase tracking-[0.22em] font-semibold"
-          style={{ color: 'var(--color-text-hint)' }}
-        >
-          {title}
-        </h2>
-      </div>
-      <div className="px-6 pb-5">{children}</div>
-    </section>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <span className="block text-xs mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
-        {label}
-      </span>
-      {children}
-    </div>
-  );
-}
-
-function SkeletonInput() {
-  return (
-    <div
-      className="w-full rounded-md animate-pulse"
-      style={{ height: 40, background: 'var(--color-bg-subtle)' }}
-      aria-hidden
-    />
-  );
-}
-
-function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  const { className, style, onFocus, onBlur, type, ...rest } = props;
-  return (
-    <input
-      {...rest}
-      type={type ?? 'text'}
-      className={['w-full px-3 outline-none', className ?? ''].filter(Boolean).join(' ')}
-      style={{
-        height: 40,
-        background: 'white',
-        border: '1px solid var(--color-border-strong)',
-        borderRadius: 'var(--radius-sm)',
-        fontSize: 14,
-        color: 'var(--color-text-primary)',
-        ...(style || {}),
-      }}
-      onFocus={(e) => {
-        e.currentTarget.style.borderColor = 'var(--color-accent)';
-        e.currentTarget.style.boxShadow = '0 0 0 2px var(--color-accent-soft)';
-        onFocus?.(e);
-      }}
-      onBlur={(e) => {
-        e.currentTarget.style.borderColor = 'var(--color-border-strong)';
-        e.currentTarget.style.boxShadow = 'none';
-        onBlur?.(e);
-      }}
-    />
   );
 }
 
