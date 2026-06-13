@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { dobFromEgn, genderFromEgn } from '@/lib/egn';
+import { dobFromEgn, genderFromEgn, isValidEgnChecksum } from '@/lib/egn';
 import { ageFromBirthDate } from '@/lib/age';
 import { api } from '@/lib/api';
 import ChipInput from './ChipInput';
@@ -656,11 +656,24 @@ function EgnField({
   onEgnMatchLoad?: (hit: PatientSearchHit, typedEgn: string) => void;
 }) {
   // Validity derivation — runs every render so we never display stale flags.
-  const isEgn       = state.national_id_type === 'egn';
-  const ten         = state.national_id.length === 10;
-  const derivedDob  = isEgn && ten ? dobFromEgn(state.national_id) : null;
-  const egnInvalid  = isEgn && ten && derivedDob === null;
-  const egnValid    = isEgn && ten && derivedDob !== null;
+  // A complete 10-digit ЕГН counts as "valid" (green ✓ + instant auto-load) ONLY
+  // when its digits decode to a real past DOB AND its mod-11 control sum checks
+  // out (isValidEgnChecksum, the mirror of the backend). Two DISTINCT failure
+  // states for a 10-digit ЕГН:
+  //   - derivedDob === null → HARD "невалидно ЕГН" (DOB underivable); blocks
+  //     submit via the parent canSubmit gate (unchanged).
+  //   - DOB derivable but checksum wrong → SOFT, non-blocking: no ✓, no
+  //     auto-load, an amber warning. Mirrors the backend, which SAVES a
+  //     bad-checksum ЕГН anyway and surfaces a `validation_warning`
+  //     (POST /api/patients) rather than a 400 — so we don't invent a stricter
+  //     client gate, we just stop falsely affirming it as a confirmed identity.
+  const isEgn           = state.national_id_type === 'egn';
+  const ten             = state.national_id.length === 10;
+  const derivedDob      = isEgn && ten ? dobFromEgn(state.national_id) : null;
+  const checksumOk      = isEgn && ten ? isValidEgnChecksum(state.national_id) : false;
+  const egnInvalid      = isEgn && ten && derivedDob === null;
+  const checksumInvalid = isEgn && ten && derivedDob !== null && !checksumOk;
+  const egnValid        = isEgn && ten && derivedDob !== null && checksumOk;
 
   const lookupReqRef = useRef(0);
 
@@ -746,6 +759,15 @@ function EgnField({
       {egnInvalid && (
         <span className="block text-xs mt-1" style={{ color: 'var(--color-danger)' }} role="alert">
           Невалидно ЕГН — датата на раждане не може да бъде извлечена.
+        </span>
+      )}
+      {/* Soft, non-blocking: a derivable-DOB ЕГН whose control sum is wrong. No ✓
+          (egnValid is false), no auto-load, and the parent canSubmit gate is NOT
+          tripped — same posture the backend takes (validation_warning, not 400).
+          Amber, not danger-red, so it reads as a caution rather than a hard stop. */}
+      {checksumInvalid && (
+        <span className="block text-xs mt-1" style={{ color: 'var(--color-warn)' }} role="status">
+          Невалидна контролна сума на ЕГН
         </span>
       )}
     </div>

@@ -6,6 +6,21 @@ export function isValidEgnFormat(plain: string): boolean {
   return /^\d{10}$/.test(plain);
 }
 
+// Mod-11 control-sum check. MIRROR of the backend
+// tubermed-backend/lib/national-id.js `validateEgnChecksum` — keep
+// behaviourally identical (same weights, `sum % 11`, `>=10 → 0`, compare to the
+// 10th digit). Same precedent as lib/translit.ts ↔ lib/translit.js: a divergence
+// here means the client shows a false "valid" while the server records a soft
+// `validation_warning`. Returns false on bad format too (parseInt would NaN).
+const EGN_WEIGHTS = [2, 4, 8, 5, 10, 9, 7, 3, 6];
+export function isValidEgnChecksum(plain: string): boolean {
+  if (!isValidEgnFormat(plain)) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += parseInt(plain[i], 10) * EGN_WEIGHTS[i];
+  const expected = sum % 11 >= 10 ? 0 : sum % 11;
+  return expected === parseInt(plain[9], 10);
+}
+
 // Returns ISO date 'YYYY-MM-DD' for the encoded birth date, or null when
 // the ЕГН can't be a real birth date for a living patient:
 //   - format wrong (handled by isValidEgnFormat)
