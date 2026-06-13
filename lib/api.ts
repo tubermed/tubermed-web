@@ -154,13 +154,36 @@ export interface MeResponse {
   organizationName: string | null;
   onboarding_completed_at?: string | null;
   consultations_band?: ConsultationsBand | null;
+  // Practice / document-identity (backend migration 017). ABSENT (undefined)
+  // when 017 isn't applied; null when applied but unfilled; string when set —
+  // same absent-key="unknown" contract as the onboarding keys above. uin is the
+  // doctor's own; the four practice fields are the doctor's OWN organization's.
+  uin?: string | null;
+  practice_address?: string | null;
+  rzi_number?: string | null;
+  nzok_contract?: string | null;
+  practice_phone?: string | null;
 }
 
 export interface UpdateMePayload {
+  name?: string;
   specialty?: string;
+  uin?: string;
   org_name?: string;
+  practice_address?: string;
+  rzi_number?: string;
+  nzok_contract?: string;
+  practice_phone?: string;
   consultations_band?: ConsultationsBand;
   onboarding_completed?: boolean;
+}
+
+// POST /api/auth/change-password (JWT). Email-auth doctors only — a PIN-only
+// doctor (no password credential) gets 400 'password_change_unavailable'; a
+// wrong current password gets a generic 401.
+export interface ChangePasswordPayload {
+  current_password: string;
+  new_password: string;
 }
 
 // Discriminated union for createPatient — the 409 dedup response is data,
@@ -185,6 +208,11 @@ export const api = {
   updateMe: (payload: UpdateMePayload) =>
     request<MeResponse>('/api/auth/me', {
       method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  changePassword: (payload: ChangePasswordPayload) =>
+    request<{ ok: boolean }>('/api/auth/change-password', {
+      method: 'POST',
       body: JSON.stringify(payload),
     }),
 
