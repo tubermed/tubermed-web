@@ -31,15 +31,12 @@ export default function AppShell({ doctor, sidebarLocked = false, children }: Ap
 }
 
 // ── Nav config — single source of truth for the sidebar across all pages. ──
-// "Нов преглед" is the only enabled destination today; the rest are reserved
-// for future routes and rendered as disabled with the "скоро" badge where the
-// design specified.
+// "Нов преглед" and "Пациенти" are live destinations; "Шаблони" and
+// "Настройки" are reserved for future routes and rendered as disabled.
 const NAV_ITEMS: NavItem[] = [
   { label: 'Нов преглед', href: '/app/new-visit',                          icon: <NewVisitIcon /> },
   { label: 'Пациенти',    href: '/app/patients',                            icon: <PatientsIcon /> },
   { label: 'Шаблони',     href: undefined, disabled: true,                  icon: <TemplatesIcon /> },
-  { label: 'График',      href: undefined, disabled: true, badge: 'скоро',  icon: <CalendarIcon /> },
-  { label: 'AI записи',   href: undefined, disabled: true, badge: 'скоро',  icon: <SparkleIcon /> },
   { label: 'Настройки',   href: undefined, disabled: true,                  icon: <SettingsIcon /> },
 ];
 
@@ -54,6 +51,4 @@ function Icon({ children }: { children: React.ReactNode }) {
 function NewVisitIcon()  { return <Icon><path d="M12 4v16M4 12h16" /></Icon>; }
 function PatientsIcon()  { return <Icon><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0116 0" /></Icon>; }
 function TemplatesIcon() { return <Icon><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M8 9h8M8 13h8M8 17h5" /></Icon>; }
-function CalendarIcon()  { return <Icon><rect x="4" y="5" width="16" height="16" rx="2" /><path d="M16 3v4M8 3v4M4 11h16" /></Icon>; }
-function SparkleIcon()   { return <Icon><path d="M12 3v6M12 15v6M3 12h6M15 12h6M5.6 5.6l4.2 4.2M14.2 14.2l4.2 4.2M18.4 5.6l-4.2 4.2M9.8 14.2l-4.2 4.2" /></Icon>; }
 function SettingsIcon()  { return <Icon><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z" /></Icon>; }
