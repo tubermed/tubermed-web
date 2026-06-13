@@ -31,13 +31,13 @@ export default function AppShell({ doctor, sidebarLocked = false, children }: Ap
 }
 
 // ── Nav config — single source of truth for the sidebar across all pages. ──
-// "Нов преглед" and "Пациенти" are live destinations; "Шаблони" and
-// "Настройки" are reserved for future routes and rendered as disabled.
+// "Нов преглед", "Пациенти" and "Настройки" are live destinations; "Шаблони"
+// remains reserved for a future route and rendered as disabled.
 const NAV_ITEMS: NavItem[] = [
   { label: 'Нов преглед', href: '/app/new-visit',                          icon: <NewVisitIcon /> },
   { label: 'Пациенти',    href: '/app/patients',                            icon: <PatientsIcon /> },
   { label: 'Шаблони',     href: undefined, disabled: true,                  icon: <TemplatesIcon /> },
-  { label: 'Настройки',   href: undefined, disabled: true,                  icon: <SettingsIcon /> },
+  { label: 'Настройки',   href: '/app/settings',                            icon: <SettingsIcon /> },
 ];
 
 function Icon({ children }: { children: React.ReactNode }) {
