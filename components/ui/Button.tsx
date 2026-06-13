@@ -33,7 +33,7 @@ export function Button({
   type,
   children,
   ...rest
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }) {
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; 'data-tour'?: string }) {
   return (
     <button
       type={type ?? 'button'}

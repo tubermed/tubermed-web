@@ -8,6 +8,9 @@ import ChipInput from './ChipInput';
 import MkbPicker from './MkbPicker';
 import PatientResultRow from './PatientResultRow';
 import PatientLoadConfirmModal from './PatientLoadConfirmModal';
+import { SectionCard } from './ui/Card';
+import { FieldLabel } from './ui/Field';
+import { Button } from './ui/Button';
 import type {
   CreatePatientPayload,
   Gender,
@@ -234,33 +237,25 @@ export default function PatientForm({
           boxShadow: 'var(--shadow-raised)',
         }}
       >
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           onClick={onSaveDraft}
           disabled={!canSubmit || isSaving}
-          className="text-sm px-4 py-2 rounded-md font-medium transition active:scale-[0.985] motion-reduce:active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{
-            background: 'transparent',
-            color: 'var(--color-brand)',
-            border: '1px solid var(--color-brand)',
-          }}
         >
           {isExistingPatient ? 'Запази промените' : 'Запази чернова'}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="primary"
           data-tour="start"
           onClick={onStartVisit}
           disabled={!canSubmit || isSaving}
-          className="inline-flex items-center gap-2 text-sm px-5 py-2.5 rounded-md text-white font-medium transition hover:opacity-95 active:scale-[0.985] motion-reduce:active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ background: 'var(--color-accent)', boxShadow: '0 2px 8px rgba(39, 76, 119, 0.25)' }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0014 0M12 18.5V21" />
           </svg>
           Започни запис
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -284,76 +279,6 @@ function IconClinical()  { return <SvgIcon><path d="M3 12h3.5l2-5 4 10 2-5H21" /
 function IconVisit()     { return <SvgIcon><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2.5v3M16 2.5v3" /><path d="M8.5 14.5l2.2 2.2 4.3-4.3" /></SvgIcon>; }
 function IconComplaint() { return <SvgIcon><path d="M20 11.5a7.5 7.5 0 01-10.7 6.8L4 20l1.7-5.2A7.5 7.5 0 1120 11.5z" /></SvgIcon>; }
 function IconDoc()       { return <SvgIcon><path d="M14 3v5h5" /><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V8z" /><path d="M8.5 13h7M8.5 17h5" /></SvgIcon>; }
-
-// Elevated section card: surface + hairline + raised shadow, a tinted header
-// band (navy icon tile + heading + one-line subtitle), and a 16px body. Chrome
-// only — `dataTour` + `children` pass straight through (the A4 tour anchors and
-// every field/handler are unchanged). overflow stays VISIBLE so the name
-// typeahead dropdown (absolutely positioned inside the body) is never clipped.
-function SectionCard({
-  title, subtitle, icon, children, dataTour,
-}: {
-  title: string;
-  subtitle?: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-  dataTour?: string;
-}) {
-  return (
-    <section
-      data-tour={dataTour}
-      className="nv-card-enter"
-      style={{
-        background: 'var(--color-bg-surface)',
-        border: '1px solid var(--color-border-soft)',
-        borderRadius: 'var(--radius-lg)',
-        boxShadow: 'var(--shadow-raised)',
-      }}
-    >
-      <div
-        className="flex items-center gap-3 px-4 py-3"
-        style={{
-          background: 'var(--color-surface-tint)',
-          borderBottom: '1px solid var(--color-border-soft)',
-          borderTopLeftRadius: 'var(--radius-lg)',
-          borderTopRightRadius: 'var(--radius-lg)',
-        }}
-      >
-        {icon && (
-          <span
-            aria-hidden
-            className="flex items-center justify-center flex-shrink-0"
-            style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--color-accent)', color: '#fff' }}
-          >
-            {icon}
-          </span>
-        )}
-        <div className="flex flex-col min-w-0">
-          <h3 className="font-medium leading-tight truncate" style={{ fontSize: '15px', color: 'var(--color-heading)' }}>
-            {title}
-          </h3>
-          {subtitle && (
-            <span className="leading-tight truncate" style={{ fontSize: '12px', color: 'var(--color-text-muted-new)', marginTop: '1px' }}>
-              {subtitle}
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="px-4 py-4">{children}</div>
-    </section>
-  );
-}
-
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <span
-      className="block mb-1.5 font-medium"
-      style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}
-    >
-      {children}
-    </span>
-  );
-}
 
 // Shared field treatment. The visual styling (navy 1.5px outline, --control-h,
 // hover/focus ring, aria-invalid state) lives in `.nv-field` (globals.css) so the
