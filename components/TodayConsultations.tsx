@@ -38,7 +38,7 @@ export default function TodayConsultations({ refreshKey, currentConsultationId }
 
   return (
     <aside
-      className="flex flex-col"
+      className="nv-card-enter flex flex-col"
       style={{
         background: 'var(--color-bg-surface)',
         border: '1px solid var(--color-border-soft)',

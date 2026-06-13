@@ -360,15 +360,26 @@ html, body {
     animation: nv-shimmer 1.3s ease infinite;
   }
 
+  /* Card entrance — fade + 4px rise on mount. The `to` frame ends at
+     transform:none so no transform lingers (which would establish a containing
+     block over the name-typeahead dropdown). */
+  .nv-card-enter { animation: nv-card-in 240ms ease-out both; }
+
   @media (prefers-reduced-motion: reduce) {
     .nv-field { transition: none; }
     .nv-skeleton { animation: none; background-position: 0 0; }
+    .nv-card-enter { animation: none; }
   }
 }
 
 @keyframes nv-shimmer {
   from { background-position: 100% 0; }
   to   { background-position: 0 0; }
+}
+
+@keyframes nv-card-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
 }
 
 /* ── Result page 3-column grid ─────────────────────────────── */

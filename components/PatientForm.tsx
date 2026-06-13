@@ -226,14 +226,19 @@ export default function PatientForm({
       <DocumentationSection state={state} set={set} />
 
       <div
-        className="flex items-center justify-between gap-3 px-6 py-4 rounded-xl"
-        style={{ background: 'var(--color-bg-card)', border: '1px solid var(--color-border)' }}
+        className="nv-card-enter flex items-center justify-between gap-3 px-5 py-4"
+        style={{
+          background: 'var(--color-bg-surface)',
+          border: '1px solid var(--color-border-soft)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--shadow-raised)',
+        }}
       >
         <button
           type="button"
           onClick={onSaveDraft}
           disabled={!canSubmit || isSaving}
-          className="text-sm px-4 py-2 rounded-md font-medium disabled:opacity-50"
+          className="text-sm px-4 py-2 rounded-md font-medium transition active:scale-[0.985] motion-reduce:active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed"
           style={{
             background: 'transparent',
             color: 'var(--color-brand)',
@@ -247,10 +252,14 @@ export default function PatientForm({
           data-tour="start"
           onClick={onStartVisit}
           disabled={!canSubmit || isSaving}
-          className="text-sm px-5 py-2.5 rounded-md text-white font-medium transition hover:opacity-95 disabled:opacity-50"
-          style={{ background: 'var(--gradient-brand)' }}
+          className="inline-flex items-center gap-2 text-sm px-5 py-2.5 rounded-md text-white font-medium transition hover:opacity-95 active:scale-[0.985] motion-reduce:active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ background: 'var(--color-accent)', boxShadow: '0 2px 8px rgba(39, 76, 119, 0.25)' }}
         >
-          Започни запис →
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0014 0M12 18.5V21" />
+          </svg>
+          Започни запис
         </button>
       </div>
     </div>
@@ -293,6 +302,7 @@ function SectionCard({
   return (
     <section
       data-tour={dataTour}
+      className="nv-card-enter"
       style={{
         background: 'var(--color-bg-surface)',
         border: '1px solid var(--color-border-soft)',
