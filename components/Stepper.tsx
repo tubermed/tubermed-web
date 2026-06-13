@@ -29,6 +29,7 @@ export default function Stepper({ steps, current }: StepperProps) {
         return (
           <div key={i} className="flex items-center gap-2 flex-1">
             <div
+              aria-current={isActive ? 'step' : undefined}
               className="flex-1 flex items-center gap-3 px-4 py-2.5 rounded-lg border transition-all"
               style={{
                 background: isActive ? 'var(--color-accent)' : 'transparent',
@@ -43,21 +44,30 @@ export default function Stepper({ steps, current }: StepperProps) {
                 style={{
                   background: isActive
                     ? 'rgba(255,255,255,0.18)'
+                    : isDone
+                    ? 'var(--color-accent)'
                     : 'transparent',
                   borderWidth: 1,
                   borderColor: isActive
                     ? 'rgba(255,255,255,0.4)'
                     : isDone
-                    ? 'var(--color-brand)'
+                    ? 'var(--color-accent)'
                     : 'var(--color-border-mid)',
                   color: isActive
                     ? 'white'
                     : isDone
-                    ? 'var(--color-brand)'
+                    ? 'white'
                     : 'var(--color-text-hint)',
                 }}
               >
-                {i + 1}
+                {isDone ? (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                       strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M5 12l5 5L19 7" />
+                  </svg>
+                ) : (
+                  i + 1
+                )}
               </span>
               <span className="flex flex-col min-w-0">
                 <span
@@ -88,13 +98,13 @@ export default function Stepper({ steps, current }: StepperProps) {
             </div>
             {i < steps.length - 1 && (
               <span
-                className="w-4 h-px flex-shrink-0"
+                className="w-4 h-[1.5px] flex-shrink-0 rounded-full"
                 style={{
                   background:
                     i < current
-                      ? 'var(--color-brand)'
-                      : 'var(--color-border-mid)',
-                  opacity: i < current ? 0.35 : 1,
+                      ? 'var(--color-accent)'
+                      : 'var(--color-border-soft)',
+                  opacity: i < current ? 0.5 : 1,
                 }}
               />
             )}
