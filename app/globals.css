@@ -9,12 +9,12 @@
      ───────────────────────────────────────────────────────────── */
 
   /* Primary accent (steel blue, sampled from the logo mark) */
-  --color-accent:        #3A6BA5;
-  --color-accent-hover:  #305A8C;
-  --color-accent-soft:   #E5ECF4;
+  --color-accent:        #274C77;
+  --color-accent-hover:  #1D3B5C;
+  --color-accent-soft:   #E1E9F3;
 
   /* Brand ink — navy wordmark color, used for headings/links on light surfaces */
-  --color-ink:           #1F3A5F;
+  --color-ink:           #142740;
 
   /* Surfaces */
   --color-bg-app:        #F3F5F8;
@@ -40,11 +40,11 @@
 
   /* ── Legacy token names (kept as aliases — values remapped) ── */
   /* Brand → steel-blue accent + navy ink */
-  --color-brand:       #3A6BA5;
-  --color-brand-dark:  #1F3A5F;
-  --color-brand-mid:   #305A8C;
-  --color-brand-soft:  #E5ECF4;
-  --color-brand-light: #EDF2F8;
+  --color-brand:       #274C77;
+  --color-brand-dark:  #142740;
+  --color-brand-mid:   #2F5C8F;
+  --color-brand-soft:  #E1E9F3;
+  --color-brand-light: #E8EFF7;
 
   /* Gold → warn (sole consumer is the inline "review" highlight) */
   --color-gold:      #B7791F;
@@ -69,12 +69,12 @@
   --color-border-mid:   #C2CAD4;
 
   /* Navy rail */
-  --color-nav-bg:         #1C2B44;
-  --color-nav-bg-elev:    #253754;
+  --color-nav-bg:         #1B2D49;
+  --color-nav-bg-elev:    #24395A;
   --color-nav-text:       #AAB6C6;
   --color-nav-text-muted: #8893A1;
   --color-nav-border:     #253754;
-  --color-nav-active:     #2C436A;
+  --color-nav-active:     #274C77;
   --color-nav-text-active:#FFFFFF;
 
   /* No gradients in clinical UI — keep var defined as flat accent fallback
