@@ -94,6 +94,19 @@
   --font-ui:    var(--font-inter), ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   --font-sans:  var(--font-ui);
   --font-mono:  var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* ── New-visit redesign (elevated, brand-navy) — ADDITIVE tokens ──
+     Heading ink, field outlines, focus ring, section-header tint, the
+     raised-card shadow, and a shared control height used by inputs AND
+     their loading skeletons (guarantees zero size jump on data load).
+     Existing token names are untouched; these only add. */
+  --color-heading:            #274C77;
+  --color-input-border:       #2B5489;
+  --color-input-border-hover: #274C77;
+  --color-focus-ring:         rgba(39, 76, 119, 0.18);
+  --color-surface-tint:       #F6F9FC;
+  --shadow-raised:            0 1px 2px rgba(20, 39, 64, .04), 0 6px 20px rgba(20, 39, 64, .05);
+  --control-h:                42px;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -272,6 +285,14 @@ html.lenis, html.lenis body { height: auto; }
 .lenis.lenis-smooth iframe { pointer-events: none; }
 
 * { box-sizing: border-box; }
+
+/* Opt the product OUT of UA / forced dark-mode rendering. With no color-scheme
+   declared, a dark-mode OS (or Chromium "Auto Dark Mode") force-darkens the page
+   even though every author surface here is light — that is what turned the
+   new-visit breadcrumb + stepper band near-black. Every app surface is light;
+   the only dark surface is the intentional navy sidebar, an author background
+   that color-scheme does not affect. */
+:root { color-scheme: light; }
 
 html, body {
   background: var(--color-bg-app);
