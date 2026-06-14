@@ -29,6 +29,7 @@ import { loadMkb, getMkbDataSync, resolveMkb } from '@/lib/mkb10';
 import { filedMainTerm, filedComorbidityTerm, spokenDivergesFromOfficial } from '@/lib/diagnosis';
 import { loadIal } from '@/lib/ial-meds';
 import { findHighlights, type HighlightMatch } from '@/lib/vital-rules';
+import { findSourceSpan, type SourceSpan } from '@/lib/source-grounding';
 import {
   formatPlainText,
   copyToClipboard,
@@ -189,6 +190,11 @@ function ResultPageInner() {
   const [reviewPopupOpen, setReviewPopupOpen] = useState(false);
   const [activeNav, setActiveNav] = useState<string>('sec-diag');
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  // Per-field source grounding (Traceability Phase 1a): the char range in the
+  // transcript that the LAST-clicked field came from (null = no clear source).
+  // sourceTick re-fires the scroll effect even when the same span is reselected.
+  const [sourceSpan, setSourceSpan] = useState<SourceSpan | null>(null);
+  const [sourceTick, setSourceTick] = useState(0);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [mkbOpen, setMkbOpen] = useState(false);
   const [mkbTarget, setMkbTarget] = useState<MkbTarget | null>(null);
@@ -764,6 +770,42 @@ function ResultPageInner() {
     setToast({ kind, message, id: toastIdRef.current });
   }, []);
 
+  // ── Per-field source grounding (Traceability Phase 1a) ────────
+  // Find where the clicked field came from in the RAW transcript, open the
+  // transcript, and highlight + scroll to that span. Empty transcript →
+  // "unavailable" (the button is already disabled in that case); no confident
+  // match → open the transcript so the doctor can scan it manually. Frontend-only
+  // and read-only: this NEVER flags the field as wrong.
+  const showSource = useCallback(
+    (fieldKey: string, value: string) => {
+      if (!original) return;
+      const transcript = original.transcript || '';
+      if (!transcript.trim()) {
+        showToast('error', 'Източникът не е наличен — транскриптът липсва.');
+        return;
+      }
+      setTranscriptOpen(true);
+      const span = findSourceSpan(fieldKey, value, transcript);
+      setSourceSpan(span);
+      setSourceTick((n) => n + 1);
+      if (!span) {
+        showToast('info', 'Не открихме ясен източник — проверете ръчно.');
+      }
+    },
+    [original, showToast]
+  );
+
+  // Scroll to the highlighted source span (or the transcript block when there's
+  // no clear match) after each "виж източника" click. Keyed on sourceTick so a
+  // repeat click on the same field re-scrolls.
+  useEffect(() => {
+    if (sourceTick === 0) return;
+    const el = document.getElementById(sourceSpan ? 'source-mark' : 'transcript-block');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: sourceSpan ? 'center' : 'start' });
+    }
+  }, [sourceTick, sourceSpan]);
+
   // ── Review confirmation (server-persisted) ────────────────────
   // The doctor's approval MUST persist server-side before the UI unlocks —
   // POST /:id/export hard-gates on note_approved=true. Until the approve
@@ -955,6 +997,10 @@ function ResultPageInner() {
     );
   }
 
+  // Source-grounding affordance is disabled when there's no transcript to point
+  // at (cold-start recovery omits the transcript by design).
+  const hasTranscript = !!(original.transcript && original.transcript.trim());
+
   const todayBg = new Date().toLocaleDateString('bg-BG', {
     day: '2-digit',
     month: '2-digit',
@@ -1133,6 +1179,7 @@ function ResultPageInner() {
         <main className="min-w-0">
           {/* Transcript collapsible */}
           <details
+            id="transcript-block"
             className="mb-4 no-print"
             open={transcriptOpen}
             onToggle={(e) =>
@@ -1161,11 +1208,7 @@ function ResultPageInner() {
                 borderWidth: 1,
               }}
             >
-              {original.transcript || (
-                <em style={{ color: 'var(--color-text-hint)' }}>
-                  Транскриптът е празен.
-                </em>
-              )}
+              <TranscriptBody transcript={original.transcript} span={sourceSpan} />
             </div>
           </details>
 
@@ -1203,6 +1246,16 @@ function ResultPageInner() {
               onComorbidityBrowse={(i) => openMkbPicker({ kind: 'co', index: i })}
               onComorbidityAddBrowse={() => openMkbPicker({ kind: 'co-add' })}
               onComorbidityRemove={removeComorbidity}
+              onShowSource={() =>
+                showSource(
+                  'osnovna_diagnoza',
+                  original.fields.osnovna_diagnoza?.trim() ||
+                    fields.osnovna_diagnoza?.trim() ||
+                    fields.osnovna_mkb_term?.trim() ||
+                    '',
+                )
+              }
+              sourceDisabled={!hasTranscript}
               isLocked={isLocked}
               notifyCopy={notifyCopy}
             />
@@ -1216,11 +1269,17 @@ function ResultPageInner() {
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('anamneza', raw)}
               headerRight={
-                <CopyButton
-                  text={fields.anamneza || ''}
-                  disabled={isLocked}
-                  onResult={notifyCopy}
-                />
+                <>
+                  <SourceButton
+                    onClick={() => showSource('anamneza', fields.anamneza || '')}
+                    disabled={!hasTranscript}
+                  />
+                  <CopyButton
+                    text={fields.anamneza || ''}
+                    disabled={isLocked}
+                    onResult={notifyCopy}
+                  />
+                </>
               }
             />
             <TextSection
@@ -1232,11 +1291,17 @@ function ResultPageInner() {
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('obektivno', raw)}
               headerRight={
-                <CopyButton
-                  text={fields.obektivno || ''}
-                  disabled={isLocked}
-                  onResult={notifyCopy}
-                />
+                <>
+                  <SourceButton
+                    onClick={() => showSource('obektivno', fields.obektivno || '')}
+                    disabled={!hasTranscript}
+                  />
+                  <CopyButton
+                    text={fields.obektivno || ''}
+                    disabled={isLocked}
+                    onResult={notifyCopy}
+                  />
+                </>
               }
             />
             <TextSection
@@ -1248,11 +1313,17 @@ function ResultPageInner() {
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('izsledvania', raw)}
               headerRight={
-                <CopyButton
-                  text={fields.izsledvania || ''}
-                  disabled={isLocked}
-                  onResult={notifyCopy}
-                />
+                <>
+                  <SourceButton
+                    onClick={() => showSource('izsledvania', fields.izsledvania || '')}
+                    disabled={!hasTranscript}
+                  />
+                  <CopyButton
+                    text={fields.izsledvania || ''}
+                    disabled={isLocked}
+                    onResult={notifyCopy}
+                  />
+                </>
               }
             />
             <TextSection
@@ -1264,11 +1335,17 @@ function ResultPageInner() {
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('terapia', raw)}
               headerRight={
-                <CopyButton
-                  text={fields.terapia || ''}
-                  disabled={isLocked}
-                  onResult={notifyCopy}
-                />
+                <>
+                  <SourceButton
+                    onClick={() => showSource('terapia', fields.terapia || '')}
+                    disabled={!hasTranscript}
+                  />
+                  <CopyButton
+                    text={fields.terapia || ''}
+                    disabled={isLocked}
+                    onResult={notifyCopy}
+                  />
+                </>
               }
             />
 
@@ -1282,7 +1359,13 @@ function ResultPageInner() {
 
                 {visibleSections['sec-napravlenia'] && (
                   <div id="sec-napravlenia" className="mb-4 scroll-mt-24">
-                    <SubsectionHead title="📋 Направления за консултация" />
+                    <div className="flex items-center justify-between gap-2">
+                      <SubsectionHead title="📋 Направления за консултация" />
+                      <SourceButton
+                        onClick={() => showSource('napravlenia', fields.napravlenia || '')}
+                        disabled={!hasTranscript}
+                      />
+                    </div>
                     <EditableField
                       value={fields.napravlenia || ''}
                       onChange={(v) => updateField('napravlenia', v)}
@@ -1292,7 +1375,13 @@ function ResultPageInner() {
 
                 {visibleSections['sec-naznacheni'] && (
                   <div id="sec-naznacheni" className="scroll-mt-24">
-                    <SubsectionHead title="🔬 Назначени изследвания" />
+                    <div className="flex items-center justify-between gap-2">
+                      <SubsectionHead title="🔬 Назначени изследвания" />
+                      <SourceButton
+                        onClick={() => showSource('naznacheni', fields.naznacheni || '')}
+                        disabled={!hasTranscript}
+                      />
+                    </div>
                     <EditableField
                       value={fields.naznacheni || ''}
                       onChange={(v) => updateField('naznacheni', v)}
@@ -1641,6 +1730,75 @@ function TopbarBtn({
   );
 }
 
+// Small, unobtrusive "виж източника" affordance (Traceability Phase 1a). Sits
+// near a field's label; disabled (greyed, with a hint) when no transcript exists.
+// no-print so it never bleeds into the printed/exported document.
+function SourceButton({
+  onClick,
+  disabled,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={
+        disabled
+          ? 'Източникът не е наличен'
+          : 'Покажи мястото в транскрипта, от което идва това поле'
+      }
+      className="no-print flex-shrink-0 text-xs underline decoration-dotted underline-offset-2 transition hover:opacity-80 disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
+      style={{ color: 'var(--color-text-hint)', background: 'transparent' }}
+    >
+      виж източника
+    </button>
+  );
+}
+
+// Render the transcript, wrapping the matched source range (if any) in a single
+// highlight <mark>. Bounds are clamped defensively. Reuses the highlight
+// vocabulary (mark + soft background + bottom border) in the brand family so the
+// "source" highlight reads distinct from the gold/red vital warnings.
+function TranscriptBody({
+  transcript,
+  span,
+}: {
+  transcript: string;
+  span: SourceSpan | null;
+}) {
+  if (!transcript) {
+    return (
+      <em style={{ color: 'var(--color-text-hint)' }}>Транскриптът е празен.</em>
+    );
+  }
+  if (!span) return <>{transcript}</>;
+  const start = Math.max(0, Math.min(span.start, transcript.length));
+  const end = Math.max(start, Math.min(span.end, transcript.length));
+  return (
+    <>
+      {transcript.slice(0, start)}
+      <mark
+        id="source-mark"
+        className="source-mark"
+        style={{
+          background: 'var(--color-brand-soft)',
+          color: 'var(--color-text)',
+          borderBottom: '2px solid var(--color-brand)',
+          padding: '0 2px',
+          borderRadius: '3px',
+          fontWeight: 500,
+        }}
+      >
+        {transcript.slice(start, end)}
+      </mark>
+      {transcript.slice(end)}
+    </>
+  );
+}
+
 function SectionHead({
   title,
   actions,
@@ -1733,6 +1891,8 @@ function DiagnosesSection({
   onComorbidityBrowse,
   onComorbidityAddBrowse,
   onComorbidityRemove,
+  onShowSource,
+  sourceDisabled,
   isLocked,
   notifyCopy,
 }: {
@@ -1749,6 +1909,8 @@ function DiagnosesSection({
   onComorbidityBrowse: (index: number) => void;
   onComorbidityAddBrowse: () => void;
   onComorbidityRemove: (index: number) => void;
+  onShowSource: () => void;
+  sourceDisabled: boolean;
   isLocked: boolean;
   notifyCopy: (ok: boolean) => void;
 }) {
@@ -1774,11 +1936,14 @@ function DiagnosesSection({
       <SectionHead title="Диагнози МКБ-10" />
 
       <div className="mb-4 pb-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
-        <div
-          className="text-xs uppercase tracking-wider mb-2 font-medium"
-          style={{ color: 'var(--color-text-hint)' }}
-        >
-          Основна диагноза
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div
+            className="text-xs uppercase tracking-wider font-medium"
+            style={{ color: 'var(--color-text-hint)' }}
+          >
+            Основна диагноза
+          </div>
+          <SourceButton onClick={onShowSource} disabled={sourceDisabled} />
         </div>
         <div className="flex items-center gap-2">
           <MkbTypeahead
