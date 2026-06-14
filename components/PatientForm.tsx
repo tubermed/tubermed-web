@@ -12,6 +12,7 @@ import PatientLoadConfirmModal from './PatientLoadConfirmModal';
 import { SectionCard } from './ui/Card';
 import { FieldLabel } from './ui/Field';
 import { Button } from './ui/Button';
+import DateInputBg from './ui/DateInputBg';
 import type {
   CreatePatientPayload,
   Gender,
@@ -549,12 +550,10 @@ function IdentificationSection({
 
         <label className="md:col-span-3">
           <FieldLabel>Дата на раждане</FieldLabel>
-          <input
-            type="date"
+          <DateInputBg
             className={`${inputClass()} tabular-nums`}
-            style={inputStyle()}
             value={state.birth_date}
-            onChange={(e) => set('birth_date', e.target.value)}
+            onChange={(iso) => set('birth_date', iso)}
             aria-invalid={birthError ? true : undefined}
           />
           {birthError && (

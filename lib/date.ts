@@ -78,3 +78,28 @@ export function dobError(iso: string | null | undefined): 'invalid' | 'future' |
   if (isFutureIsoDate(iso)) return 'future';
   return null;
 }
+
+/**
+ * ISO `YYYY-MM-DD` → masked `ДД.ММ.ГГГГ` display text ('' if empty / malformed).
+ * The masked display format IS formatDateBg's output, reused so the two never
+ * drift.
+ */
+export function isoToBgInput(iso: string | null | undefined): string {
+  return formatDateBg(iso);
+}
+
+/**
+ * Masked `DD.MM.YYYY` (or 8 raw digits) → ISO `YYYY-MM-DD`. INCOMPLETE input
+ * (fewer than 8 digits) emits '' so the age readout + DOB validation don't
+ * flicker mid-typing. A COMPLETE 8-digit date emits its ISO even when the day is
+ * impossible (e.g. 31.02) — deliberately: dobError is the single validator that
+ * flags 'invalid' / 'future' and blocks submit, so a mistyped date surfaces an
+ * explicit error instead of silently failing to register (a DOB-loss hazard in a
+ * clinical record). Format only — realness checking lives in dobError.
+ */
+export function bgInputToIso(text: string | null | undefined): string {
+  if (!text) return '';
+  const digits = text.replace(/\D/g, '');
+  if (digits.length !== 8) return '';
+  return `${digits.slice(4, 8)}-${digits.slice(2, 4)}-${digits.slice(0, 2)}`;
+}
