@@ -26,6 +26,7 @@ import SkeletonInput from '@/components/SkeletonInput';
 import { Button } from '@/components/ui/Button';
 import { api, ApiError } from '@/lib/api';
 import { ageFromBirthDate } from '@/lib/age';
+import { formatDateTimeBg } from '@/lib/date';
 import type {
   PatientSearchHit,
   PatientSummary,
@@ -839,23 +840,9 @@ function DiagnosisRow({ diagnoza, mkb }: { diagnoza: string; mkb: string }) {
   );
 }
 
-// Render an ISO timestamp in Europe/Sofia, formatted as `DD.MM.YYYY · HH:MM`.
-// Matches the visual idiom used elsewhere (TodayConsultations, result header).
+// Thin wrapper over the shared formatter (single source of truth in lib/date).
+// `created_at` is always a valid server timestamp, so the '' fallback never shows.
 function formatVisitDate(iso: string): string {
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    const date = new Intl.DateTimeFormat('bg-BG', {
-      timeZone: 'Europe/Sofia',
-      day: '2-digit', month: '2-digit', year: 'numeric',
-    }).format(d);
-    const time = new Intl.DateTimeFormat('bg-BG', {
-      timeZone: 'Europe/Sofia',
-      hour: '2-digit', minute: '2-digit',
-    }).format(d);
-    return `${date} · ${time}`;
-  } catch {
-    return iso;
-  }
+  return formatDateTimeBg(iso);
 }
 

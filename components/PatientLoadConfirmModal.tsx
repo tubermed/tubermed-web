@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import type { PatientSearchHit } from '@/lib/types';
+import { formatDateBg } from '@/lib/date';
 
 interface PatientLoadConfirmModalProps {
   /** The patient picked from the NAME typeahead, or null when the modal is closed. */
@@ -31,7 +32,7 @@ export default function PatientLoadConfirmModal({ hit, onConfirm, onCancel }: Pa
   const fullName = [hit.first_name, hit.middle_name, hit.last_name].filter(Boolean).join(' ');
   // Same disambiguating meta line as PatientResultRow (DOB · ····last4 · type).
   const meta = [
-    hit.birth_date ? `р. ${hit.birth_date}` : 'без дата на раждане',
+    hit.birth_date ? formatDateBg(hit.birth_date) : 'без дата на раждане',
     hit.national_id_last4 ? `····${hit.national_id_last4}` : null,
     hit.national_id_type && hit.national_id_type !== 'none' ? hit.national_id_type.toUpperCase() : null,
   ].filter(Boolean).join(' · ');

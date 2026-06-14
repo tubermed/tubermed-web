@@ -1,6 +1,7 @@
 'use client';
 
 import type { PatientSearchHit } from '@/lib/types';
+import { formatDateBg } from '@/lib/date';
 
 // Shared patient-result row — the single source of truth for how a matched
 // patient is presented in a dropdown. Used by BOTH the top-bar PatientSearch
@@ -31,7 +32,7 @@ export default function PatientResultRow({
           {[hit.first_name, hit.middle_name, hit.last_name].filter(Boolean).join(' ')}
         </span>
         <span className="block text-xs" style={{ color: 'var(--color-text-muted)' }}>
-          {hit.birth_date ? `р. ${hit.birth_date}` : 'без дата на раждане'}
+          {hit.birth_date ? formatDateBg(hit.birth_date) : 'без дата на раждане'}
           {hit.national_id_last4 ? ` · ····${hit.national_id_last4}` : ''}
           {hit.national_id_type && hit.national_id_type !== 'none' ? ` · ${hit.national_id_type.toUpperCase()}` : ''}
         </span>

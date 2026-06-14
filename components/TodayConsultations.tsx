@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
+import { formatDateBg } from '@/lib/date';
 import type { TodayResponse, TodayConsultation } from '@/lib/types';
 import SkeletonInput from './SkeletonInput';
 
@@ -195,7 +196,5 @@ function StatusPill({ tone, children }: { tone: 'pending' | 'active' | 'done' | 
 }
 
 function formatBgDate(iso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!m) return iso;
-  return `${m[3]}.${m[2]}.${m[1]}`;
+  return formatDateBg(iso);
 }
