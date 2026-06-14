@@ -31,3 +31,50 @@ export function formatDateTimeBg(iso: string | null | undefined): string {
   }).format(d);
   return `${date} · ${time}`;
 }
+
+/**
+ * Today's date in Europe/Sofia as ISO `YYYY-MM-DD`. Mirrors lib/egn.ts
+ * dobFromEgn's convention (`en-CA` → ISO-shaped) so manual-DOB checks and ЕГН
+ * decoding agree on what "today" is (a baby registered first thing in the
+ * morning isn't flagged just because UTC hasn't ticked over).
+ */
+export function todaySofiaIso(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Sofia' }).format(new Date());
+}
+
+/**
+ * True when `iso` is a well-formed `YYYY-MM-DD` AND a real calendar day — it
+ * round-trips through Date, so 2025-02-30 / month 13 / day 00 are rejected.
+ * Mirrors the round-trip check dobFromEgn uses on the ЕГН-decoded date.
+ */
+export function isRealIsoDate(iso: string | null | undefined): boolean {
+  if (!iso) return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return false;
+  const y = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10);
+  const d = parseInt(m[3], 10);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+}
+
+/**
+ * True when `iso` is strictly after today (Europe/Sofia). ISO `YYYY-MM-DD`
+ * strings collate chronologically, so a lexical compare is a date compare.
+ */
+export function isFutureIsoDate(iso: string | null | undefined): boolean {
+  if (!iso) return false;
+  return iso > todaySofiaIso();
+}
+
+/**
+ * Validate a (manually entered) birth date. Returns `null` for empty or a real,
+ * past date; 'invalid' for a non-real calendar day; 'future' for a real date
+ * after today. Empty is intentionally OK — birth_date stays optional.
+ */
+export function dobError(iso: string | null | undefined): 'invalid' | 'future' | null {
+  if (!iso) return null;
+  if (!isRealIsoDate(iso)) return 'invalid';
+  if (isFutureIsoDate(iso)) return 'future';
+  return null;
+}

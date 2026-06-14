@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { dobFromEgn, genderFromEgn, isValidEgnChecksum } from '@/lib/egn';
 import { ageFromBirthDate } from '@/lib/age';
+import { dobError } from '@/lib/date';
 import { api } from '@/lib/api';
 import ChipInput from './ChipInput';
 import MkbPicker from './MkbPicker';
@@ -193,6 +194,10 @@ export default function PatientForm({
   );
 
   const age = useMemo(() => ageFromBirthDate(state.birth_date), [state.birth_date]);
+  // Validate a manually-typed DOB (value-based, so input-agnostic). Empty is OK
+  // (birth_date is optional); an ЕГН-derived DOB never trips this (dobFromEgn
+  // already excludes future / impossible dates before it reaches state).
+  const birthError = useMemo(() => dobError(state.birth_date), [state.birth_date]);
 
   // Mirrors IdentificationSection's `egnInvalid`: true ONLY when type is ЕГН,
   // exactly 10 digits are entered, AND those digits can't decode to a real past
@@ -204,7 +209,7 @@ export default function PatientForm({
     state.national_id_type === 'egn' &&
     state.national_id.length === 10 &&
     dobFromEgn(state.national_id) === null;
-  const canSubmit = Boolean(state.first_name.trim() && state.last_name.trim() && !egnInvalid);
+  const canSubmit = Boolean(state.first_name.trim() && state.last_name.trim() && !egnInvalid && !birthError);
 
   return (
     <div className="flex flex-col gap-6">
@@ -213,6 +218,7 @@ export default function PatientForm({
         set={set}
         setMany={setMany}
         age={age}
+        birthError={birthError}
         isExistingPatient={isExistingPatient}
         selectedPatient={selectedPatient}
         onEgnMatchLoad={onEgnMatchLoad}
@@ -293,12 +299,13 @@ function inputStyle(): React.CSSProperties {
 }
 
 function IdentificationSection({
-  state, set, setMany, age, isExistingPatient, selectedPatient, onEgnMatchLoad, onNamePick, onClearSelection,
+  state, set, setMany, age, birthError, isExistingPatient, selectedPatient, onEgnMatchLoad, onNamePick, onClearSelection,
 }: {
   state: PatientFormState;
   set: SetFn;
   setMany: (partial: Partial<PatientFormState>) => void;
   age: number | null;
+  birthError: 'invalid' | 'future' | null;
   isExistingPatient?: boolean;
   selectedPatient?: PatientSummary | null;
   onEgnMatchLoad?: (hit: PatientSearchHit, typedEgn: string) => void;
@@ -548,7 +555,15 @@ function IdentificationSection({
             style={inputStyle()}
             value={state.birth_date}
             onChange={(e) => set('birth_date', e.target.value)}
+            aria-invalid={birthError ? true : undefined}
           />
+          {birthError && (
+            <span className="block text-xs mt-1" style={{ color: 'var(--color-danger)' }} role="alert">
+              {birthError === 'future'
+                ? 'Датата на раждане не може да е в бъдещето.'
+                : 'Невалидна дата на раждане.'}
+            </span>
+          )}
         </label>
       </div>
     </SectionCard>
