@@ -462,3 +462,22 @@ html, body {
     margin: 18mm 16mm;
   }
 }
+
+/* ── DOB calendar popover (react-day-picker, brand-themed) ───────────────────
+   The library's style.css is imported unlayered in components/ui/DateInputBg.tsx,
+   so these overrides are deliberately UNLAYERED too and scoped under `.dob-cal`
+   to out-specify the rdp defaults. Per-instance accent + sizing live as inline
+   --rdp-* vars on <DayPicker>; this covers what variables can't: a FILLED accent
+   selected day (not the default border), a soft hover, and brand caption/weekday
+   colour. Workspace --color-* tokens only. */
+.dob-cal .rdp-month_caption { font-size: 0.9rem; font-weight: 500; color: var(--color-heading); }
+.dob-cal .rdp-caption_label { font-weight: 500; color: var(--color-heading); }
+.dob-cal .rdp-dropdown_root { color: var(--color-heading); font-weight: 500; }
+.dob-cal .rdp-weekday { color: var(--color-text-muted); font-weight: 500; text-transform: none; opacity: 1; font-size: 0.72rem; }
+.dob-cal .rdp-day_button { font-variant-numeric: tabular-nums; border-radius: 9999px; }
+.dob-cal .rdp-day_button:hover:not(:disabled) { background: var(--color-accent-soft); }
+.dob-cal .rdp-today:not(.rdp-outside) .rdp-day_button { font-weight: 600; }
+.dob-cal .rdp-selected { font-size: inherit; }
+.dob-cal .rdp-selected .rdp-day_button { background: var(--color-accent); color: #fff; border: none; font-weight: 600; }
+.dob-cal .rdp-selected .rdp-day_button:hover { background: var(--color-accent); }
+.dob-cal .rdp-disabled .rdp-day_button { cursor: not-allowed; }

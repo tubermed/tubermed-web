@@ -1,7 +1,10 @@
 'use client';
 
-import { useState } from 'react';
-import { isoToBgInput, bgInputToIso } from '@/lib/date';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { DayPicker } from 'react-day-picker';
+import { bg } from 'date-fns/locale';
+import { isoToBgInput, bgInputToIso, isRealIsoDate } from '@/lib/date';
+import 'react-day-picker/style.css';
 
 interface DateInputBgProps {
   /** Controlled value as ISO `YYYY-MM-DD` (or '' for empty). */
@@ -23,12 +26,48 @@ function maskBgDate(raw: string): string {
   return `${d.slice(0, 2)}.${d.slice(2, 4)}.${d.slice(4)}`;
 }
 
+// ISO `YYYY-MM-DD` → a local Date (midday, to dodge DST/timezone edges), or
+// undefined when the string isn't a real calendar day.
+function isoToDate(iso: string): Date | undefined {
+  if (!isRealIsoDate(iso)) return undefined;
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d, 12);
+}
+
+// Local Date → ISO `YYYY-MM-DD`, read from local parts (NOT toISOString, which
+// would shift the day across the UTC boundary).
+function dateToIso(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+// react-day-picker theming: the per-instance accent + sizing are set as inline
+// CSS variables on the calendar root (inline beats the library's own .rdp-root
+// defaults); the rest (filled selected day, hover, weekday/caption colour) is the
+// unlayered `.dob-cal` block in globals.css. Brand tokens throughout.
+const RDP_VARS = {
+  '--rdp-accent-color': 'var(--color-accent)',
+  '--rdp-accent-background-color': 'var(--color-accent-soft)',
+  '--rdp-today-color': 'var(--color-accent)',
+  '--rdp-day-width': '38px',
+  '--rdp-day-height': '38px',
+  '--rdp-day_button-width': '36px',
+  '--rdp-day_button-height': '36px',
+  '--rdp-disabled-opacity': '0.35',
+  '--rdp-nav-height': '2.4rem',
+  '--rdp-nav_button-width': '2rem',
+  '--rdp-nav_button-height': '2rem',
+} as React.CSSProperties;
+
 /**
- * Typed, masked ДД.ММ.ГГГГ birth-date field. No calendar popup — a DOB is a known
- * value, so typing beats scrolling back decades. The parent owns the canonical
- * ISO value (state.birth_date); this holds only the local masked display text and
- * translates both ways via lib/date. Anything partial / incomplete emits '' so the
- * age readout and DOB validation don't flicker mid-typing.
+ * Typed, masked ДД.ММ.ГГГГ birth-date field, plus an additive calendar popover.
+ * Typing is the primary path and is unchanged: the parent owns the canonical ISO
+ * value (state.birth_date); this holds only the local masked text and translates
+ * both ways via lib/date. The calendar (react-day-picker, brand-themed) is the
+ * second way to pick — a day click flows through the SAME onChange(iso) as typing,
+ * so age derivation / dobError / the red border all keep working untouched. The
+ * year dropdown jumps to any birth year in a click or two; future dates are
+ * disabled; bg locale, Monday-start.
  */
 export default function DateInputBg({
   value,
@@ -40,17 +79,38 @@ export default function DateInputBg({
 }: DateInputBgProps) {
   const [text, setText] = useState(() => isoToBgInput(value));
   // Reflect EXTERNAL value changes (ЕГН auto-fill, × Изчисти, name-load) into the
-  // masked text WITHOUT clobbering an in-progress entry: `lastEmitted` is the ISO
-  // this field last produced, so the parent echoing it straight back is a no-op
-  // while a genuinely new external value re-seeds the display. This is React's
-  // "adjust state when a prop changes" render-phase idiom — deliberately NOT a
-  // useEffect (react-compiler forbids synchronous setState in effects) and NOT a
-  // ref (render-time ref writes are banned too).
+  // masked text WITHOUT clobbering an in-progress entry — render-phase idiom
+  // (deliberately not a useEffect / ref; react-compiler-safe). See C3.
   const [lastEmitted, setLastEmitted] = useState(value);
   if (value !== lastEmitted) {
     setLastEmitted(value);
     setText(isoToBgInput(value));
   }
+
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLSpanElement>(null);
+
+  // Close on outside-click / Escape. This effect ONLY adds/removes listeners
+  // (the setState lives in the callbacks, never synchronously in the body) — the
+  // shape react-compiler allows.
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const masked = maskBgDate(e.target.value);
@@ -60,16 +120,83 @@ export default function DateInputBg({
     onChange(iso);
   }
 
+  function handleSelect(date: Date | undefined) {
+    if (!date) return; // re-clicking the selected day deselects — keep the value
+    const iso = dateToIso(date);
+    setText(isoToBgInput(iso));
+    setLastEmitted(iso);
+    onChange(iso);
+    setOpen(false);
+  }
+
+  const today = useMemo(() => new Date(), []);
+  const startMonth = useMemo(() => new Date(1900, 0), []);
+  const disabledAfterToday = useMemo(() => ({ after: today }), [today]);
+  const selectedDate = useMemo(() => isoToDate(value), [value]);
+  // Open to the entered date, else a plausible adult year so the year dropdown
+  // lands somewhere sensible rather than on the current year.
+  const defaultMonth = useMemo(
+    () => selectedDate ?? new Date(today.getFullYear() - 30, 0),
+    [selectedDate, today],
+  );
+
   return (
-    <input
-      id={id}
-      className={className}
-      value={text}
-      onChange={handleChange}
-      inputMode="numeric"
-      placeholder={placeholder}
-      maxLength={10}
-      aria-invalid={ariaInvalid}
-    />
+    <span ref={wrapperRef} className="relative block">
+      <input
+        id={id}
+        className={`${className ?? ''} pr-10`.trim()}
+        value={text}
+        onChange={handleChange}
+        inputMode="numeric"
+        placeholder={placeholder}
+        maxLength={10}
+        aria-invalid={ariaInvalid}
+      />
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-md transition-colors"
+        style={{ width: 32, height: 32, color: 'var(--color-text-muted)' }}
+        aria-label="Изберете дата от календар"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title="Календар"
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-accent-soft)'; e.currentTarget.style.color = 'var(--color-accent)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--color-text-muted)'; }}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2.5v3M16 2.5v3" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Календар за дата на раждане"
+          className="dob-cal absolute right-0 top-full mt-2 z-50 p-2"
+          style={{
+            background: 'var(--color-bg-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-lg)',
+            boxShadow: 'var(--shadow-pop)',
+          }}
+        >
+          <DayPicker
+            mode="single"
+            selected={selectedDate}
+            onSelect={handleSelect}
+            defaultMonth={defaultMonth}
+            startMonth={startMonth}
+            endMonth={today}
+            captionLayout="dropdown"
+            disabled={disabledAfterToday}
+            locale={bg}
+            weekStartsOn={1}
+            style={RDP_VARS}
+          />
+        </div>
+      )}
+    </span>
   );
 }
