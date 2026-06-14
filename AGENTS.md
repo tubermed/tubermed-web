@@ -19,6 +19,14 @@ To inspect file bytes/encoding/line-endings, read the file directly (the Read to
 use **cmd**/`git` without PowerShell redirection (e.g. `git cat-file blob HEAD:path | od`,
 `grep -c $'\r'` via the Bash tool). Repo source is UTF-8 + LF; `core.autocrlf=true`.
 
+# Git workflow — work on `master`, no feature branches
+
+All work lands directly on **`master`**, one commit per change; Dimitar reviews the
+diff and **pushes** (never push yourself, never `--force`). If a task prompt says to
+create or branch off a feature branch, **ignore that and work on `master`** — it's the
+standing repo convention, not a per-task choice. Stage only the files you changed
+(`git add <file>`, never `-A`).
+
 # New-visit ЕГН workflow (frontend)
 
 The patient-intake flow lives in `app/(workspace)/app/new-visit/page.tsx` +
@@ -784,6 +792,70 @@ Commits `ac3d496`, `6f86f31`.
 - **Label trim (`ac3d496`).** The `Дата на раждане` field label dropped its
   `(опционално — се запълва автоматично от ЕГН)` parenthetical — now just
   `Дата на раждане`.
+
+# Workspace dates & figures — `lib/date.ts`, tabular-nums, hairline dividers (2026-06-14)
+
+- **`lib/date.ts` is the single source of truth** for date display + DOB validation:
+  `formatDateBg` (ISO `YYYY-MM-DD` → `ДД.ММ.ГГГГ`), `formatDateTimeBg` (`created_at`
+  timestamps, Europe/Sofia), `todaySofiaIso` (Europe/Sofia via
+  `Intl.DateTimeFormat('en-CA', …)` — the SAME "today" convention `dobFromEgn` uses),
+  `isRealIsoDate`, `isFutureIsoDate`, `dobError`, `isoToBgInput` (= `formatDateBg`) and
+  `bgInputToIso`. The older `formatVisitDate` (patients page) and `formatBgDate`
+  (`TodayConsultations`) now **delegate** to it — don't re-add a third formatter.
+  **Convention: every displayed date is `ДД.ММ.ГГГГ`** — no raw ISO and **no `р.` prefix**
+  (the old `р. <ISO>` birth-date renders are gone from `PatientResultRow` /
+  `PatientLoadConfirmModal` / `DedupModal`).
+- **Data figures use `--font-ui` (Inter) + `tabular-nums`, NOT mono.** Workspace ЕГН /
+  dates / age / counts dropped `--font-jetbrains` for the UI font + `tabular-nums` (digits
+  column-align, read as clinical UI). Mono is **reserved** for code-like tokens (МКБ-10
+  codes, `MedsPicker` INN/dose) and the scribe recording timer — **do NOT reintroduce mono
+  on data figures**. (Landing `components/landing/*` keeps its own mono/tabular — untouched.)
+- **Patient meta lines: hairline divider, not a middot.** `PatientHeaderStrip` row 1 and
+  the shared match-row (`PatientResultRow`, plus the identical line in
+  `PatientLoadConfirmModal` / `DedupModal`) separate items with an `aria-hidden` `w-px`
+  divider (`--color-border`), **not** a `·` — the masked `····last4` ЕГН already uses dots,
+  so a `·` separator beside it read as dot-on-dot noise.
+
+# DOB field — masked input + calendar (`components/ui/DateInputBg.tsx`) (2026-06-14)
+
+The native `<input type="date">` is **retired — do not reintroduce it.** The
+`Дата на раждане` control is a **masked typed input** (`ДД.ММ.ГГГГ`, `inputMode="numeric"`,
+`tabular-nums`) with an added **calendar popover**; it is self-contained — `PatientForm`
+only passes `value` / `onChange(iso)` / `aria-invalid`.
+
+- **ISO contract (invariant).** `state.birth_date` is ALWAYS `YYYY-MM-DD` or `''`. Typing
+  AND a calendar pick both flow through the **same `onChange(iso)`**, so age derivation,
+  `dobError`, the red border and the ЕГН auto-fill stay decoupled from the input UI. The
+  external value-sync (ЕГН auto-fill / × Изчисти repaint the masked text) is a **render-phase
+  "adjust-state-on-prop-change"** idiom — deliberately **not** a `useEffect` (react-compiler
+  forbids setState in effects) and **not** a render-time ref write.
+- **Validation = `dobError` only.** A future OR not-a-real-calendar date drives a **single**
+  message „Невалидна дата на раждане.", the **red invalid border**
+  (`.nv-field[aria-invalid="true"]` in `globals.css` — already present, and it applies to the
+  ЕГН field too: one invalid-field convention), and **blanks Възраст**. Empty is allowed (DOB
+  is optional); `canSubmit` gates on `!birthError`.
+- **`bgInputToIso` is format-only (deliberate).** A complete 8-digit entry emits its ISO even
+  if the day is impossible (`31.02.2000`); `dobError` is the **sole** validator. Returning
+  `''` for an impossible date would let a typo register as **empty** — silent DOB loss in a
+  clinical record. The non-real-but-well-formed ISO is transient and can never be saved (submit
+  is blocked). Incomplete (<8 digits) still emits `''` so age / validation don't flicker.
+
+**Calendar — react-day-picker `@10` + date-fns `@4`** (the first date lib in the workspace;
+pure client-side, no network / no GDPR-EU-flow implication). Brand-themed; future dates
+disabled (`disabled={{ after: today }}`); `bg` locale, Monday start; `captionLayout="dropdown"`
+with `startMonth` 1900 → `endMonth` today gives the instant **year-dropdown** jump. Two gotchas:
+- **⚠ Unlayered CSS.** rdp's `style.css` imports **unlayered**, so it out-prioritizes
+  Tailwind's `@layer` rules. The theme is an **unlayered `.dob-cal` block at the END of
+  `globals.css`** (NOT inside `@layer components`, or it loses the cascade) + inline `--rdp-*`
+  vars on `<DayPicker>`. **Do not move it into a layer.**
+- **⚠ Portal / stacking context.** Each `.nv-card-enter` `SectionCard` forms its own stacking
+  context (the entrance `transform`), so an `absolute` popover inside one card is **painted
+  over by a later sibling card** — `z-index` can't cross sibling stacking contexts. The popover
+  is therefore **portaled to `document.body`** (positioned in document coords, anchored to the
+  field), and the outside-click guard checks **both** the field wrapper and the portaled
+  popover. Rule for any future popover that must escape these cards: `SectionCard` keeping
+  `overflow: visible` is enough for an in-card dropdown (e.g. `MkbTypeahead`), but **NOT**
+  across the animated sibling cards — portal out.
 
 # Known issues / gotchas
 
