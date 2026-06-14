@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
 import type { TodayResponse, TodayConsultation } from '@/lib/types';
 import SkeletonInput from './SkeletonInput';
@@ -131,8 +132,8 @@ function Row({ item, isCurrent }: { item: TodayConsultation; isCurrent: boolean 
     ? [item.patient.first_name, item.patient.last_name].filter(Boolean).join(' ')
     : 'Без пациент';
 
-  return (
-    <div className="relative pl-3 pr-2 py-2 rounded-md">
+  const body = (
+    <>
       {isCurrent && (
         <span
           className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full"
@@ -153,7 +154,25 @@ function Row({ item, isCurrent }: { item: TodayConsultation; isCurrent: boolean 
         </div>
         <StatusPill tone={status.tone}>{status.text}</StatusPill>
       </div>
-    </div>
+    </>
+  );
+
+  // A row WITHOUT a patient (orphaned / never-staged visit) stays a plain,
+  // non-interactive cell. A row WITH a patient becomes a link into that
+  // patient's history focused on this consultation — the /app/patients page
+  // reads ?patient=&visit= and opens the visit's note (see that page).
+  if (!item.patient) {
+    return <div className="relative pl-3 pr-2 py-2 rounded-md">{body}</div>;
+  }
+
+  return (
+    <Link
+      href={`/app/patients?patient=${item.patient.id}&visit=${item.id}`}
+      aria-label={`Отвори историята на ${patientName}`}
+      className="relative block pl-3 pr-2 py-2 rounded-md cursor-pointer transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-[var(--color-accent)]"
+    >
+      {body}
+    </Link>
   );
 }
 

@@ -16,7 +16,8 @@
 // patient-level fields (allergies + chronic) are mutable here, and those
 // touch the PATIENT row, NOT any consultation.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import PatientSearch from '@/components/PatientSearch';
 import RevealEgnButton from '@/components/RevealEgnButton';
 import ChipInput from '@/components/ChipInput';
@@ -61,6 +62,28 @@ const VISIT_TYPE_LABEL: Record<VisitType, string> = {
 };
 
 export default function PatientsPage() {
+  // useSearchParams() (read in PatientsPageInner for the ?patient=&visit=
+  // deep-link) must live inside a Suspense boundary in Next.js 16, otherwise the
+  // statically-prerendered route bails out at build time.
+  return (
+    <Suspense fallback={<PatientsBootSplash />}>
+      <PatientsPageInner />
+    </Suspense>
+  );
+}
+
+function PatientsBootSplash() {
+  return (
+    <div
+      className="flex-1 flex items-center justify-center"
+      style={{ color: 'var(--color-text-muted)' }}
+    >
+      Зареждане…
+    </div>
+  );
+}
+
+function PatientsPageInner() {
   // ── Selected patient + visit list ─────────────────────────────────────
   const [patient, setPatient]   = useState<PatientSummary | null>(null);
   const [visits, setVisits]     = useState<PatientConsultationSummary[]>([]);
@@ -91,6 +114,16 @@ export default function PatientsPage() {
   }, []);
   const detailReqIdRef = useRef(0);
   const listReqIdRef   = useRef(0);
+
+  // ── Deep-link (?patient=&visit=) ───────────────────────────────────────
+  // The schedule rail (components/TodayConsultations.tsx) links here focused on
+  // a patient + a specific visit. The params are consumed once per unique link
+  // (deepLinkRef); scrollTargetRef carries the visit id whose row should be
+  // scrolled into view once it has rendered as active.
+  const searchParams    = useSearchParams();
+  const deepLinkRef     = useRef<string | null>(null);
+  const scrollTargetRef = useRef<string | null>(null);
+  const activeRowRef    = useRef<HTMLLIElement | null>(null);
 
   // ── Search → patient pick ──────────────────────────────────────────────
   const loadPatient = useCallback(async (id: string) => {
@@ -171,6 +204,45 @@ export default function PatientsPage() {
       if (myReq === detailReqIdRef.current) setLoadingDetail(false);
     }
   }, [showToast]);
+
+  // ── Deep-link driver ───────────────────────────────────────────────────
+  // On mount / when ?patient=&visit= change, select that patient and open that
+  // visit's note through the EXISTING loadPatient + openVisit path (no parallel
+  // mechanism). deepLinkRef makes it run once per unique link and never on an
+  // unrelated re-render, so the manual search→pick flow (which never touches the
+  // URL) is unaffected. A pending/started visit has no filed note: openVisit
+  // still selects + highlights the row and shows the honest "no note" empty
+  // state — it does not force note content. An unknown/cross-org id falls through
+  // to the existing 404 toast + empty handling.
+  useEffect(() => {
+    const patientId = searchParams.get('patient');
+    if (!patientId) return;
+    const visitId = searchParams.get('visit');
+    const linkKey = `${patientId}|${visitId ?? ''}`;
+    if (deepLinkRef.current === linkKey) return;       // already handled this link
+    deepLinkRef.current = linkKey;
+    let cancelled = false;
+    void (async () => {
+      await loadPatient(patientId);
+      if (cancelled || deepLinkRef.current !== linkKey) return;
+      if (visitId) {
+        scrollTargetRef.current = visitId;
+        await openVisit(visitId);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [searchParams, loadPatient, openVisit]);
+
+  // Once the deep-linked visit row has rendered as active, bring it into view.
+  // block:'nearest' is a no-op when the row is already visible — the common case,
+  // since today's visit is the newest and sits at the top of the list.
+  useEffect(() => {
+    if (!scrollTargetRef.current || scrollTargetRef.current !== activeVisitId) return;
+    const row = activeRowRef.current;
+    if (!row) return;
+    scrollTargetRef.current = null;
+    row.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+  }, [activeVisitId]);
 
   // ── Save patient-level fields (chronic + allergies only) ──────────────
   // Patient data, NOT a consultation. The PATCH below carries only those
@@ -279,7 +351,7 @@ export default function PatientsPage() {
                 <>
                   <ul className="divide-y" style={{ borderColor: 'var(--color-border-soft)' }}>
                     {visits.map((v) => (
-                      <li key={v.id}>
+                      <li key={v.id} ref={v.id === activeVisitId ? activeRowRef : undefined}>
                         <VisitRow
                           visit={v}
                           active={v.id === activeVisitId}
