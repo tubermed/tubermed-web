@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { DayPicker } from 'react-day-picker';
 import { bg } from 'date-fns/locale';
 import { isoToBgInput, bgInputToIso, isRealIsoDate } from '@/lib/date';
@@ -41,10 +42,15 @@ function dateToIso(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-// react-day-picker theming: the per-instance accent + sizing are set as inline
-// CSS variables on the calendar root (inline beats the library's own .rdp-root
-// defaults); the rest (filled selected day, hover, weekday/caption colour) is the
-// unlayered `.dob-cal` block in globals.css. Brand tokens throughout.
+// Anchor point for the popover: document coordinates of the field's bottom-right.
+// Document coords (+ scrollX/Y) mean the absolutely-positioned, body-portaled
+// popover scrolls WITH the page (never clipped off-screen), and translateX(-100%)
+// right-aligns it under the field's right edge (where the calendar icon sits).
+function anchorOf(el: HTMLElement): { top: number; left: number } {
+  const r = el.getBoundingClientRect();
+  return { top: r.bottom + window.scrollY + 6, left: r.right + window.scrollX };
+}
+
 const RDP_VARS = {
   '--rdp-accent-color': 'var(--color-accent)',
   '--rdp-accent-background-color': 'var(--color-accent-soft)',
@@ -68,6 +74,10 @@ const RDP_VARS = {
  * so age derivation / dobError / the red border all keep working untouched. The
  * year dropdown jumps to any birth year in a click or two; future dates are
  * disabled; bg locale, Monday-start.
+ *
+ * The popover is PORTALED to <body>: the form's section cards each form a stacking
+ * context (the .nv-card-enter transform), so an in-card absolute popover would be
+ * painted over by the next card — portaling floats it above everything.
  */
 export default function DateInputBg({
   value,
@@ -88,15 +98,25 @@ export default function DateInputBg({
   }
 
   const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
   const wrapperRef = useRef<HTMLSpanElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
-  // Close on outside-click / Escape. This effect ONLY adds/removes listeners
-  // (the setState lives in the callbacks, never synchronously in the body) — the
-  // shape react-compiler allows.
+  function openCalendar() {
+    if (wrapperRef.current) setAnchor(anchorOf(wrapperRef.current));
+    setOpen(true);
+  }
+
+  // Close on outside-click / Escape; keep the popover anchored on resize. The
+  // effect ONLY adds/removes listeners (the setState lives in the callbacks, never
+  // synchronously in the body) — the shape react-compiler allows. Outside-click
+  // must consider BOTH the field wrapper and the (portaled) popover.
   useEffect(() => {
     if (!open) return;
     function onPointerDown(e: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (wrapperRef.current?.contains(t) || popoverRef.current?.contains(t)) return;
+      setOpen(false);
     }
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -104,11 +124,16 @@ export default function DateInputBg({
         setOpen(false);
       }
     }
+    function onResize() {
+      if (wrapperRef.current) setAnchor(anchorOf(wrapperRef.current));
+    }
     document.addEventListener('mousedown', onPointerDown);
     document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', onResize);
     return () => {
       document.removeEventListener('mousedown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('resize', onResize);
     };
   }, [open]);
 
@@ -154,7 +179,7 @@ export default function DateInputBg({
       />
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? setOpen(false) : openCalendar())}
         className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-md transition-colors"
         style={{ width: 32, height: 32, color: 'var(--color-text-muted)' }}
         aria-label="Изберете дата от календар"
@@ -170,12 +195,18 @@ export default function DateInputBg({
         </svg>
       </button>
 
-      {open && (
+      {open && anchor && createPortal(
         <div
+          ref={popoverRef}
           role="dialog"
           aria-label="Календар за дата на раждане"
-          className="dob-cal absolute right-0 top-full mt-2 z-50 p-2"
+          className="dob-cal p-2"
           style={{
+            position: 'absolute',
+            top: anchor.top,
+            left: anchor.left,
+            transform: 'translateX(-100%)',
+            zIndex: 1000,
             background: 'var(--color-bg-surface)',
             border: '1px solid var(--color-border)',
             borderRadius: 'var(--radius-lg)',
@@ -195,7 +226,8 @@ export default function DateInputBg({
             weekStartsOn={1}
             style={RDP_VARS}
           />
-        </div>
+        </div>,
+        document.body,
       )}
     </span>
   );
