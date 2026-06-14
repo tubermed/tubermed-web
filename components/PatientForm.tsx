@@ -541,7 +541,7 @@ function IdentificationSection({
         </div>
 
         <label className="md:col-span-3">
-          <FieldLabel>Дата на раждане (опционално — се запълва автоматично от ЕГН)</FieldLabel>
+          <FieldLabel>Дата на раждане</FieldLabel>
           <input
             type="date"
             className={`${inputClass()} font-[family-name:var(--font-jetbrains)]`}
