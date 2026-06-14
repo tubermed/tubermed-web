@@ -246,42 +246,46 @@ export default function SettingsPage() {
   );
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-6 py-8">
-      <header className="mb-6">
-        <h1 className="text-xl font-semibold" style={{ color: 'var(--color-heading)' }}>
-          Настройки
-        </h1>
-        <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>
-          Вашите данни и предпочитания.
-        </p>
-      </header>
+    <div className="flex-1 flex flex-col sm:flex-row min-w-0">
+      {/* Secondary rail — flush against the dark app sidebar: a vertical panel
+          on sm+, collapsing to a wrapping row above the content on narrow. */}
+      <nav
+        className="flex flex-row sm:flex-col flex-wrap gap-1 p-3 sm:p-4 sm:w-56 sm:flex-shrink-0 border-b sm:border-b-0 sm:border-r"
+        style={{ background: 'var(--color-surface-tint)', borderColor: 'var(--color-border)' }}
+      >
+        {PANES.map((p) => (
+          <SubNavItem
+            key={p.key}
+            label={p.label}
+            icon={p.icon}
+            active={pane === p.key}
+            onClick={() => setPane(p.key)}
+          />
+        ))}
+      </nav>
 
-      {loadError && (
-        <div
-          role="alert"
-          className="text-sm px-4 py-3 rounded-md mb-6"
-          style={{ background: 'var(--color-danger-soft)', color: 'var(--color-danger)' }}
-        >
-          Профилът не можа да се зареди. Опитайте да презаредите страницата.
-        </div>
-      )}
+      {/* Content pane — fills the remaining width; the form is held to a readable
+          measure and left-aligned so the rail + content read as one product. */}
+      <div className="flex-1 min-w-0 px-6 sm:px-8 py-8">
+        <div className="max-w-2xl">
+          <header className="mb-6">
+            <h1 className="text-xl font-semibold" style={{ color: 'var(--color-heading)' }}>
+              Настройки
+            </h1>
+            <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>
+              Вашите данни и предпочитания.
+            </p>
+          </header>
 
-      <div className="flex flex-col sm:flex-row gap-6">
-        {/* Left sub-nav — vertical on sm+, a wrapping row on narrow screens. */}
-        <nav className="flex flex-row sm:flex-col flex-wrap gap-1 sm:w-44 sm:flex-shrink-0">
-          {PANES.map((p) => (
-            <SubNavItem
-              key={p.key}
-              label={p.label}
-              icon={p.icon}
-              active={pane === p.key}
-              onClick={() => setPane(p.key)}
-            />
-          ))}
-        </nav>
-
-        {/* Active pane */}
-        <div className="flex-1 min-w-0">
+          {loadError && (
+            <div
+              role="alert"
+              className="text-sm px-4 py-3 rounded-md mb-6"
+              style={{ background: 'var(--color-danger-soft)', color: 'var(--color-danger)' }}
+            >
+              Профилът не можа да се зареди. Опитайте да презаредите страницата.
+            </div>
+          )}
           {pane === 'profile' && (
             <SectionCard title="Профил" subtitle="Лични данни" icon={<ProfileIcon />}>
               <div className="flex flex-col gap-4">
@@ -502,7 +506,7 @@ function SubNavItem({
       type="button"
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
-      className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-left transition-colors"
+      className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-left transition-colors sm:w-full"
       style={
         active
           ? { background: 'var(--color-accent-soft)', color: 'var(--color-ink)', fontWeight: 500 }
