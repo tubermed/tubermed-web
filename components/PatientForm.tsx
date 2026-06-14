@@ -194,7 +194,12 @@ export default function PatientForm({
     [state, onChange]
   );
 
-  const age = useMemo(() => ageFromBirthDate(state.birth_date), [state.birth_date]);
+  // Age only when the DOB is valid — an errored date (future or not-a-real-day)
+  // shows „—", never a misleading number (e.g. 31.02.2000 must not read „26 г.").
+  const age = useMemo(
+    () => (dobError(state.birth_date) ? null : ageFromBirthDate(state.birth_date)),
+    [state.birth_date],
+  );
   // Validate a manually-typed DOB (value-based, so input-agnostic). Empty is OK
   // (birth_date is optional); an ЕГН-derived DOB never trips this (dobFromEgn
   // already excludes future / impossible dates before it reaches state).
@@ -558,9 +563,7 @@ function IdentificationSection({
           />
           {birthError && (
             <span className="block text-xs mt-1" style={{ color: 'var(--color-danger)' }} role="alert">
-              {birthError === 'future'
-                ? 'Датата на раждане не може да е в бъдещето.'
-                : 'Невалидна дата на раждане.'}
+              Невалидна дата на раждане.
             </span>
           )}
         </label>
