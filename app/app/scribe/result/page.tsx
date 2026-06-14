@@ -1181,7 +1181,7 @@ function ResultPageInner() {
               Амбулаторен лист
             </h1>
             <div
-              className="text-sm font-[family-name:var(--font-jetbrains)]"
+              className="text-sm tabular-nums"
               style={{ color: 'var(--color-text-muted)' }}
             >
               {todayBg}
