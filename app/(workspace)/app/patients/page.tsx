@@ -329,7 +329,7 @@ function PatientsPageInner() {
                   Посещения
                 </div>
                 <div
-                  className="text-xs font-[family-name:var(--font-jetbrains)] px-2 py-0.5 rounded"
+                  className="text-xs tabular-nums px-2 py-0.5 rounded"
                   style={{ background: 'var(--color-brand-soft)', color: 'var(--color-brand)' }}
                 >
                   {total}
@@ -505,7 +505,7 @@ function VisitRow({
     >
       <div className="flex items-center justify-between gap-2">
         <span
-          className="text-xs font-[family-name:var(--font-jetbrains)]"
+          className="text-xs tabular-nums"
           style={{ color: 'var(--color-text-muted)' }}
         >
           {formatVisitDate(visit.created_at)}
@@ -737,7 +737,7 @@ function NoteHeader({ detail, dateLabel }: { detail: ConsultationDetail; dateLab
           </span>
         )}
         <span
-          className="text-sm font-[family-name:var(--font-jetbrains)]"
+          className="text-sm tabular-nums"
           style={{ color: 'var(--color-text-muted)' }}
         >
           {dateLabel}

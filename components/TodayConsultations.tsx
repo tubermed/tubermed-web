@@ -78,7 +78,7 @@ export default function TodayConsultations({ refreshKey, currentConsultationId }
         <div className="flex-1" />
         {data && (
           <span
-            className="text-sm font-[family-name:var(--font-jetbrains)] px-2 py-0.5 rounded-md flex-shrink-0"
+            className="text-sm tabular-nums px-2 py-0.5 rounded-md flex-shrink-0"
             style={{ background: 'var(--color-accent-soft)', color: 'var(--color-accent)' }}
           >
             {data.done}/{data.total}
@@ -144,7 +144,7 @@ function Row({ item, isCurrent }: { item: TodayConsultation; isCurrent: boolean 
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <div
-            className="text-xs font-[family-name:var(--font-jetbrains)]"
+            className="text-xs tabular-nums"
             style={{ color: 'var(--color-text-muted)' }}
           >
             {time}

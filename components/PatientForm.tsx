@@ -518,7 +518,7 @@ function IdentificationSection({
           <label>
             <FieldLabel>Възраст</FieldLabel>
             <div
-              className={`${inputClass()} nv-field--readonly flex items-center font-[family-name:var(--font-jetbrains)]`}
+              className={`${inputClass()} nv-field--readonly flex items-center tabular-nums`}
             >
               {age !== null ? `${age} г.` : '—'}
             </div>
@@ -544,7 +544,7 @@ function IdentificationSection({
           <FieldLabel>Дата на раждане</FieldLabel>
           <input
             type="date"
-            className={`${inputClass()} font-[family-name:var(--font-jetbrains)]`}
+            className={`${inputClass()} tabular-nums`}
             style={inputStyle()}
             value={state.birth_date}
             onChange={(e) => set('birth_date', e.target.value)}
@@ -663,7 +663,7 @@ function EgnField({
       <FieldLabel>{fieldLabel}</FieldLabel>
       <span className="relative block">
         <input
-          className={`${inputClass()} font-[family-name:var(--font-jetbrains)] tracking-wider pr-7`}
+          className={`${inputClass()} tabular-nums tracking-wider pr-7`}
           value={state.national_id}
           onChange={(e) => handleNationalIdChange(e.target.value)}
           disabled={state.national_id_type === 'none'}

@@ -36,7 +36,7 @@ export default function RevealEgnButton({ patientId, last4, autoHideMs = 30_000 
     return (
       <span className="inline-flex items-center gap-2">
         <span
-          className="font-[family-name:var(--font-jetbrains)] text-sm"
+          className="tabular-nums text-sm"
           style={{ color: 'var(--color-text)' }}
         >
           {plain}
@@ -54,7 +54,7 @@ export default function RevealEgnButton({ patientId, last4, autoHideMs = 30_000 
 
   return (
     <span className="inline-flex items-center gap-2">
-      <span className="font-[family-name:var(--font-jetbrains)] text-sm" style={{ color: 'var(--color-text)' }}>
+      <span className="tabular-nums text-sm" style={{ color: 'var(--color-text)' }}>
         ····{last4 ?? '????'}
       </span>
       <button
