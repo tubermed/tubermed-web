@@ -675,7 +675,136 @@ was trimmed, and the top-bar gear was wired. Backend contract:
   is typed (the settings seed reads it directly, no cast) and `ClinicSidebar` now
   shows the real clinic name instead of always falling back to its default.
 
+# New-visit visual redesign + the shared UI system (2026-06-13)
+
+The `/app/new-visit` flow (`app/(workspace)/app/new-visit/page.tsx` +
+`components/PatientForm.tsx`) was rebuilt onto an elevated, **light-surface**
+brand-navy design, and the primitives it introduced were lifted into a shared
+module that Настройки + Пациенти now also consume (see the restyle section
+below). Commits `1a92258`, `757663c`, `2da71d9`, `16321c0`, `ac19413`,
+`82010f1`. Workspace `--color-*` tokens only (no landing `--lp-*`, no
+framer-motion / Lenis).
+
+- **New design tokens (`app/globals.css @theme`, `1a92258` / `757663c`).**
+  `--color-heading` (#274C77 — headings are now navy, distinct from the
+  near-black `--color-ink` text token), `--color-input-border` (#2B5489) /
+  `--color-input-border-hover` (#274C77), `--color-focus-ring`
+  (rgba(39,76,119,.18)), `--color-surface-tint` (#F6F9FC), `--shadow-raised`
+  (hairline + soft-drop elevation), and `--control-h` (42px — the SHARED
+  input + skeleton height, so a field and its loading skeleton match and nothing
+  reflows on load). ADDITIVE new tokens — separate from the earlier `--color-*`
+  VALUE repaletting already documented under "Public marketing landing".
+- **⚠ `color-scheme: light` on `:root` (globals.css) — the fix for the
+  dark/black-background bug.** The workspace page + top bar rendered with dark
+  backgrounds under OS / UA dark mode; `color-scheme: light` opts the product out
+  of forced dark rendering. **Gotcha: workspace surfaces are ALWAYS light — the
+  only dark surface is the navy sidebar rail. Do NOT reintroduce dark backgrounds
+  / a dark-mode variant** (the landing keeps its own `--lp-*` world).
+- **Shared UI primitives now live in `components/ui/`** — `Card.tsx`
+  (`Card` / `SectionHeader` / `SectionCard`), `Field.tsx`
+  (`FieldLabel` / `Field` / `TextInput`), `Button.tsx` (`Button`) — plus
+  `components/SkeletonInput.tsx` and the shared `components/Stepper.tsx`, and the
+  global `.nv-field` / `.nv-skeleton` / `.nv-card-enter` classes in globals.css.
+  **New-visit, Настройки, and Пациенти all consume this ONE source — edit the
+  shared module, not per-page copies.** (This SUPERSEDES the earlier "SectionCard
+  is private to `PatientForm.tsx`" note in the Настройки v1 section — `7d09552`
+  lifted those primitives out of `PatientForm.tsx` into `components/ui/Card.tsx`,
+  ~85 lines trimmed from the form.)
+- **The look:** navy-outlined fields (`.nv-field`, 1.5px `--color-input-border`,
+  navy focus ring via `--color-focus-ring`; `757663c`); size-matched loading
+  skeletons (`SkeletonInput` at `--control-h` → no load-time reflow); a prominent
+  multi-step `Stepper` on a light surface with a completed-step check + active-step
+  `aria-current` (`16321c0`); the elevated "Днешен ден" rail (`ac19413`); and a
+  reduced-motion-safe card entrance (`.nv-card-enter`, `82010f1`) —
+  `@media (prefers-reduced-motion: reduce)` HARD-STOPS the entrance + the field
+  transitions.
+
+# Client-side ЕГН checksum (2026-06-13)
+
+Commits `0d863d3`, `deec3a5`. `lib/egn.ts` `isValidEgnChecksum()` is a
+behavioural MIRROR of backend `lib/national-id.js validateEgnChecksum` — weights
+`[2,4,8,5,10,9,7,3,6]`, `sum % 11`, `>= 10 → 0`, compared to the 10th digit (same
+cross-repo-parity convention as `translit.ts ↔ translit.js`; a divergence means
+the client shows a false "valid" while the server only records a soft
+`validation_warning`).
+
+- **The green ✓ and the rule-2B instant ЕГН auto-load now require a valid
+  checksum.** In `PatientForm.tsx`, `egnValid` (the ✓ / auto-load gate) is
+  `isEgn && 10 digits && derivedDob !== null && checksumOk`.
+- **A bad checksum is a SOFT, non-blocking amber warning** with the backend's
+  exact wording `Невалидна контролна сума на ЕГН` (`checksumInvalid`). It is
+  deliberately **NOT** folded into the hard `egnInvalid` / `canSubmit` gate —
+  mirroring the backend's soft posture (ЕГН **format** = hard 400; **checksum** =
+  `validation_warning` only). Format stays the only fatal client gate.
+- **`deec3a5`:** the `handleFormChange` drop-on-ЕГН-invalidation predicate
+  (`egnStillValid`, rule 4) now ALSO keys off `isValidEgnChecksum`, so a
+  transposed / typo'd ЕГН that still decodes to a real date no longer leaves the
+  loaded patient's name + DOB/age pinned next to a checksum-invalid ЕГН — the drop
+  now fires consistently with the green ✓ disappearing.
+
+# Настройки + Пациенти elevated onto the shared UI system (2026-06-13)
+
+Commits `7ff7451` (the `git add -A` sweep that actually LANDED
+`components/ui/{Card,Field,Button}.tsx` — its commit message "egn fix" is
+mislabeled and carries no egn change), `7d09552` (lift `PatientForm` primitives
+into the shared module), `3ba6671` (Настройки), `6ac7c7e` (Пациенти).
+
+- **Настройки (`3ba6671`):** the four panes now use the shared
+  `Card` / `Field` / `TextInput` + `SkeletonInput` + `Button` (−107 / +19 in
+  `settings/page.tsx` — local helpers replaced by the shared module).
+  `PasswordInput` / `SpecialtyTypeahead` (shared auth components) deliberately
+  KEEP their lighter grey-field look and coexist with `.nv-field` on the page.
+- **Пациенти (`6ac7c7e`):** elevated surfaces (raised shadow + hairline), navy
+  headings (`--color-heading`), visit-row hover, size-matched skeleton rows, a
+  real empty-state, the shared `Button`; `PatientSearch.tsx` gained the navy field
+  + focus ring (visual only — search / dropdown behaviour unchanged). **⚠ The
+  patients page applies the shared *tokens inline* on its card `<div>`s (+ the
+  shared `Button`), NOT the `<Card>` component** — a deliberate boundary to avoid
+  re-touching the file's documented `applyPage` / `loadPatient` ESLint baseline
+  (see Known issues). **`RevealEgnButton` / masked-last-4 / 30s auto-hide
+  untouched** (GDPR).
+
+# Schedule rail → patient-history deep-link + birth-date label trim (2026-06-13)
+
+Commits `ac3d496`, `6f86f31`.
+
+- **Deep-link (`6f86f31`).** `components/TodayConsultations.tsx` rows that HAVE a
+  patient now render a `<Link href="/app/patients?patient=<id>&visit=<consultationId>">`
+  (CSS hover + `focus-visible` ring, `aria-label="Отвори историята на <name>"`); a
+  `Без пациент` row stays a plain non-interactive cell. The patients page
+  (`app/(workspace)/app/patients/page.tsx`) reads `?patient=&visit=` via
+  `useSearchParams` — **wrapped in a `<Suspense>` boundary (Next 16 requirement;
+  keeps `/app/patients` static-prerendered)** — and a ref-guarded one-shot effect
+  drives the EXISTING `loadPatient` → `openVisit` path (no parallel mechanism),
+  once per unique `patient|visit`. The manual search→select flow (which never
+  touches the URL) is unaffected. A pending / started visit (no filed note)
+  degrades to the honest "Няма попълнен лист" empty state + a highlighted row — it
+  does not force note content. Backend `GET /api/consultations/today` already
+  carries `patient.id`.
+- **Label trim (`ac3d496`).** The `Дата на раждане` field label dropped its
+  `(опционално — се запълва автоматично от ЕГН)` parenthetical — now just
+  `Дата на раждане`.
+
 # Known issues / gotchas
+
+- **Break-it audit (2026-06-13) — `AUDIT-FINDINGS-2026-06-13.md` (repo root, web
+  commit `2420030`).** Findings-only whole-codebase safety / security audit (1 P0,
+  9 P1, 10 P2, 7 P3; byte-identical report in both repos; no code changed).
+  Web-relevant items still open — full repro / detail in the report (do NOT copy
+  it here):
+  - **[P1-01] ЕГН decodes to an impossible age (226 / 127).** `lib/egn.ts`
+    `dobFromEgn` maps months 21–32 to the 1800s and there is NO plausibility bound
+    front or back — a one-digit month typo silently flips the century 100 years.
+    The checksum fix (above) killed the "invalid-shown-as-valid" half; this
+    implausible-age sibling survives (correctable via PATCH → P1, not data-loss).
+    Fix = a `validateEgnPlausibleAge` bound on `canSubmit` (and backend).
+  - **[P1-03] Stale patient-summary cache survives a note edit.** Backend
+    `POST /:id/edit` never NULLs `patient_summary`; reopening `PatientSummaryModal`
+    (`load(false)`) serves the PRE-edit summary → a patient can leave with a
+    wrong-dose take-home. Fix = invalidate the cache on `/edit` (backend).
+  - **[P1-02] Drop-on-invalid-ID fires only for ЕГН, not ЛНЧ / foreign** — the
+    already-documented egn-only drop gap below; the audit re-confirms it as a
+    wrong-patient-filing hazard for the foreign subset.
 
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
   here (fixed 2026-06-01, web commit `df3198d`).** Named failure mode: **stale-closure
