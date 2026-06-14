@@ -63,9 +63,14 @@ export default function DedupModal({ conflict, onUseExisting, onForceCreate, onC
                 <div className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>
                   {[hit.first_name, hit.middle_name, hit.last_name].filter(Boolean).join(' ')}
                 </div>
-                <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                  {hit.birth_date ? formatDateBg(hit.birth_date) : 'без дата на раждане'}
-                  {hit.national_id_last4 ? ` · ····${hit.national_id_last4}` : ''}
+                <div className="flex items-center gap-x-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  <span>{hit.birth_date ? formatDateBg(hit.birth_date) : 'без дата на раждане'}</span>
+                  {hit.national_id_last4 && (
+                    <>
+                      <span aria-hidden className="w-px h-3 self-center" style={{ background: 'var(--color-border)' }} />
+                      <span>····{hit.national_id_last4}</span>
+                    </>
+                  )}
                 </div>
               </div>
               <button

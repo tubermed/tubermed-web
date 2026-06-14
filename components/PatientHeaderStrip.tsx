@@ -37,22 +37,30 @@ export default function PatientHeaderStrip({ pending }: PatientHeaderStripProps)
             {name}
           </span>
           {age !== null && (
-            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-              {age} г.
-            </span>
+            <>
+              <Divider />
+              <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                {age} г.
+              </span>
+            </>
           )}
           {genderLabel && (
-            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-              · {genderLabel}
-            </span>
+            <>
+              <Divider />
+              <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                {genderLabel}
+              </span>
+            </>
           )}
           {p.national_id_type !== 'none' && (
             <>
-              <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>·</span>
-              <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                {p.national_id_type === 'egn' ? 'ЕГН' : p.national_id_type === 'lnch' ? 'ЛНЧ' : 'ID'}:
+              <Divider />
+              <span className="inline-flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                <span>
+                  {p.national_id_type === 'egn' ? 'ЕГН' : p.national_id_type === 'lnch' ? 'ЛНЧ' : 'ID'}:
+                </span>
+                <RevealEgnButton patientId={p.id} last4={p.national_id_last4} />
               </span>
-              <RevealEgnButton patientId={p.id} last4={p.national_id_last4} />
             </>
           )}
           {pending.visit_metadata.visit_type && (
@@ -73,6 +81,10 @@ export default function PatientHeaderStrip({ pending }: PatientHeaderStripProps)
       </div>
     </div>
   );
+}
+
+function Divider() {
+  return <span aria-hidden className="w-px h-3.5 self-center" style={{ background: 'var(--color-border)' }} />;
 }
 
 function ContextField({ label, items, emptyLabel }: { label: string; items: string[]; emptyLabel: string }) {

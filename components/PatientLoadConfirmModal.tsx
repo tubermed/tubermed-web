@@ -30,12 +30,6 @@ export default function PatientLoadConfirmModal({ hit, onConfirm, onCancel }: Pa
   if (!hit) return null;
 
   const fullName = [hit.first_name, hit.middle_name, hit.last_name].filter(Boolean).join(' ');
-  // Same disambiguating meta line as PatientResultRow (DOB · ····last4 · type).
-  const meta = [
-    hit.birth_date ? formatDateBg(hit.birth_date) : 'без дата на раждане',
-    hit.national_id_last4 ? `····${hit.national_id_last4}` : null,
-    hit.national_id_type && hit.national_id_type !== 'none' ? hit.national_id_type.toUpperCase() : null,
-  ].filter(Boolean).join(' · ');
 
   return (
     <div
@@ -61,8 +55,21 @@ export default function PatientLoadConfirmModal({ hit, onConfirm, onCancel }: Pa
           <div className="text-base font-medium" style={{ color: 'var(--color-text)' }}>
             {fullName || '—'}
           </div>
-          <div className="text-sm mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-            {meta}
+          {/* Same disambiguating meta line as PatientResultRow (DOB | ····last4 | type). */}
+          <div className="flex items-center gap-x-2 text-sm mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+            <span>{hit.birth_date ? formatDateBg(hit.birth_date) : 'без дата на раждане'}</span>
+            {hit.national_id_last4 && (
+              <>
+                <span aria-hidden className="w-px h-3 self-center" style={{ background: 'var(--color-border)' }} />
+                <span>····{hit.national_id_last4}</span>
+              </>
+            )}
+            {hit.national_id_type && hit.national_id_type !== 'none' && (
+              <>
+                <span aria-hidden className="w-px h-3 self-center" style={{ background: 'var(--color-border)' }} />
+                <span>{hit.national_id_type.toUpperCase()}</span>
+              </>
+            )}
           </div>
         </div>
 
