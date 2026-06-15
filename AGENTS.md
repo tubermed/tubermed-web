@@ -926,6 +926,16 @@ Pushed: `16c0eca` matcher+test · `15a0ed0` UI · `b713480` A1+A2 recall fix · 
     already-documented egn-only drop gap below; the audit re-confirms it as a
     wrong-patient-filing hazard for the foreign subset.
 
+- **`POST /api/consultations/:id/patient-summary` can now return HTTP 429 (B5, backend
+  2026-06-15).** The endpoint grew a server-side cost cap. Two new failure shapes carry a
+  machine `code` plus a Bulgarian `error` message: `patient_summary_daily_limit` (per-org
+  daily cap, default 50/day) and `patient_summary_regen_cooldown` (60 s on `{regenerate:true}`;
+  also carries `retry_after_seconds`). Cache hits and the first generation are unaffected. The
+  scribe result UI (`PatientSummaryModal`) should branch on `code` and surface these as a
+  friendly notice (e.g. „Достигнат е дневният лимит за резюмета. Опитайте утре.") rather than a
+  generic error — **follow-up if not yet handled.** Backend detail:
+  `tubermed-backend/CLAUDE.md` (2026-06-15, B5).
+
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
   here (fixed 2026-06-01, web commit `df3198d`).** Named failure mode: **stale-closure
   debounce + commit-on-blur.** `EditableField` buffers keystrokes in internal `local`
