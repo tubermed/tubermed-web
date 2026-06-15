@@ -1758,10 +1758,13 @@ function SourceButton({
   );
 }
 
-// Render the transcript, wrapping the matched source range (if any) in a single
-// highlight <mark>. Bounds are clamped defensively. Reuses the highlight
-// vocabulary (mark + soft background + bottom border) in the brand family so the
-// "source" highlight reads distinct from the gold/red vital warnings.
+// Render the transcript, lighting up ONLY the matched-needle tokens (A4) and
+// greying the rest. The bridging filler between matched words (dose/frequency
+// runs, unrelated words) is NOT highlighted, so a partial match reads as partial
+// — a green block on a trivial fragment can no longer falsely reassure the doctor
+// that the whole field is grounded. Adjacent tokens separated only by whitespace
+// merge into one phrase-box. Reuses the brand-family highlight vocabulary (mark +
+// soft background + bottom border), distinct from the gold/red vital warnings.
 function TranscriptBody({
   transcript,
   span,
@@ -1774,14 +1777,30 @@ function TranscriptBody({
       <em style={{ color: 'var(--color-text-hint)' }}>Транскриптът е празен.</em>
     );
   }
-  if (!span) return <>{transcript}</>;
-  const start = Math.max(0, Math.min(span.start, transcript.length));
-  const end = Math.max(start, Math.min(span.end, transcript.length));
-  return (
-    <>
-      {transcript.slice(0, start)}
+  if (!span || span.tokens.length === 0) return <>{transcript}</>;
+
+  // Merge matched tokens separated only by whitespace into clean phrase-boxes.
+  const ranges: { start: number; end: number }[] = [];
+  for (const tk of span.tokens) {
+    const last = ranges[ranges.length - 1];
+    if (last && /^\s*$/.test(transcript.slice(last.end, tk.start))) last.end = tk.end;
+    else ranges.push({ start: tk.start, end: tk.end });
+  }
+
+  const out: React.ReactNode[] = [];
+  let cursor = 0;
+  ranges.forEach((r, i) => {
+    if (r.start > cursor) {
+      out.push(
+        <span key={`g${cursor}`} style={{ color: 'var(--color-text-hint)' }}>
+          {transcript.slice(cursor, r.start)}
+        </span>
+      );
+    }
+    out.push(
       <mark
-        id="source-mark"
+        key={`m${r.start}`}
+        id={i === 0 ? 'source-mark' : undefined}
         className="source-mark"
         style={{
           background: 'var(--color-brand-soft)',
@@ -1792,11 +1811,19 @@ function TranscriptBody({
           fontWeight: 500,
         }}
       >
-        {transcript.slice(start, end)}
+        {transcript.slice(r.start, r.end)}
       </mark>
-      {transcript.slice(end)}
-    </>
-  );
+    );
+    cursor = r.end;
+  });
+  if (cursor < transcript.length) {
+    out.push(
+      <span key={`g${cursor}`} style={{ color: 'var(--color-text-hint)' }}>
+        {transcript.slice(cursor)}
+      </span>
+    );
+  }
+  return <>{out}</>;
 }
 
 function SectionHead({

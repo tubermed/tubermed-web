@@ -30,6 +30,10 @@
 export interface SourceSpan {
   start: number; // inclusive char offset into the ORIGINAL transcript
   end: number;   // exclusive
+  // The individual matched-needle token ranges within [start, end] (A4). Lets the
+  // UI highlight ONLY the words that actually grounded and grey the bridging
+  // filler/rest, so a partial match can't falsely reassure. Ascending, non-overlapping.
+  tokens: { start: number; end: number }[];
 }
 
 // High-frequency, low-signal Bulgarian words that survive the ≥4-letter filter.
@@ -243,5 +247,9 @@ export function findSourceSpan(
     distinct >= 4;
 
   if (!accept) return null;
-  return { start: tt[best[0]].start, end: tt[best[best.length - 1]].end };
+  return {
+    start: tt[best[0]].start,
+    end: tt[best[best.length - 1]].end,
+    tokens: best.map((i) => ({ start: tt[i].start, end: tt[i].end })),
+  };
 }
