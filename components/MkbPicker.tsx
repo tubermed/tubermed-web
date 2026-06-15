@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import {
   MKB_CHAPTERS,
   loadMkb,
@@ -12,6 +13,11 @@ import {
   type MkbRow,
 } from '@/lib/mkb10';
 import { getPinned, togglePin } from '@/lib/mkb-pins';
+
+// Stable no-op subscribe for useSyncExternalStore — the `mounted` flag flips once
+// (server/hydration snapshot false → client true) and never emits store updates,
+// so the subscriber is a permanent no-op. Same idiom as app/app/login/page.tsx.
+const subscribeNoop = () => () => {};
 
 interface MkbPickerProps {
   isOpen: boolean;
@@ -34,6 +40,18 @@ export default function MkbPicker({
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [pinned, setPinned] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // The overlay is portaled to document.body so its `position: fixed` resolves
+  // against the VIEWPORT, not a transformed ancestor. This picker mounts inside a
+  // `.nv-card-enter` SectionCard whose entrance animation applies a `transform`,
+  // which makes that card the containing block for fixed-position descendants —
+  // trapping (and clipping) the modal in the card's box instead of centering it on
+  // screen. Portaling out is the same fix the DOB calendar popover uses
+  // (components/ui/DateInputBg.tsx). `mounted` is false on the server + hydration
+  // snapshot and true on the client, so createPortal never touches document.body
+  // during SSR; useSyncExternalStore (not useEffect+setState) keeps that
+  // hydration-safe AND clear of the react-hooks/set-state-in-effect rule.
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
 
   // Reset state, load pins, focus search on open
   useEffect(() => {
@@ -109,7 +127,7 @@ export default function MkbPicker({
     onClose();
   }
 
-  return (
+  const overlay = (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(31, 20, 24, 0.55)' }}
@@ -239,6 +257,8 @@ export default function MkbPicker({
       </div>
     </div>
   );
+
+  return mounted ? createPortal(overlay, document.body) : null;
 }
 
 function LoadingView() {
