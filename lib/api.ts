@@ -442,6 +442,46 @@ export function isMissingConsentError(err: unknown): boolean {
   return err.message.includes('съгласие');
 }
 
+/**
+ * B5 — POST /api/consultations/:id/patient-summary grew two server-side
+ * cost-control limits, each an HTTP 429 carrying a machine `code` plus a
+ * Bulgarian `error` message (the per-org daily cap, and a per-consultation
+ * regen cooldown that ALSO carries `retry_after_seconds`). These are EXPECTED,
+ * non-alarming outcomes — PatientSummaryModal surfaces them as a calm notice
+ * rather than the generic red error channel. This lifts the code/message/retry
+ * off the ApiError so that branching is typed and single-sourced here (the
+ * `request` wrapper already parses the body's `error` into `err.message`).
+ * Returns null for anything else (incl. a 429 with an unknown code), so the
+ * caller's existing generic-error fallback handles it unchanged.
+ */
+export type PatientSummaryLimitCode =
+  | 'patient_summary_daily_limit'
+  | 'patient_summary_regen_cooldown';
+
+export interface PatientSummaryLimit {
+  code: PatientSummaryLimitCode;
+  /** The backend's Bulgarian message — wording stays single-sourced server-side. */
+  message: string;
+  /** Seconds until a retry would be accepted; present only on the regen cooldown. */
+  retryAfterSeconds?: number;
+}
+
+export function patientSummaryLimitFromError(err: unknown): PatientSummaryLimit | null {
+  if (!(err instanceof ApiError) || err.status !== 429) return null;
+  const body = err.body;
+  if (!body || typeof body !== 'object') return null;
+  const code = (body as { code?: unknown }).code;
+  if (code !== 'patient_summary_daily_limit' && code !== 'patient_summary_regen_cooldown') {
+    return null;
+  }
+  const retry = (body as { retry_after_seconds?: unknown }).retry_after_seconds;
+  return {
+    code,
+    message: err.message,
+    retryAfterSeconds: typeof retry === 'number' ? retry : undefined,
+  };
+}
+
 export function wsUrl(sessionId: string): string {
   const token = getToken();
   return (
