@@ -857,6 +857,54 @@ with `startMonth` 1900 → `endMonth` today gives the instant **year-dropdown** 
   `overflow: visible` is enough for an in-card dropdown (e.g. `MkbTypeahead`), but **NOT**
   across the animated sibling cards — portal out.
 
+# Source traceability — "виж източника" per field (2026-06-15)
+Pushed: `16c0eca` matcher+test · `15a0ed0` UI · `b713480` A1+A2 recall fix · `50263af` A4.
+
+- **What it is.** Every free-text field on the result page (`app/app/scribe/result/page.tsx`)
+  has a small `виж източника` affordance (`SourceButton`); clicking opens the "Транскрипт на
+  консултацията" `<details>` and highlights the utterance the field most likely came from, so the
+  doctor verifies wrong/misheard words against what was actually said. The trust layer is
+  OBJECTIVE source grounding — NOT the model's self-reported confidence (`uncertain_spans` /
+  `[[…]]` are sparse/unreliable and are not the basis here). Wired on the main diagnosis,
+  anamneza, obektivno, izsledvania, terapia, napravlenia, naznacheni; meds + comorbidities deferred.
+- **Matcher** — `lib/source-grounding.ts`: `findSourceSpan(fieldKey, fieldValue, transcript)
+  → SourceSpan | null`, `SourceSpan { start, end, tokens: {start,end}[] }`. Pure, deterministic,
+  no network, no React. Precision-favoring (a confident span or `null` — showing the wrong source
+  is worse than none). Cyrillic-aware tokenization (`\p{L}`/`\p{N}`, not ASCII `\b`); content
+  tokens = ≥4 letters minus a small stopword set; numbers are never needles. Hits are clustered by
+  CHARACTER distance (`CHAR_GAP=30`) so dose/number runs ("400 мг три") don't fragment a therapy
+  match (A1). Fuzzy + Bulgarian-inflection token matching bridges gazetteer-normalized drug names
+  vs the raw Soniox spelling (нитрофурантоин↔нитрофурантуин, амоксицилин↔амоксициклин) (A2).
+  **Diagnosis matches the SPOKEN term, never the МКБ code** — a trailing `— I10`/`(I10)` is
+  stripped, gated to diagnosis fields only; the displayed official МКБ term diverges from the
+  utterance by design and is NOT the match target.
+- **⚠ Fuzzy/inflection are deliberately TIGHT** (single edit on words ≥8 chars; inflection base
+  ≥6 chars). A 51-case adversarial review (2026-06-15) showed the looser backend-gazetteer
+  threshold `min(floor(len/5),2)` collapsed clinically OPPOSITE terms (хипертония↔хипотония,
+  хипергликемия↔хипогликемия) and distinct drugs (азитромицин↔еритромицин). Do NOT loosen back
+  toward the gazetteer rule — gazetteer is for single-winner CORRECTION with ambiguity guards;
+  matching has none.
+- **A4 — highlight only matched tokens** (`50263af`): `SourceSpan.tokens` carries the individual
+  matched-needle ranges; `TranscriptBody` lights ONLY those (adjacent ones merged across whitespace
+  into phrase-boxes) and greys the rest. A partial match reads as partial, and ungrounded/fabricated
+  content stays dark (a hallucinated „парауретрално изтичане" never lights) — no false-green
+  reassurance.
+- **States.** Empty `original.transcript` (recovery/reload) → button disabled, „Източникът не е
+  наличен". No confident match → toast „Не открихме ясен източник — проверете ръчно." Button +
+  highlight are `no-print` (never in the exported document).
+- **Data flow / scope.** Frontend-only. Uses the in-memory transcript from the `/api/transcribe`
+  response (`original.transcript`); NO new backend endpoint. `GET /api/consultations/:id` still
+  does NOT return the transcript, so source-view is unavailable after a hard reload / cold-start
+  recovery — exposing it there (Phase 1b) is a deferred, GDPR-weighted decision.
+- **Tests.** `scripts/source-grounding.ts` (unit) + `scripts/source-grounding-cases.ts` (real-case
+  recall + adversarial-precision harness): `npx tsx scripts/source-grounding.ts`. Independent of
+  `lib/vital-rules.ts findHighlights` (vital-range highlights) and the review-counter/acknowledge
+  system.
+- **Phase 2 (deferred).** Actively FLAG clinical field content that does NOT ground in the
+  transcript (the real hallucination catch); the matcher's residual misses (negation-blindness,
+  exact homographs like „става" joint↔gets-up, scattered-but-present words) are its target. Staged
+  AFTER the recall fix so low recall doesn't drive alarm-fatigue false flags.
+
 # Known issues / gotchas
 
 - **Break-it audit (2026-06-13) — `AUDIT-FINDINGS-2026-06-13.md` (repo root, web
@@ -916,7 +964,10 @@ with `startMonth` 1900 → `endMonth` today gives the instant **year-dropdown** 
   SEPARATE system. `uncertain_spans` (AI-unsure-field markers computed by the backend
   validators and persisted in `extracted_fields`) are NOT surfaced to the doctor.
   Decision pending for a future session (safety affordance, possibly lawyer-relevant);
-  do NOT fix unprompted. Full detail in tubermed-backend/CLAUDE.md.
+  do NOT fix unprompted. Full detail in tubermed-backend/CLAUDE.md. NB: per-field **source
+  traceability** („виж източника", shipped 2026-06-15 — see that dated section above) is a
+  SEPARATE, now-shipped affordance — OBJECTIVE transcript grounding, not a confidence display;
+  `uncertain_spans` themselves remain UNsurfaced.
 
 - **`app/(workspace)/app/patients/page.tsx` — two pre-existing ESLint errors at lines
   111 / 120 (NOT yet fixed).** `loadPatient` calls `applyPage(...)` (~line 111) but
