@@ -926,14 +926,16 @@ Pushed: `16c0eca` matcher+test · `15a0ed0` UI · `b713480` A1+A2 recall fix · 
     already-documented egn-only drop gap below; the audit re-confirms it as a
     wrong-patient-filing hazard for the foreign subset.
 
-- **`POST /api/consultations/:id/patient-summary` can now return HTTP 429 (B5, backend
-  2026-06-15).** The endpoint grew a server-side cost cap. Two new failure shapes carry a
-  machine `code` plus a Bulgarian `error` message: `patient_summary_daily_limit` (per-org
-  daily cap, default 50/day) and `patient_summary_regen_cooldown` (60 s on `{regenerate:true}`;
-  also carries `retry_after_seconds`). Cache hits and the first generation are unaffected. The
-  scribe result UI (`PatientSummaryModal`) should branch on `code` and surface these as a
-  friendly notice (e.g. „Достигнат е дневният лимит за резюмета. Опитайте утре.") rather than a
-  generic error — **follow-up if not yet handled.** Backend detail:
+- **Patient-summary 429s are surfaced in the UI (done — `89f6f70`, `f970cd6`).** `lib/api.ts`
+  `patientSummaryLimitFromError(err)` classifies a 429 `ApiError` whose body `code` is
+  `patient_summary_daily_limit` or `patient_summary_regen_cooldown` (else `null` → generic
+  error). `PatientSummaryModal` renders the backend's Bulgarian message as a CALM notice
+  (`--color-accent-soft` / `--color-ink`, `role="status"` — not the red error block): a
+  `phase:'notice'` block on first-open daily-limit, or an inline banner on a regenerate-429 that
+  **preserves the on-screen summary + unsaved edits** (the `catch` returns without touching
+  `phase`/`draft`). A `regen_cooldown` also disables „Регенерирай" for `retry_after_seconds`
+  (clamped ≤120 s, default 60 s; timer cleared on close + unmount). Wording is single-sourced
+  from the server `error`. Success / cache-hit path unchanged. Backend contract:
   `tubermed-backend/CLAUDE.md` (2026-06-15, B5).
 
 - **⚠ DO NOT "simplify" the result-page edit flush — silent server-side data-loss lurks
