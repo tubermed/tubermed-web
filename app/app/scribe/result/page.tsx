@@ -85,11 +85,11 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'sec-anamneza', label: 'Анамнеза' },
   { id: 'sec-obektivno', label: 'Обективен статус' },
   { id: 'sec-izsledvania', label: 'Изследвания' },
+  { id: 'sec-naznacheni', label: 'Назначени изследвания', indent: true },
   { id: 'sec-terapia', label: 'Терапия' },
   { id: 'sec-meds-panel', label: 'Медикаменти', scrollMode: 'top' },
   { id: 'sec-izdadeni', label: 'Издадени документи' },
   { id: 'sec-napravlenia', label: 'Направления', indent: true },
-  { id: 'sec-naznacheni', label: 'Назначени изследвания', indent: true },
 ];
 
 type MkbTarget = { kind: 'osnovna' } | { kind: 'co'; index: number } | { kind: 'co-add' };
@@ -978,13 +978,19 @@ function ResultPageInner() {
     v['sec-izsledvania'] = true;
     v['sec-terapia'] = true;
     v['sec-meds-panel'] = true;
+    // Изследвания now parents two conditional subsections: results
+    // (izsledvania) + ordered tests (naznacheni, moved out of Издадени
+    // документи). The parent stays always-visible — it carries an empty state.
+    const hasIzs = !!(fields.izsledvania && fields.izsledvania.trim());
     const hasNap = !!(fields.napravlenia && fields.napravlenia.trim());
     const hasNaz = !!(fields.naznacheni && fields.naznacheni.trim());
-    v['sec-izdadeni'] = hasNap || hasNaz;
-    v['sec-napravlenia'] = hasNap;
+    v['sec-rezultati'] = hasIzs;
     v['sec-naznacheni'] = hasNaz;
+    // Издадени документи is documents-only now — keyed on направления alone.
+    v['sec-izdadeni'] = hasNap;
+    v['sec-napravlenia'] = hasNap;
     return v;
-  }, [fields.napravlenia, fields.naznacheni]);
+  }, [fields.izsledvania, fields.napravlenia, fields.naznacheni]);
 
   if (!doctor || !original) {
     return (
@@ -1304,28 +1310,63 @@ function ResultPageInner() {
                 </>
               }
             />
-            <TextSection
-              id="sec-izsledvania"
-              title="Изследвания"
-              fieldKey="izsledvania"
-              value={fields.izsledvania || ''}
-              onChange={(v) => updateField('izsledvania', v)}
-              acknowledged={acknowledged}
-              onAcknowledge={(raw) => acknowledgeSpan('izsledvania', raw)}
-              headerRight={
-                <>
-                  <SourceButton
-                    onClick={() => showSource('izsledvania', fields.izsledvania || '')}
-                    disabled={!hasTranscript}
-                  />
-                  <CopyButton
-                    text={fields.izsledvania || ''}
-                    disabled={isLocked}
-                    onResult={notifyCopy}
-                  />
-                </>
-              }
-            />
+            {visibleSections['sec-izsledvania'] && (
+              <div
+                id="sec-izsledvania"
+                className="bg-white rounded-2xl border p-6 scroll-mt-24"
+                style={{ borderColor: 'var(--color-border)' }}
+              >
+                <SectionHead title="Изследвания" />
+
+                {visibleSections['sec-rezultati'] && (
+                  <div id="sec-rezultati" className="mb-4 scroll-mt-24">
+                    <div className="flex items-center justify-between gap-2">
+                      <SubsectionHead title="Резултати от изследвания" />
+                      <SourceButton
+                        onClick={() => showSource('izsledvania', fields.izsledvania || '')}
+                        disabled={!hasTranscript}
+                      />
+                    </div>
+                    <EditableField
+                      value={fields.izsledvania || ''}
+                      onChange={(v) => updateField('izsledvania', v)}
+                      fieldKey="izsledvania"
+                      acknowledged={acknowledged}
+                      onAcknowledge={(raw) => acknowledgeSpan('izsledvania', raw)}
+                    />
+                  </div>
+                )}
+
+                {visibleSections['sec-naznacheni'] && (
+                  <div id="sec-naznacheni" className="scroll-mt-24">
+                    <div className="flex items-center justify-between gap-2">
+                      <SubsectionHead title="🔬 Назначени изследвания" />
+                      <SourceButton
+                        onClick={() => showSource('naznacheni', fields.naznacheni || '')}
+                        disabled={!hasTranscript}
+                      />
+                    </div>
+                    <EditableField
+                      value={fields.naznacheni || ''}
+                      onChange={(v) => updateField('naznacheni', v)}
+                    />
+                  </div>
+                )}
+
+                {/* Empty-both fallback — preserves today's "Не е споменато"
+                    behavior so the section is never a bare heading. */}
+                {!visibleSections['sec-rezultati'] &&
+                  !visibleSections['sec-naznacheni'] && (
+                    <EditableField
+                      value={fields.izsledvania || ''}
+                      onChange={(v) => updateField('izsledvania', v)}
+                      fieldKey="izsledvania"
+                      acknowledged={acknowledged}
+                      onAcknowledge={(raw) => acknowledgeSpan('izsledvania', raw)}
+                    />
+                  )}
+              </div>
+            )}
             <TextSection
               id="sec-terapia"
               title="Терапия"
@@ -1358,7 +1399,7 @@ function ResultPageInner() {
                 <SectionHead title="Издадени документи" />
 
                 {visibleSections['sec-napravlenia'] && (
-                  <div id="sec-napravlenia" className="mb-4 scroll-mt-24">
+                  <div id="sec-napravlenia" className="scroll-mt-24">
                     <div className="flex items-center justify-between gap-2">
                       <SubsectionHead title="📋 Направления за консултация" />
                       <SourceButton
@@ -1369,22 +1410,6 @@ function ResultPageInner() {
                     <EditableField
                       value={fields.napravlenia || ''}
                       onChange={(v) => updateField('napravlenia', v)}
-                    />
-                  </div>
-                )}
-
-                {visibleSections['sec-naznacheni'] && (
-                  <div id="sec-naznacheni" className="scroll-mt-24">
-                    <div className="flex items-center justify-between gap-2">
-                      <SubsectionHead title="🔬 Назначени изследвания" />
-                      <SourceButton
-                        onClick={() => showSource('naznacheni', fields.naznacheni || '')}
-                        disabled={!hasTranscript}
-                      />
-                    </div>
-                    <EditableField
-                      value={fields.naznacheni || ''}
-                      onChange={(v) => updateField('naznacheni', v)}
                     />
                   </div>
                 )}
