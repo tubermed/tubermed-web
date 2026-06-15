@@ -666,7 +666,27 @@ function ReadOnlyNote({ detail }: { detail: ConsultationDetail }) {
 
       <ReadOnlyTextSection title="Анамнеза"          value={note.anamneza}    />
       <ReadOnlyTextSection title="Обективно състояние" value={note.obektivno} />
-      <ReadOnlyTextSection title="Изследвания"       value={note.izsledvania} />
+
+      <ReadOnlySection title="Изследвания">
+        {note.izsledvania?.trim() && (
+          <div className={note.naznacheni?.trim() ? 'mb-3' : ''}>
+            <SubLabel>Резултати от изследвания</SubLabel>
+            <ReadOnlyText value={note.izsledvania} />
+          </div>
+        )}
+        {note.naznacheni?.trim() && (
+          <div>
+            <SubLabel>Назначени изследвания</SubLabel>
+            <ReadOnlyText value={note.naznacheni} />
+          </div>
+        )}
+        {!note.izsledvania?.trim() && !note.naznacheni?.trim() && (
+          <div className="text-sm italic" style={{ color: 'var(--color-text-hint)' }}>
+            Не е попълнено.
+          </div>
+        )}
+      </ReadOnlySection>
+
       <ReadOnlyTextSection title="Терапия"           value={note.terapia}     />
 
       {meds && (
@@ -690,20 +710,12 @@ function ReadOnlyNote({ detail }: { detail: ConsultationDetail }) {
         </ReadOnlySection>
       )}
 
-      {(note.napravlenia?.trim() || note.naznacheni?.trim()) && (
+      {note.napravlenia?.trim() && (
         <ReadOnlySection title="Издадени документи">
-          {note.napravlenia?.trim() && (
-            <div className="mb-3">
-              <SubLabel>Направления за консултация</SubLabel>
-              <ReadOnlyText value={note.napravlenia} />
-            </div>
-          )}
-          {note.naznacheni?.trim() && (
-            <div>
-              <SubLabel>Назначени изследвания</SubLabel>
-              <ReadOnlyText value={note.naznacheni} />
-            </div>
-          )}
+          <div>
+            <SubLabel>Направления за консултация</SubLabel>
+            <ReadOnlyText value={note.napravlenia} />
+          </div>
         </ReadOnlySection>
       )}
     </div>
