@@ -85,7 +85,25 @@ export function formatPlainText(f: TranscribeFields): string {
 
   section('АНАМНЕЗА', f.anamneza);
   section('ОБЕКТИВНО СЪСТОЯНИЕ', f.obektivno);
-  section('ИЗСЛЕДВАНИЯ', f.izsledvania);
+
+  // Изследвания — results (izsledvania) + ordered tests (naznacheni).
+  const izs = fieldText(f.izsledvania);
+  const naz = fieldText(f.naznacheni);
+  if (izs || naz) {
+    lines.push('ИЗСЛЕДВАНИЯ');
+    if (izs) {
+      lines.push('');
+      lines.push('Резултати от изследвания:');
+      lines.push(izs);
+    }
+    if (naz) {
+      lines.push('');
+      lines.push('Назначени изследвания:');
+      lines.push(naz);
+    }
+    lines.push('');
+  }
+
   section('ТЕРАПИЯ', f.terapia);
 
   if (f.medications_list && f.medications_list.length > 0) {
@@ -98,19 +116,11 @@ export function formatPlainText(f: TranscribeFields): string {
   }
 
   const nap = fieldText(f.napravlenia);
-  const naz = fieldText(f.naznacheni);
-  if (nap || naz) {
+  if (nap) {
     lines.push('ИЗДАДЕНИ ДОКУМЕНТИ');
-    if (nap) {
-      lines.push('');
-      lines.push('Направления:');
-      lines.push(nap);
-    }
-    if (naz) {
-      lines.push('');
-      lines.push('Назначени изследвания:');
-      lines.push(naz);
-    }
+    lines.push('');
+    lines.push('Направления:');
+    lines.push(nap);
     lines.push('');
   }
 
@@ -224,8 +234,13 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string, identity?:
        <table>${rows}</table>`;
   }
 
+  const izsledvaniaHeader =
+    fieldText(f.izsledvania) || fieldText(f.naznacheni)
+      ? `<h2 style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14pt;color:#1F3A5F;font-weight:600;letter-spacing:-0.01em;margin:24px 0 6px;border-bottom:1px solid #DCE1E8;padding-bottom:4px">Изследвания</h2>`
+      : '';
+
   const izdadeniHeader =
-    fieldText(f.napravlenia) || fieldText(f.naznacheni)
+    fieldText(f.napravlenia)
       ? `<h2 style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14pt;color:#1F3A5F;font-weight:600;letter-spacing:-0.01em;margin:24px 0 6px;border-bottom:1px solid #DCE1E8;padding-bottom:4px">Издадени документи</h2>`
       : '';
 
@@ -287,12 +302,13 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string, identity?:
 
       ${pdfSection('Анамнеза', f.anamneza || '')}
       ${pdfSection('Обективно състояние', f.obektivno || '')}
-      ${pdfSection('Изследвания', f.izsledvania || '')}
+      ${izsledvaniaHeader}
+      ${pdfSection('Резултати от изследвания', f.izsledvania || '')}
+      ${pdfSection('Назначени изследвания', f.naznacheni || '')}
       ${pdfSection('Терапия', f.terapia || '')}
       ${medsBlock}
       ${izdadeniHeader}
-      ${pdfSection('Направления', f.napravlenia || '')}
-      ${pdfSection('Назначени изследвания', f.naznacheni || '')}${idSignature}
+      ${pdfSection('Направления', f.napravlenia || '')}${idSignature}
     </div>
   </body></html>`;
 }
@@ -445,14 +461,17 @@ ${pdRows ? `<h2>Придружаващи заболявания</h2><table>${pdR
 
 ${para('Анамнеза', f.anamneza)}
 ${para('Обективно състояние', f.obektivno)}
-${para('Изследвания', f.izsledvania)}
+
+${fieldText(f.izsledvania) || fieldText(f.naznacheni) ? '<h2>Изследвания</h2>' : ''}
+${para('Резултати от изследвания', f.izsledvania)}
+${para('Назначени изследвания', f.naznacheni)}
+
 ${para('Терапия', f.terapia)}
 
 ${medsRows ? `<h2>Медикаменти</h2><table>${medsRows}</table>` : ''}
 
-${fieldText(f.napravlenia) || fieldText(f.naznacheni) ? '<h2>Издадени документи</h2>' : ''}
+${fieldText(f.napravlenia) ? '<h2>Издадени документи</h2>' : ''}
 ${para('Направления', f.napravlenia)}
-${para('Назначени изследвания', f.naznacheni)}
 ${idSignature}
 </body></html>`;
 }
