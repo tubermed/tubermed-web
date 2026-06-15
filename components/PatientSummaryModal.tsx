@@ -17,7 +17,7 @@
 // server; "Регенерирай" or re-opening restores the generated text.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, patientSummaryLimitFromError } from '@/lib/api';
 import { copyToClipboard, escapeHtml, openPdfPreview } from '@/lib/exporters';
 
 interface PatientSummaryModalProps {
@@ -33,7 +33,13 @@ interface PatientSummaryModalProps {
 type Phase =
   | { kind: 'loading' }
   | { kind: 'ready'; cached: boolean }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string }
+  // B5 — a calm, non-alarming rate-limit notice shown when the FIRST generation
+  // is refused by the per-org daily cap (there's no summary to fall back to).
+  // The regen cooldown only fires on a regenerate, where a summary is already on
+  // screen, so it uses the inline `notice` banner instead — the displayed
+  // summary must NOT be wiped by a 429.
+  | { kind: 'notice'; message: string };
 
 // Mirror of the backend's code-controlled disclaimer (lib/patient-summary.js),
 // used ONLY as a fallback if a loaded summary somehow carries no disclaimer —
@@ -106,12 +112,25 @@ export default function PatientSummaryModal({
   const [draft, setDraft] = useState('');
   const [disclaimer, setDisclaimer] = useState('');
   const [originalBody, setOriginalBody] = useState('');
+  // B5 — a calm rate-limit banner shown ABOVE an existing summary when a
+  // REGENERATE is refused by the daily cap or the per-minute cooldown. Distinct
+  // from `phase: 'notice'` (the no-summary initial-load case); cleared whenever a
+  // load starts or the modal closes.
+  const [notice, setNotice] = useState<string | null>(null);
+  // B5 — briefly disables "Регенерирай" after a cooldown 429 so a reflex second
+  // click can't immediately re-hit the limit; re-enabled after retry_after_seconds.
+  const [regenCoolingDown, setRegenCoolingDown] = useState(false);
+  const cooldownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Guards the auto-fetch so opening doesn't double-fire under StrictMode.
   const fetchedForRef = useRef<string | null>(null);
 
   const load = useCallback(
     async (regenerate: boolean) => {
       if (!consultationId) return;
+      // Start clean: drop any prior rate-limit notice + stale cooldown (a reopen
+      // re-runs load, so this is also where a re-opened modal resets them).
+      setNotice(null);
+      setRegenCoolingDown(false);
       if (regenerate) setRegenerating(true);
       else setPhase({ kind: 'loading' });
       try {
@@ -122,6 +141,29 @@ export default function PatientSummaryModal({
         setDisclaimer(split.disclaimer);
         setPhase({ kind: 'ready', cached: res.cached });
       } catch (err) {
+        // B5 — the daily-cap / regen-cooldown 429s are EXPECTED outcomes, not
+        // failures: surface them as a calm notice, never the red error channel.
+        const limit = patientSummaryLimitFromError(err);
+        if (limit) {
+          if (regenerate) {
+            // Regenerate is only reachable from the ready footer, so a summary is
+            // on screen — keep it (phase stays 'ready') and show an inline notice.
+            setNotice(limit.message);
+            if (limit.code === 'patient_summary_regen_cooldown') {
+              const secs =
+                limit.retryAfterSeconds && limit.retryAfterSeconds > 0
+                  ? Math.min(limit.retryAfterSeconds, 120)
+                  : 60;
+              setRegenCoolingDown(true);
+              if (cooldownTimer.current) clearTimeout(cooldownTimer.current);
+              cooldownTimer.current = setTimeout(() => setRegenCoolingDown(false), secs * 1000);
+            }
+          } else {
+            // First generation refused by the daily cap — no summary to keep.
+            setPhase({ kind: 'notice', message: limit.message });
+          }
+          return;
+        }
         const message =
           err instanceof ApiError
             ? err.message
@@ -143,10 +185,22 @@ export default function PatientSummaryModal({
     load(false);
   }, [isOpen, consultationId, load]);
 
-  // Reset the guard when fully closed so a later re-open re-fetches the cache.
+  // Reset the guard when fully closed so a later re-open re-fetches the cache
+  // (which also re-clears the notice + cooldown via load). Clear the pending
+  // cooldown timer here too so it can't fire against a closed modal; the state
+  // itself is reset on the next load, not in this effect (react-compiler forbids
+  // setState in an effect body).
   useEffect(() => {
-    if (!isOpen) fetchedForRef.current = null;
+    if (!isOpen) {
+      fetchedForRef.current = null;
+      if (cooldownTimer.current) clearTimeout(cooldownTimer.current);
+    }
   }, [isOpen]);
+
+  // Clear the cooldown timer on unmount so it can't fire setState after teardown.
+  useEffect(() => () => {
+    if (cooldownTimer.current) clearTimeout(cooldownTimer.current);
+  }, []);
 
   // Guard close when unsaved edits are present.
   const handleClose = useCallback(() => {
@@ -257,8 +311,29 @@ export default function PatientSummaryModal({
             </div>
           )}
 
+          {phase.kind === 'notice' && (
+            <div className="py-6">
+              <div
+                className="text-sm px-3 py-3 rounded-md"
+                style={{ background: 'var(--color-accent-soft)', color: 'var(--color-ink)' }}
+                role="status"
+              >
+                {phase.message}
+              </div>
+            </div>
+          )}
+
           {phase.kind === 'ready' && (
             <div className="flex flex-col gap-3">
+              {notice && (
+                <div
+                  className="text-sm px-3 py-2 rounded-md"
+                  style={{ background: 'var(--color-accent-soft)', color: 'var(--color-ink)' }}
+                  role="status"
+                >
+                  {notice}
+                </div>
+              )}
               <label
                 className="text-xs font-medium"
                 style={{ color: 'var(--color-text-hint)' }}
@@ -311,7 +386,7 @@ export default function PatientSummaryModal({
           >
             <button
               onClick={handleRegenerate}
-              disabled={regenerating}
+              disabled={regenerating || regenCoolingDown}
               className="px-3 py-1.5 rounded-md text-sm font-medium border transition hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ borderColor: 'var(--color-border-mid)', color: 'var(--color-text-muted)' }}
               title="Генерирай наново от текущата бележка"
