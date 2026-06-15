@@ -905,6 +905,28 @@ Pushed: `16c0eca` matcher+test · `15a0ed0` UI · `b713480` A1+A2 recall fix · 
   exact homographs like „става" joint↔gets-up, scattered-but-present words) are its target. Staged
   AFTER the recall fix so low recall doesn't drive alarm-fatigue false flags.
 
+# Изследвания layout — ordered tests consolidated (2026-06-15, #16)
+Commits `0da20a5` (result page), `b0af051` (`lib/exporters.ts`), `20f1442`
+(patient-history). „Изследвания" is now a PARENT with two conditional subsections —
+**„Резултати от изследвания"** (`izsledvania`, results/past exams: EKG, рентген, CT,
+labs) + **„Назначени изследвания"** (`naznacheni`, ordered tests), the latter **moved up
+from „Издадени документи"**. „Издадени документи" now holds only **„Направления"**
+(`napravlenia`) (+ болнични etc.) and its heading is keyed on `napravlenia` ALONE (the
+`|| naznacheni` was dropped).
+
+- Applied on three surfaces: the result page (`app/app/scribe/result/page.tsx` — TOC
+  re-nest, `visibleSections`, render; new `sec-rezultati` scroll id), the read-only
+  patient-history view (`app/(workspace)/app/patients/page.tsx`), and all three export
+  formats in `lib/exporters.ts` (clipboard, PDF, Word).
+- Subsections render ONLY when their field has content; empty-both keeps the „Не е
+  споменато" (screen) / section-omitted (export) fallback.
+- **Display-only** — extraction, field keys, and semantics are unchanged
+  (`izsledvania` = results, `naznacheni` = ordered). Per-field behaviors preserved on the
+  result page (the „виж източника" source button, `EditableField` editing,
+  `acknowledgeSpan`).
+- Note: `izsledvania` lost its section-level `CopyButton` (it's now a subsection, matching
+  the „Издадени документи" pattern); whole-note Копирай + export still include it.
+
 # Known issues / gotchas
 
 - **Break-it audit (2026-06-13) — `AUDIT-FINDINGS-2026-06-13.md` (repo root, web
