@@ -16,6 +16,16 @@
 //     letter/number runs via `\p{L}` / `\p{N}` (the `u` flag), as elsewhere.
 //   • Diagnosis fields match on the TERM, never the МКБ code — codes are never
 //     spoken aloud, so a trailing "— I10" / "(I10)" is stripped before matching.
+//   • A1 (2026-06-15): clusters are split by CHARACTER distance between hits, not
+//     token-index distance — so dose/frequency runs ("400 мг три пъти") no longer
+//     fragment a therapy phrase whose words are physically adjacent.
+//   • A2 (2026-06-15): a field word matches a transcript token EXACTLY, by Bulgarian
+//     inflection (метформин↔метформинът, base ≥6 chars), or by a SINGLE-character
+//     fuzzy edit on a word ≥8 chars. This bridges Soniox corruptions the gazetteer
+//     normalized in the NOTE but not in the raw transcript (нитрофуран[т]оин↔…туин,
+//     амоксици[к]лин). The bounds are deliberately tighter than the gazetteer's
+//     correction threshold — adversarial review (2026-06-15) showed a looser rule
+//     collapses OPPOSITE terms (хипертония↔хипотония) and distinct drugs.
 
 export interface SourceSpan {
   start: number; // inclusive char offset into the ORIGINAL transcript
@@ -27,7 +37,7 @@ export interface SourceSpan {
 // stopwords like и/на/за/от/се/да are already removed by the length filter.)
 const STOPWORDS = new Set<string>([
   'като', 'след', 'пред', 'този', 'тази', 'това', 'тези', 'онзи', 'онази',
-  'който', 'която', 'което', 'които', 'има', 'няма', 'беше', 'били', 'били',
+  'който', 'която', 'което', 'които', 'има', 'няма', 'беше', 'били',
   'съм', 'дето', 'само', 'още', 'така', 'тъй', 'към', 'през', 'без', 'при',
   'около', 'почти', 'много', 'малко', 'спрямо', 'върху', 'между', 'обаче',
 ]);
@@ -43,12 +53,17 @@ function isContentToken(t: string): boolean {
 }
 
 // Lowercase + split on any non-(letter|number) run. Inherently strips punctuation
-// (brackets, dashes, dots) and collapses whitespace.
+// (brackets, dashes, dots) and collapses whitespace. Deduped — each distinct word
+// is one needle.
 function contentTokens(s: string): string[] {
-  return s
-    .toLowerCase()
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((t) => t && isContentToken(t));
+  return [
+    ...new Set(
+      s
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((t) => t && isContentToken(t)),
+    ),
+  ];
 }
 
 interface TToken {
@@ -81,9 +96,84 @@ function stripTrailingMkbCode(s: string): string {
   return s.replace(/\s*[—–\-(,]?\s*\(?[A-Za-z]\d{2}(?:\.\d+)?\)?\s*$/u, '').trim();
 }
 
-// A run of nearby transcript hits (≤ MAX_GAP non-hit tokens between successive
-// hits). The matched region is reported from the first to the last hit.
-const MAX_GAP = 3;
+// ── Fuzzy matching (A2) ──────────────────────────────────────────────────────
+// Recovers Soniox STT corruptions the gazetteer fixed in the NOTE but not in the
+// raw transcript. Deliberately TIGHTER than the gazetteer's correction threshold:
+// a single-character edit on a word of ≥8 chars only. Adversarial review
+// (2026-06-15) showed the gazetteer's min(floor(len/5),2) was far too loose for
+// MATCHING — it collapsed clinically OPPOSITE terms 2 edits apart (хипертония↔
+// хипотония, хипергликемия↔хипогликемия) and distinct drugs (азитромицин↔
+// еритромицин, преднизолон↔преднизон). Distance 1 + length ≥ 8 keeps the real
+// recoveries (нитрофуран[т]оин↔…туин, метилпреднизол[о/а]н, амоксици[к]лин) while
+// rejecting those. (1-edit real minimal pairs like панкреатит↔панкреатин stay
+// indistinguishable from a slip — but the doctor sees the actual highlighted word.)
+const FUZZY_MIN_LEN = 8;
+
+// Bounded Levenshtein over Unicode code points (a Cyrillic letter is one edit, not
+// a UTF-16 fragment). Returns max+1 as soon as the answer cannot be ≤ max.
+function levenshtein(a: string, b: string, max: number): number {
+  if (a === b) return 0;
+  const A = [...a];
+  const B = [...b];
+  const la = A.length;
+  const lb = B.length;
+  if (Math.abs(la - lb) > max) return max + 1;
+  if (la === 0) return lb;
+  if (lb === 0) return la;
+  let prev = new Array<number>(lb + 1);
+  let cur = new Array<number>(lb + 1);
+  for (let j = 0; j <= lb; j++) prev[j] = j;
+  for (let i = 1; i <= la; i++) {
+    cur[0] = i;
+    let rowMin = cur[0];
+    for (let j = 1; j <= lb; j++) {
+      const cost = A[i - 1] === B[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (cur[j] < rowMin) rowMin = cur[j];
+    }
+    if (rowMin > max) return max + 1;
+    [prev, cur] = [cur, prev];
+  }
+  return prev[lb];
+}
+
+// Bulgarian noun inflections (definite article + plural), mirroring the gazetteer.
+// Lets "метформин" match its definite form "метформинът" (edit distance 2, which
+// is beyond the fuzzy threshold for a 9-char word).
+const BG_INFLECTION_SUFFIXES = new Set<string>([
+  'а', 'я', 'ът', 'ят', 'та', 'то', 'те', 'ите', 'и', 'ове', 'ета',
+]);
+
+function isInflectionMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  // Base ≥6 chars: avoids short-word false friends where a common Bulgarian word
+  // is the medical word + an article (врата→вратата[door], маса→масата[table],
+  // стол→стола[chair]); still bridges метформин→метформинът.
+  if (short.length < 6) return false;
+  if (!long.startsWith(short)) return false;
+  return BG_INFLECTION_SUFFIXES.has(long.slice(short.length));
+}
+
+// Index of the needle that matches a transcript token, or -1. Priority:
+// exact → Bulgarian inflection → single-edit fuzzy (long words only).
+function matchNeedle(tnorm: string, needles: string[]): number {
+  for (let i = 0; i < needles.length; i++) if (needles[i] === tnorm) return i;
+  for (let i = 0; i < needles.length; i++) if (isInflectionMatch(needles[i], tnorm)) return i;
+  for (let i = 0; i < needles.length; i++) {
+    const n = needles[i];
+    if (n.length < FUZZY_MIN_LEN) continue;
+    if (Math.abs(n.length - tnorm.length) > 1) continue; // prefilter (distance ≤ 1)
+    if (levenshtein(n, tnorm, 1) === 1) return i;
+  }
+  return -1;
+}
+
+// Two hits belong to the same cluster when ≤ CHAR_GAP characters of filler sit
+// between them (A1). Bounding by characters — not token count — lets dense
+// dose/frequency runs ("400 мг три пъти дневно") stay in one cluster while still
+// breaking across a sentence of unrelated prose.
+const CHAR_GAP = 30;
 
 export function findSourceSpan(
   fieldKey: string,
@@ -94,34 +184,40 @@ export function findSourceSpan(
 
   const value = isDiagnosisField(fieldKey) ? stripTrailingMkbCode(fieldValue) : fieldValue;
 
-  const needleList = contentTokens(value);
-  const needles = new Set(needleList);
-  if (needles.size === 0) return null;
+  const needles = contentTokens(value);
+  if (needles.length === 0) return null;
 
   const tt = tokenizeWithOffsets(transcript);
   if (tt.length === 0) return null;
 
-  // Indices of transcript tokens that match a needle.
+  // For each transcript token, the index of the needle it grounds (or -1). Hits
+  // are the grounded tokens.
+  const matched: number[] = new Array(tt.length);
   const hitIdx: number[] = [];
   for (let i = 0; i < tt.length; i++) {
-    if (needles.has(tt[i].norm)) hitIdx.push(i);
+    const ni = matchNeedle(tt[i].norm, needles);
+    matched[i] = ni;
+    if (ni >= 0) hitIdx.push(i);
   }
   if (hitIdx.length === 0) return null;
 
-  // Group hits into clusters separated by gaps larger than MAX_GAP.
+  // Group hits into clusters separated by more than CHAR_GAP characters.
   const clusters: number[][] = [];
   let cur: number[] = [hitIdx[0]];
   for (let k = 1; k < hitIdx.length; k++) {
-    if (hitIdx[k] - hitIdx[k - 1] <= MAX_GAP + 1) cur.push(hitIdx[k]);
+    const gapChars = tt[hitIdx[k]].start - tt[hitIdx[k - 1]].end;
+    if (gapChars <= CHAR_GAP) cur.push(hitIdx[k]);
     else { clusters.push(cur); cur = [hitIdx[k]]; }
   }
   clusters.push(cur);
 
+  const distinctOf = (c: number[]) => new Set(c.map((i) => matched[i])).size;
+
   // Score each cluster: coverage of the field's content tokens dominates, with a
   // bonus for adjacent (phrase) hits and tightness.
   function score(c: number[]): number {
-    const distinct = new Set(c.map((i) => tt[i].norm)).size;
-    const coverage = distinct / needles.size;
+    const distinct = distinctOf(c);
+    const coverage = distinct / needles.length;
     let adjacent = 0;
     for (let k = 1; k < c.length; k++) if (c[k] - c[k - 1] === 1) adjacent++;
     const span = c[c.length - 1] - c[0] + 1;
@@ -132,9 +228,9 @@ export function findSourceSpan(
   let best = clusters[0];
   for (const c of clusters) if (score(c) > score(best)) best = c;
 
-  const distinct = new Set(best.map((i) => tt[i].norm)).size;
-  const coverage = distinct / needles.size;
-  const onlyNeedleLen = needles.size === 1 ? needleList[0].length : 0;
+  const distinct = distinctOf(best);
+  const coverage = distinct / needles.length;
+  const onlyNeedleLen = needles.length === 1 ? needles[0].length : 0;
 
   // Precision gate — accept only a confident match:
   //   • single-token value: that token must be present AND distinctive (≥6 chars)
@@ -142,8 +238,8 @@ export function findSourceSpan(
   //   • any value:          ≥4 distinct tokens clustered together is strong on
   //                         its own (long fields rarely reach 50% in one window)
   const accept =
-    (needles.size === 1 && distinct === 1 && onlyNeedleLen >= 6) ||
-    (needles.size >= 2 && distinct >= 2 && coverage >= 0.5) ||
+    (needles.length === 1 && distinct === 1 && onlyNeedleLen >= 6) ||
+    (needles.length >= 2 && distinct >= 2 && coverage >= 0.5) ||
     distinct >= 4;
 
   if (!accept) return null;
