@@ -34,7 +34,9 @@ export interface MedAlert {
 // NOT part of the client surface — it must never be shown to the doctor.
 export interface MkbReview {
   needs_review: boolean;
-  reason?: 'invalid_code' | 'missing_code';
+  // 'diagnosis_text_not_grounded' (P0-01): the code is valid but the MAIN diagnosis
+  // text isn't supported by the transcript — flagged by the backend grounding pass.
+  reason?: 'invalid_code' | 'missing_code' | 'diagnosis_text_not_grounded';
   code?: string;
 }
 
