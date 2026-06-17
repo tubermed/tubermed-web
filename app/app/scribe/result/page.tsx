@@ -30,6 +30,7 @@ import { filedMainTerm, filedComorbidityTerm, spokenDivergesFromOfficial } from 
 import { loadIal } from '@/lib/ial-meds';
 import { findHighlights, type HighlightMatch } from '@/lib/vital-rules';
 import { findSourceSpan, type SourceSpan } from '@/lib/source-grounding';
+import { mkbReviewCopy } from '@/lib/mkb-review';
 import {
   formatPlainText,
   copyToClipboard,
@@ -141,13 +142,12 @@ function clientMkbReview(code: string): {
   };
 }
 
-// Localized block message — mirrors the backend mkbReviewBlock() copy so the
-// toast and the 409 backstop read identically.
+// Localized block message for the approve toast + the 409 backstop. Reads from
+// the single mkbReviewCopy source (lib/mkb-review.ts) so it can never drift from
+// the inline DiagnosesSection banner, and mirrors the backend mkbReviewBlock()
+// copy so the toast and the 409 backstop read identically.
 function mkbBlockMessage(review?: MkbReview | null): string {
-  if (review?.reason === 'missing_code')
-    return 'Липсва код по МКБ-10 за основната диагноза. Добавете валиден код преди потвърждаване.';
-  const code = review?.code ? `„${review.code}“` : 'кодът';
-  return `Кодът по МКБ-10 ${code} не е валиден. Коригирайте основната диагноза преди потвърждаване.`;
+  return mkbReviewCopy(review).blockMessage;
 }
 
 export default function ResultPage() {
@@ -2032,13 +2032,10 @@ function DiagnosesSection({
             style={{ borderColor: 'var(--color-red)', background: 'var(--color-red-soft)', color: 'var(--color-red)' }}
           >
             <div className="text-sm font-semibold">
-              ⚠{' '}
-              {mkbReview?.reason === 'missing_code' ? 'Липсва код по МКБ-10' : 'Невалиден код по МКБ-10'}
+              ⚠ {mkbReviewCopy(mkbReview, osnovnaMkb).bannerTitle}
             </div>
             <div className="text-xs mt-0.5">
-              {mkbReview?.reason === 'missing_code'
-                ? 'Изберете диагноза от МКБ-10 (търсете или 🔍). Потвърждаването и експортът са блокирани, докато липсва код.'
-                : `Кодът „${mkbReview?.code || osnovnaMkb}“ не е в МКБ-10 регистъра. Изберете валиден (търсете или 🔍). Потвърждаването и експортът са блокирани.`}
+              {mkbReviewCopy(mkbReview, osnovnaMkb).bannerDetail}
             </div>
           </div>
         )}

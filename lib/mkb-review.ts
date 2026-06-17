@@ -27,6 +27,20 @@ export function mkbReviewCopy(review?: MkbReview | null, osnovnaMkb?: string): M
     };
   }
 
+  if (review?.reason === 'diagnosis_text_not_grounded') {
+    // P0-01: the code IS valid; the MAIN diagnosis text isn't supported by the
+    // transcript. Point the doctor at the diagnosis — do NOT call the code invalid
+    // or tell them to fix it. blockMessage is byte-identical to the backend
+    // mkbReviewBlock() copy so the toast and the 409 backstop read identically.
+    return {
+      bannerTitle: 'Диагнозата не е открита в разговора',
+      bannerDetail:
+        'Кодът е валиден, но основната диагноза не личи в казаното по време на прегледа. Проверете дали отразява обсъденото и я потвърдете или коригирайте. Потвърждаването и експортът са блокирани.',
+      blockMessage:
+        'Основната диагноза не е спомената в разговора. Прегледайте и потвърдете диагнозата преди потвърждаване.',
+    };
+  }
+
   // invalid_code — default (also the fallback for any unhandled reason).
   const blockCode = review?.code ? `„${review.code}“` : 'кодът';
   const bannerCode = review?.code || osnovnaMkb || '';
