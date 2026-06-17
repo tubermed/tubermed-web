@@ -723,17 +723,31 @@ function ResultPageInner() {
       if (target.kind === 'osnovna') {
         const charsChanged = computeCharsChanged('osnovna_mkb', code);
         const rec = clientMkbReview(code);
-        setFields((prev) => ({
-          ...prev,
-          osnovna_mkb: code,
-          ...(rec
-            ? {
-                mkb_review:              rec.mkb_review,
-                osnovna_mkb_term:        rec.osnovna_mkb_term,
-                osnovna_mkb_term_source: rec.osnovna_mkb_term_source,
-              }
-            : { mkb_review: { needs_review: false }, osnovna_mkb_term: term }),
-        }));
+        setFields((prev) => {
+          // The client cannot re-evaluate grounding (no transcript). A grounding
+          // flag (diagnosis_text_not_grounded) must NOT be cleared by a code pick —
+          // picking a valid code does not make the diagnosis grounded. Only a
+          // code-level problem (missing/invalid) is client-evaluable; otherwise keep
+          // the flag and let the server's /edit response clear it authoritatively
+          // (defer to the server — never invent a client-side "now grounded").
+          const wasGrounding = prev.mkb_review?.reason === 'diagnosis_text_not_grounded';
+          const codeProblem = rec ? rec.mkb_review.needs_review : false;
+          const keepGrounding = wasGrounding && !codeProblem;
+          return {
+            ...prev,
+            osnovna_mkb: code,
+            ...(rec
+              ? {
+                  mkb_review:              keepGrounding ? prev.mkb_review : rec.mkb_review,
+                  osnovna_mkb_term:        rec.osnovna_mkb_term,
+                  osnovna_mkb_term_source: rec.osnovna_mkb_term_source,
+                }
+              : {
+                  mkb_review:              keepGrounding ? prev.mkb_review : { needs_review: false },
+                  osnovna_mkb_term:        term,
+                }),
+          };
+        });
         trackEdit('osnovna_mkb', charsChanged);
       } else if (target.kind === 'co-add') {
         // Search-first add: the picker selection creates a new comorbidity row.
