@@ -927,6 +927,51 @@ from „Издадени документи"**. „Издадени докуме
 - Note: `izsledvania` lost its section-level `CopyButton` (it's now a subsection, matching
   the „Издадени документи" pattern); whole-note Копирай + export still include it.
 
+# P0-01b — grounding-flag UI copy + client-clear guard (2026-06-17)
+
+Frontend follow-up to backend P0-01 (`tubermed-backend/CLAUDE.md`). The backend
+grounding pass now emits `mkb_review.reason === 'diagnosis_text_not_grounded'`
+when the MAIN diagnosis text isn't supported by the transcript (the E00.2
+incident) — the code is VALID, only the diagnosis is unsupported. The 409 gate
+already blocks approve/export on `needs_review === true`, so safety held; this
+task fixes the doctor being MISLED by the flag. All in
+`app/app/scribe/result/page.tsx` + a new `lib/mkb-review.ts`.
+
+- **Single source of truth for the reason→copy mapping — `lib/mkb-review.ts`
+  `mkbReviewCopy(review, osnovnaMkb?) → { bannerTitle, bannerDetail, blockMessage }`.**
+  Pure (no React), so `scripts/mkb-review-message.ts` asserts it directly
+  (`npx tsx`). The three call sites now read from this ONE place: the approve
+  toast + the 409 backstop (`mkbBlockMessage` is a thin delegate to
+  `.blockMessage`) and the `DiagnosesSection` inline ⚠ banner
+  (`.bannerTitle`/`.bannerDetail`). `missing_code` / `invalid_code` copy is
+  byte-identical to before (asserted). `MkbReview.reason` (`lib/types.ts`) was
+  widened to include the new reason.
+- **Grounding copy points at the DIAGNOSIS, not the code.** Banner title
+  „Диагнозата не е открита в разговора"; the detail states the code IS valid and
+  is not the problem; `blockMessage` is byte-identical to the backend
+  `mkbReviewBlock()` string so the toast and the 409 backstop read identically.
+  Do NOT route a grounding flag through the „невалиден код" wording.
+- **Client must DEFER to the server for grounding — `applyMkbPick`.** The client
+  cannot re-evaluate grounding (no transcript). `applyMkbPick` (the ONLY
+  `clientMkbReview` caller) no longer clears a `diagnosis_text_not_grounded` flag
+  when the doctor picks a VALID code (which doesn't ground the diagnosis); a
+  code-level problem (missing/invalid) still shows immediately. The flag is
+  cleared authoritatively by the server's `/edit` response — never by a
+  client-side code pick. (Backend `/edit`-clears-grounding stickiness is a
+  SEPARATE backend task; the client deferral here is forward-compatible with it.)
+- **`osnovna_diagnoza` uncertain-span = graceful-ignore (NO UI change).** The
+  backend also injects an `uncertain_spans` entry with `field:'osnovna_diagnoza'`.
+  The app has NO `uncertain_spans` rendering path (the ONLY reference is the type
+  declaration in `lib/types.ts` — see the known-issue below), so the span rides in
+  `fields` and round-trips through `/edit` but is never read/rendered — no crash,
+  no acknowledge-state interaction, no duplicate banner. Surfacing it would mean
+  building a span-rendering surface for one field — out of scope (deferred with the
+  broader `uncertain_spans`-surfacing decision). If that surface is ever built,
+  align its copy with `mkbReviewCopy`.
+- **Verification.** `npx tsx scripts/mkb-review-message.ts` (12/12) +
+  `scripts/mkb-validity.ts` (11/11, client/backend gate parity intact) +
+  `npx tsc --noEmit` + `npm run build` — all clean.
+
 # Known issues / gotchas
 
 - **Break-it audit (2026-06-13) — `AUDIT-FINDINGS-2026-06-13.md` (repo root, web
@@ -1001,7 +1046,11 @@ from „Издадени документи"**. „Издадени докуме
   do NOT fix unprompted. Full detail in tubermed-backend/CLAUDE.md. NB: per-field **source
   traceability** („виж източника", shipped 2026-06-15 — see that dated section above) is a
   SEPARATE, now-shipped affordance — OBJECTIVE transcript grounding, not a confidence display;
-  `uncertain_spans` themselves remain UNsurfaced.
+  `uncertain_spans` themselves remain UNsurfaced. As of P0-01b (2026-06-17) the backend injects
+  an `osnovna_diagnoza` uncertain-span for an ungrounded MAIN diagnosis; it stays INERT here (no
+  rendering path) — that case is surfaced instead via `mkb_review.reason ===
+  'diagnosis_text_not_grounded'` (the 409 gate + the `DiagnosesSection` banner, see the P0-01b
+  dated section). Any future `uncertain_spans` surface should align its copy with `mkbReviewCopy`.
 
 - **`app/(workspace)/app/patients/page.tsx` — two pre-existing ESLint errors at lines
   111 / 120 (NOT yet fixed).** `loadPatient` calls `applyPage(...)` (~line 111) but
