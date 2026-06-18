@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { RECOVERY_NOTICE_KEY } from '@/lib/use-cold-start-recovery';
 import WorkspaceTopBar from '@/components/WorkspaceTopBar';
 import { SCRIBE_FLOW_STEPS } from '@/lib/flow';
-import { dobFromEgn, isValidEgnChecksum } from '@/lib/egn';
+import { shouldDropLoadedPatient, idLast4 } from '@/lib/national-id';
 import PatientForm, {
   EMPTY_FORM,
   fromPatient,
@@ -208,20 +208,18 @@ export default function NewVisitPage() {
   //   1. Unsaved patient-record edits (changedEditableLabels > 0) → HOLD the
   //      change and surface EgnSwitchGuardModal (rule 4) — otherwise switching
   //      patients would silently discard the edits.
-  //   2. No edits, and the edited ЕГН is no longer a valid 10-digit identity
-  //      (<10 digits, OR digits don't decode to a real DOB, OR the mod-11
-  //      control sum is wrong) → DROP the patient:
-  //      a loaded name shown next to a now-mismatched/empty ЕГН is the
+  //   2. No edits, and the edited ID is no longer valid FOR ITS TYPE → DROP the
+  //      patient: a loaded name shown next to a now-mismatched/empty ID is the
   //      wrong-identity hazard. Clear selection + reset to a FULL empty
-  //      new-patient form, keeping ONLY the in-progress ЕГН (so re-typing a valid
-  //      one re-fires the auto-load). chief_complaint + visit_type are CLEARED:
+  //      new-patient form, keeping ONLY the in-progress ID (so re-typing a valid
+  //      ЕГН re-fires the auto-load). chief_complaint + visit_type are CLEARED:
   //      changing the patient = a fresh visit, applied uniformly on both
   //      patient-change paths (this drop AND the guard-save swap). See AGENTS.md
   //      rule 4 — this reverses the earlier preserve-decision.
-  //      Scope: national_id_type 'egn' only — that's the path with an auto-load
-  //      identity key; lnch/foreign/none keep their prior straight-through apply.
-  //   3. Otherwise (still-valid ЕГН, non-ЕГН type, or a non-ЕГН field change) →
-  //      apply normally.
+  //      Scope: ALL id types via shouldDropLoadedPatient (P1-02 — was 'egn' only,
+  //      which left a stale ЛНЧ/foreign patient pinned to a mismatched id → a
+  //      wrong-patient filing). 'none' never drops on this basis (no id).
+  //   3. Otherwise (still-valid id, or a non-id field change) → apply normally.
   const handleFormChange = useCallback((next: PatientFormState) => {
     if (selected && next.national_id !== form.national_id) {
       const changedLabels = changedEditableLabels(form, selected);
@@ -234,26 +232,24 @@ export default function NewVisitPage() {
         return; // HOLD — input reverts to the loaded ЕГН until the doctor chooses
       }
 
-      // "Valid identity" must match EgnField's egnValid (the green-✓ / auto-load
-      // gate): 10 digits, a derivable DOB, AND a correct mod-11 control sum.
-      // Without the checksum clause a transposed/typo'd ЕГН that still decodes to
-      // a real date (e.g. 0802166621) would keep the loaded patient's banner +
-      // DOB/age pinned next to the new ЕГН's checksum warning — the contradictory
-      // stale-identity state. Treating a bad checksum as "no longer a valid
-      // identity" makes the drop fire consistently with the ✓ disappearing.
-      const egnStillValid =
-        next.national_id_type === 'egn' &&
-        next.national_id.length === 10 &&
-        dobFromEgn(next.national_id) !== null &&
-        isValidEgnChecksum(next.national_id);
-      if (next.national_id_type === 'egn' && !egnStillValid) {
+      // "Valid identity" is per-type (lib/national-id.ts, mirroring the backend):
+      //   egn     → 10 digits + a derivable DOB + a correct mod-11 checksum (the
+      //             EgnField green-✓ / auto-load gate — keeps the drop firing in
+      //             lockstep with the ✓ disappearing for a typo'd/transposed ЕГН);
+      //   lnch    → 10 digits;
+      //   foreign → non-empty;
+      //   none    → never drops on this basis (no id).
+      // P1-02: this was 'egn' only, so a mismatched ЛНЧ/foreign id kept the loaded
+      // patient pinned (banner + DOB/age) — a save then filed onto the wrong
+      // patient. shouldDropLoadedPatient generalizes the predicate to all types.
+      if (shouldDropLoadedPatient(next.national_id_type, next.national_id)) {
         setSelected(null);
         setForm({
           ...EMPTY_FORM,
           national_id_type: next.national_id_type,
           national_id:      next.national_id,   // keep ONLY what the doctor is mid-typing
         });
-        return; // DROP — loaded identity + visit context cleared; re-typing a valid ЕГН re-loads
+        return; // DROP — loaded identity + visit context cleared; re-typing a valid id re-loads (ЕГН auto-loads)
       }
     }
     setForm(next);
@@ -332,8 +328,24 @@ export default function NewVisitPage() {
   // input reverts to the loaded patient's value and the edits stay intact.
   const onEgnGuardCancel = useCallback(() => setEgnGuard(null), []);
 
+  // ── P1-02 belt-and-suspenders — refuse to save onto a mismatched loaded id ──
+  // Even if the drop predicate ever missed a case, this stops a visit being filed
+  // onto a stale `selected.id`. `selected` is GDPR-masked (no full id), so we
+  // compare last4 (idLast4 mirrors backend last4). Only a NON-EMPTY form id that
+  // differs is a mismatch — a blank id field is the legitimate post-load/post-save
+  // (fromPatient-blanked) state, NOT a typed mismatch, and must not block the save.
+  const loadedIdentityMismatch = useCallback((): boolean => {
+    if (!selected || selected.national_id_type === 'none' || !selected.national_id_last4) return false;
+    const formLast4 = idLast4(form.national_id);
+    return formLast4 !== null && formLast4 !== selected.national_id_last4;
+  }, [selected, form]);
+
   // ── Footer buttons ───────────────────────────────────────────────────────
   const handleSaveDraft = useCallback(async () => {
+    if (loadedIdentityMismatch()) {
+      showToast('error', 'Документът за самоличност не съвпада със зареден пациент. Проверете пациента.');
+      return;
+    }
     setSaving(true);
     const patient = await persistPatient(form, false);
     setSaving(false);
@@ -342,9 +354,13 @@ export default function NewVisitPage() {
       setForm(fromPatient(patient));
       showToast('success', selected ? 'Промените са запазени.' : 'Пациентът е създаден.');
     }
-  }, [form, persistPatient, selected, showToast]);
+  }, [form, persistPatient, selected, showToast, loadedIdentityMismatch]);
 
   const handleStartVisit = useCallback(async () => {
+    if (loadedIdentityMismatch()) {
+      showToast('error', 'Документът за самоличност не съвпада със зареден пациент. Проверете пациента.');
+      return;
+    }
     setSaving(true);
     const patient = await persistPatient(form, false);
     if (!patient) { setSaving(false); return; }
@@ -371,7 +387,7 @@ export default function NewVisitPage() {
     } finally {
       setSaving(false);
     }
-  }, [form, persistPatient, router, showToast]);
+  }, [form, persistPatient, router, showToast, loadedIdentityMismatch]);
 
   // ── Dedup modal handlers ─────────────────────────────────────────────────
   const onDedupUseExisting = useCallback(async (hit: PatientSearchHit) => {
