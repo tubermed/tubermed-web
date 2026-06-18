@@ -83,12 +83,14 @@ export default function NewVisitPage() {
   // effort + independent of /me: on any error the card stays hidden (renders
   // null), never breaking the page.
   const [valueStats, setValueStats] = useState<ValueStats | null>(null);
+  const [valueStatsLoading, setValueStatsLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
     api
       .valueStats()
       .then((v) => { if (!cancelled) setValueStats(v); })
-      .catch(() => { /* keep the card hidden on error */ });
+      .catch(() => { /* keep the card hidden on error */ })
+      .finally(() => { if (!cancelled) setValueStatsLoading(false); });
     return () => {
       cancelled = true;
     };
@@ -447,7 +449,7 @@ export default function NewVisitPage() {
       <div className="flex-1 grid gap-6 px-6 py-6"
            style={{ gridTemplateColumns: 'minmax(0, 1fr) 320px' }}>
         <div className="min-w-0">
-          <ValueStatsCard stats={valueStats} />
+          <ValueStatsCard stats={valueStats} loading={valueStatsLoading} />
           <PatientForm
             state={form}
             onChange={handleFormChange}

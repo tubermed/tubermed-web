@@ -1,4 +1,5 @@
 import type { ValueStats } from '@/lib/api';
+import SkeletonInput from './SkeletonInput';
 
 // B2 — the "% of notes TuberMed wrote" value card shown at the top of
 // /app/new-visit. The headline is a MEASURED number (the share of generated
@@ -9,9 +10,37 @@ import type { ValueStats } from '@/lib/api';
 // heavily-edited first note must never render a discouraging "40%".
 const MIN_NOTES = 3;
 
-export default function ValueStatsCard({ stats }: { stats: ValueStats | null }) {
-  // Loading or errored → render nothing. The card must NEVER break new-visit.
-  if (!stats) return null;
+export default function ValueStatsCard({
+  stats,
+  loading = false,
+}: {
+  stats: ValueStats | null;
+  loading?: boolean;
+}) {
+  // No stats yet. While the fetch is in flight, paint a card-shaped skeleton so
+  // the surface doesn't flash empty then pop in. Settled-with-no-stats (error)
+  // still renders NOTHING — the card must NEVER break new-visit.
+  if (!stats) {
+    if (!loading) return null;
+    return (
+      <div
+        className="rounded-xl border px-4 py-3 mb-6"
+        style={{
+          borderColor: 'var(--color-border-soft)',
+          background: 'var(--color-accent-soft)',
+        }}
+        role="status"
+        aria-busy="true"
+        aria-label="Зареждане…"
+      >
+        {/* Mirrors the measured state's footprint (a headline line + a two-line
+            subtext) so the real text lands with minimal reflow. */}
+        <SkeletonInput height="16px" width="78%" />
+        <SkeletonInput height="11px" width="92%" style={{ marginTop: 10 }} />
+        <SkeletonInput height="11px" width="64%" style={{ marginTop: 6 }} />
+      </div>
+    );
+  }
 
   const { notes, avgAuthoredPct } = stats.thisWeek;
   const building = notes < MIN_NOTES || avgAuthoredPct == null;
