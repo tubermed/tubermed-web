@@ -1005,6 +1005,36 @@ web code shipped in that session, so the matching web work is tracked here.
   change (the modal already re-fetches; the backend null-cache makes the reopen
   fresh). Verified by code-read; tracked under the now-resolved Known-issue [P1-03].
 
+# B2 — "% of notes TuberMed wrote" value card (2026-06-18)
+
+A compact card at the TOP of `/app/new-visit` (the post-login surface,
+`app/app/login/page.tsx` → `/app/new-visit`): "TuberMed написа ~92% от
+документацията за 18 прегледа тази седмица." The willingness-to-pay anchor — a
+**MEASURED** number (the share of AI-generated note text the doctor filed
+unchanged), **NOT** a minutes / time-saved estimate. Backend contract:
+`tubermed-backend/CLAUDE.md` (B2 — `authoredFraction` + `GET /api/auth/me/value-stats`).
+
+- **`lib/api.ts`** — `ValueStats` / `ValueStatsWindow` types + `api.valueStats()` →
+  `GET /api/auth/me/value-stats` (mirrors `api.me()`; aggregate numbers only, no PII).
+  Shape: `{ thisWeek: { notes, avgAuthoredPct }, today: { … } }`; `avgAuthoredPct` is
+  a whole percent or `null`.
+- **`components/ValueStatsCard.tsx`** — brand-navy compact card (`--color-accent-soft`
+  bg / `--color-heading` / `--color-ink`). The subtext labels it as measured from the
+  doctor's OWN edits (generated text kept unchanged) and explicitly **not a time
+  estimate**. Singular/plural `преглед`/`прегледа` handled.
+- **Honesty guardrails (load-bearing):** `stats === null` (loading OR error) → the card
+  renders **nothing** — it can NEVER break the new-visit page. **Empty/low-sample
+  threshold:** `thisWeek.notes < 3` (the `MIN_NOTES` const) OR `avgAuthoredPct == null`
+  → a neutral encouraging line ("Одобрете няколко прегледа и тук ще видите…"), never a
+  percentage — one heavily-edited first note must never render a discouraging "40%".
+- **`app/(workspace)/app/new-visit/page.tsx`** — a best-effort `api.valueStats()` fetch
+  in its OWN effect (independent of the `/me` onboarding fetch; on any error it just
+  leaves the card hidden), with the card rendered above `<PatientForm>` in the left
+  grid column.
+- Verify: `npx tsc --noEmit` + `npm run build` — clean. Walkthrough: endpoint →
+  `api.valueStats()` → `valueStats` state → `<ValueStatsCard>`; below 3 notes the
+  neutral state shows; on error/loading nothing shows.
+
 # A2 — surface the AI's uncertainty (uncertain_spans now rendered) (2026-06-18)
 
 The documented "uncertain_spans are not surfaced" gap is CLOSED. The backend
