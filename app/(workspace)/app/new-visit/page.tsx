@@ -19,7 +19,8 @@ import TodayConsultations from '@/components/TodayConsultations';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import OnboardingWizard from '@/components/OnboardingWizard';
 import SpotlightTour, { type TourStep } from '@/components/SpotlightTour';
-import { api, ApiError, getSession, type MeResponse } from '@/lib/api';
+import ValueStatsCard from '@/components/ValueStatsCard';
+import { api, ApiError, getSession, type MeResponse, type ValueStats } from '@/lib/api';
 import type {
   DedupConflict,
   PatientSearchHit,
@@ -73,6 +74,21 @@ export default function NewVisitPage() {
       .catch(() => {
         /* unknown — show nothing */
       });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // B2 value card — the doctor's own "% of notes TuberMed wrote" stats. Best
+  // effort + independent of /me: on any error the card stays hidden (renders
+  // null), never breaking the page.
+  const [valueStats, setValueStats] = useState<ValueStats | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .valueStats()
+      .then((v) => { if (!cancelled) setValueStats(v); })
+      .catch(() => { /* keep the card hidden on error */ });
     return () => {
       cancelled = true;
     };
@@ -415,6 +431,7 @@ export default function NewVisitPage() {
       <div className="flex-1 grid gap-6 px-6 py-6"
            style={{ gridTemplateColumns: 'minmax(0, 1fr) 320px' }}>
         <div className="min-w-0">
+          <ValueStatsCard stats={valueStats} />
           <PatientForm
             state={form}
             onChange={handleFormChange}

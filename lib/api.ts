@@ -167,6 +167,18 @@ export interface MeResponse {
   practice_phone?: string | null;
 }
 
+// GET /api/auth/me/value-stats (JWT) — B2 value card. Aggregate NUMBERS ONLY
+// (a count + a whole percent), no PII. avgAuthoredPct is null when there are no
+// notes with a measured authored fraction yet (the card shows a neutral state).
+export interface ValueStatsWindow {
+  notes: number;
+  avgAuthoredPct: number | null;
+}
+export interface ValueStats {
+  thisWeek: ValueStatsWindow;
+  today: ValueStatsWindow;
+}
+
 export interface UpdateMePayload {
   name?: string;
   specialty?: string;
@@ -212,6 +224,7 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     }),
+  valueStats: () => request<ValueStats>('/api/auth/me/value-stats'),
   changePassword: (payload: ChangePasswordPayload) =>
     request<{ ok: boolean }>('/api/auth/change-password', {
       method: 'POST',
