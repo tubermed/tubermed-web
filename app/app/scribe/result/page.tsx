@@ -28,9 +28,15 @@ import { mergeBackendAlerts, type SafetyAlert } from '@/lib/drug-safety';
 import { loadMkb, getMkbDataSync, resolveMkb } from '@/lib/mkb10';
 import { filedMainTerm, filedComorbidityTerm, spokenDivergesFromOfficial } from '@/lib/diagnosis';
 import { loadIal } from '@/lib/ial-meds';
-import { findHighlights, type HighlightMatch } from '@/lib/vital-rules';
+import { findHighlights } from '@/lib/vital-rules';
 import { findSourceSpan, type SourceSpan } from '@/lib/source-grounding';
 import { mkbReviewCopy } from '@/lib/mkb-review';
+import {
+  resolveUncertainSpans,
+  UNCERTAIN_FIELDS,
+  uncertainAckKey,
+  type ResolvedUncertainSpan,
+} from '@/lib/uncertain-spans';
 import {
   formatPlainText,
   copyToClipboard,
@@ -592,28 +598,75 @@ function ResultPageInner() {
     []
   );
 
+  // A2 — acknowledge an AI-uncertainty span. The `unc::` key namespace is
+  // distinct from the vital `${fieldKey}::${raw}` keys, so the two counters
+  // never collide in the shared `acknowledged` Set.
+  const acknowledgeUncertain = useCallback(
+    (field: string, original: string) => {
+      setAcknowledged((prev) => {
+        const next = new Set(prev);
+        next.add(uncertainAckKey(field, original));
+        return next;
+      });
+    },
+    []
+  );
+
+  // Resolve backend uncertain_spans against the CURRENT fields (indexOf
+  // re-location, stale-drop, acknowledged-drop, mkb_review de-dup), then bucket
+  // by field for the inline render surfaces. Advisory only — surfaced + counted,
+  // never a new approval gate (the diagnosis is hard-gated via mkb_review).
+  const uncertainByField = useMemo(() => {
+    const resolved = resolveUncertainSpans(fields, acknowledged);
+    const map: Record<string, ResolvedUncertainSpan[]> = {};
+    for (const f of UNCERTAIN_FIELDS) map[f] = [];
+    for (const s of resolved) {
+      if (map[s.field]) map[s.field].push(s);
+    }
+    return map;
+  }, [fields, acknowledged]);
+
   const reviewItems = useMemo(() => {
+    // Unified review counter: vital-range / transcription highlights AND
+    // AI-uncertainty spans, in one "N за преглед" surface. Each item carries a
+    // reviewKind so goToNextReview targets the right DOM id prefix.
+    type ReviewItem = {
+      fieldKey: string;
+      localIdx: number;
+      reviewKind: 'vital' | 'uncertain';
+    };
+    const items: ReviewItem[] = [];
+
+    // (1) Vital-range + [[...]] transcription highlights (existing) — 4 fields.
     const fieldsToScan: Array<keyof TranscribeFields> = [
       'anamneza',
       'obektivno',
       'izsledvania',
       'terapia',
     ];
-    const items: Array<
-      HighlightMatch & { fieldKey: string; localIdx: number }
-    > = [];
     for (const fk of fieldsToScan) {
       const text = (fields[fk] as string) || '';
       const matches = findHighlights(text);
-      // Match EditableField's filter: skip acknowledged. localIdx counts
-      // only visible (non-acknowledged) matches so DOM ids line up.
+      // Match EditableField's filter: skip acknowledged. localIdx counts only
+      // visible (non-acknowledged) matches so DOM ids (vital-<fk>-<i>) line up.
       let visibleIdx = 0;
       for (const m of matches) {
         if (acknowledged.has(`${String(fk)}::${m.raw}`)) continue;
-        items.push({ ...m, fieldKey: String(fk), localIdx: visibleIdx });
+        items.push({ fieldKey: String(fk), localIdx: visibleIdx, reviewKind: 'vital' });
         visibleIdx++;
       }
     }
+
+    // (2) AI-uncertainty spans (A2) — superset of fields. Already resolved +
+    // acknowledged-filtered; localIdx = index within the field's resolved list
+    // so DOM ids (uncertain-<fk>-<j>) line up with EditableField.
+    for (const fk of UNCERTAIN_FIELDS) {
+      const spans = uncertainByField[fk] || [];
+      for (let j = 0; j < spans.length; j++) {
+        items.push({ fieldKey: fk, localIdx: j, reviewKind: 'uncertain' });
+      }
+    }
+
     return items;
   }, [
     fields.anamneza,
@@ -621,6 +674,7 @@ function ResultPageInner() {
     fields.izsledvania,
     fields.terapia,
     acknowledged,
+    uncertainByField,
   ]);
 
   const [reviewCursor, setReviewCursor] = useState(0);
@@ -636,7 +690,8 @@ function ResultPageInner() {
     if (reviewItems.length === 0) return;
     const idx = reviewCursor % reviewItems.length;
     const item = reviewItems[idx];
-    const spanId = `vital-${item.fieldKey}-${item.localIdx}`;
+    const prefix = item.reviewKind === 'uncertain' ? 'uncertain' : 'vital';
+    const spanId = `${prefix}-${item.fieldKey}-${item.localIdx}`;
     const el = document.getElementById(spanId);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1288,6 +1343,8 @@ function ResultPageInner() {
               onChange={(v) => updateField('anamneza', v)}
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('anamneza', raw)}
+              uncertainSpans={uncertainByField.anamneza}
+              onAcknowledgeUncertain={(orig) => acknowledgeUncertain('anamneza', orig)}
               headerRight={
                 <>
                   <SourceButton
@@ -1310,6 +1367,8 @@ function ResultPageInner() {
               onChange={(v) => updateField('obektivno', v)}
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('obektivno', raw)}
+              uncertainSpans={uncertainByField.obektivno}
+              onAcknowledgeUncertain={(orig) => acknowledgeUncertain('obektivno', orig)}
               headerRight={
                 <>
                   <SourceButton
@@ -1347,6 +1406,8 @@ function ResultPageInner() {
                       fieldKey="izsledvania"
                       acknowledged={acknowledged}
                       onAcknowledge={(raw) => acknowledgeSpan('izsledvania', raw)}
+                      uncertainSpans={uncertainByField.izsledvania}
+                      onAcknowledgeUncertain={(orig) => acknowledgeUncertain('izsledvania', orig)}
                     />
                   </div>
                 )}
@@ -1363,6 +1424,10 @@ function ResultPageInner() {
                     <EditableField
                       value={fields.naznacheni || ''}
                       onChange={(v) => updateField('naznacheni', v)}
+                      fieldKey="naznacheni"
+                      highlightVitals={false}
+                      uncertainSpans={uncertainByField.naznacheni}
+                      onAcknowledgeUncertain={(orig) => acknowledgeUncertain('naznacheni', orig)}
                     />
                   </div>
                 )}
@@ -1377,6 +1442,8 @@ function ResultPageInner() {
                       fieldKey="izsledvania"
                       acknowledged={acknowledged}
                       onAcknowledge={(raw) => acknowledgeSpan('izsledvania', raw)}
+                      uncertainSpans={uncertainByField.izsledvania}
+                      onAcknowledgeUncertain={(orig) => acknowledgeUncertain('izsledvania', orig)}
                     />
                   )}
               </div>
@@ -1389,6 +1456,8 @@ function ResultPageInner() {
               onChange={(v) => updateField('terapia', v)}
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('terapia', raw)}
+              uncertainSpans={uncertainByField.terapia}
+              onAcknowledgeUncertain={(orig) => acknowledgeUncertain('terapia', orig)}
               headerRight={
                 <>
                   <SourceButton
@@ -1424,6 +1493,10 @@ function ResultPageInner() {
                     <EditableField
                       value={fields.napravlenia || ''}
                       onChange={(v) => updateField('napravlenia', v)}
+                      fieldKey="napravlenia"
+                      highlightVitals={false}
+                      uncertainSpans={uncertainByField.napravlenia}
+                      onAcknowledgeUncertain={(orig) => acknowledgeUncertain('napravlenia', orig)}
                     />
                   </div>
                 )}
@@ -1914,6 +1987,8 @@ function TextSection({
   fieldKey,
   acknowledged,
   onAcknowledge,
+  uncertainSpans,
+  onAcknowledgeUncertain,
   headerRight,
 }: {
   id: string;
@@ -1923,6 +1998,8 @@ function TextSection({
   fieldKey?: string;
   acknowledged?: Set<string>;
   onAcknowledge?: (raw: string) => void;
+  uncertainSpans?: ResolvedUncertainSpan[];
+  onAcknowledgeUncertain?: (original: string) => void;
   headerRight?: React.ReactNode;
 }) {
   return (
@@ -1938,6 +2015,8 @@ function TextSection({
         fieldKey={fieldKey}
         acknowledged={acknowledged}
         onAcknowledge={onAcknowledge}
+        uncertainSpans={uncertainSpans}
+        onAcknowledgeUncertain={onAcknowledgeUncertain}
       />
     </div>
   );

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { findHighlights, type HighlightMatch } from '@/lib/vital-rules';
+import type { ResolvedUncertainSpan } from '@/lib/uncertain-spans';
 
 interface EditableFieldProps {
   value: string;
@@ -13,6 +14,12 @@ interface EditableFieldProps {
    *  matches won't render as highlights. */
   acknowledged?: Set<string>;
   onAcknowledge?: (raw: string) => void;
+  /** A2 — AI-uncertainty review markers for THIS field, already resolved +
+   *  acknowledged-filtered by the result page (lib/uncertain-spans.ts). Rendered
+   *  inline as a SECOND highlight kind ('ai-uncertain'), distinct from vitals. */
+  uncertainSpans?: ResolvedUncertainSpan[];
+  /** Acknowledge an uncertain span (keyed `unc::${field}::${original}` upstream). */
+  onAcknowledgeUncertain?: (original: string) => void;
 }
 
 export default function EditableField({
@@ -23,6 +30,8 @@ export default function EditableField({
   highlightVitals = true,
   acknowledged,
   onAcknowledge,
+  uncertainSpans,
+  onAcknowledgeUncertain,
 }: EditableFieldProps) {
   // Defensive coercion. Some callers pass `undefined` at runtime even though
   // the prop is typed `string` (e.g. an extracted field that came back
@@ -72,6 +81,40 @@ export default function EditableField({
     );
   }, [allMatches, acknowledged, fieldKey]);
 
+  // A2 — AI-uncertainty spans → HighlightMatch (kind 'ai-uncertain') so they
+  // ride the same token-split renderer + popover as vitals. Already resolved +
+  // acknowledged-filtered upstream; coords are against the CURRENT text.
+  const uncertainMatches = useMemo<HighlightMatch[]>(() => {
+    if (!uncertainSpans || uncertainSpans.length === 0) return [];
+    return uncertainSpans.map((s) => ({
+      start: s.start,
+      end: s.end,
+      kind: 'ai-uncertain' as const,
+      raw: s.original,
+      display: safeValue.slice(s.start, s.end) || s.original,
+      label: 'AI несигурност',
+      message: s.reason || 'Маркирано от AI за преглед.',
+      suggestion: s.suggestion || undefined,
+    }));
+  }, [uncertainSpans, safeValue]);
+
+  // Merge both highlight kinds into one decoration list, each carrying its own
+  // DOM id (per-kind index) so the result page's review counter can target it:
+  // vitals → vital-${fieldKey}-${i}, uncertain → uncertain-${fieldKey}-${j}.
+  // Indices are assigned in source order BEFORE the by-start sort, so they match
+  // the counter's per-field/per-kind enumeration.
+  const decorations = useMemo(() => {
+    const decos: { match: HighlightMatch; domId?: string }[] = [];
+    matches.forEach((m, i) =>
+      decos.push({ match: m, domId: fieldKey ? `vital-${fieldKey}-${i}` : undefined })
+    );
+    uncertainMatches.forEach((m, j) =>
+      decos.push({ match: m, domId: fieldKey ? `uncertain-${fieldKey}-${j}` : undefined })
+    );
+    decos.sort((a, b) => a.match.start - b.match.start);
+    return decos;
+  }, [matches, uncertainMatches, fieldKey]);
+
   function commit() {
     setEditing(false);
     if (local !== safeValue) onChange(local);
@@ -83,9 +126,13 @@ export default function EditableField({
     setEditing(true);
   }
 
-  function handleAcknowledge(raw: string) {
+  function handleAcknowledge(match: HighlightMatch) {
     setPopover(null);
-    if (onAcknowledge) onAcknowledge(raw);
+    if (match.kind === 'ai-uncertain') {
+      if (onAcknowledgeUncertain) onAcknowledgeUncertain(match.raw);
+    } else if (onAcknowledge) {
+      onAcknowledge(match.raw);
+    }
   }
 
   if (editing) {
@@ -128,8 +175,7 @@ export default function EditableField({
         {hasContent ? (
           <RenderWithSpans
             value={safeValue}
-            matches={matches}
-            fieldKey={fieldKey}
+            decorations={decorations}
             onSpanClick={(match, rect) => setPopover({ match, rect })}
           />
         ) : (
@@ -141,7 +187,7 @@ export default function EditableField({
           match={popover.match}
           rect={popover.rect}
           onEdit={() => openEditAt(popover.match.start)}
-          onAck={() => handleAcknowledge(popover.match.raw)}
+          onAck={() => handleAcknowledge(popover.match)}
           onClose={() => setPopover(null)}
         />
       )}
@@ -151,26 +197,28 @@ export default function EditableField({
 
 function RenderWithSpans({
   value,
-  matches,
-  fieldKey,
+  decorations,
   onSpanClick,
 }: {
   value: string;
-  matches: HighlightMatch[];
-  fieldKey?: string;
+  decorations: { match: HighlightMatch; domId?: string }[];
   onSpanClick: (m: HighlightMatch, rect: DOMRect) => void;
 }) {
-  if (matches.length === 0) return <>{value}</>;
+  if (decorations.length === 0) return <>{value}</>;
   const out: React.ReactNode[] = [];
   let cursor = 0;
-  for (let i = 0; i < matches.length; i++) {
-    const m = matches[i];
+  for (let i = 0; i < decorations.length; i++) {
+    const { match: m, domId } = decorations[i];
+    // Defensive: two highlight kinds can in principle overlap (a vital value and
+    // an AI-uncertainty span on the same chars). Skip a span that starts before
+    // the running cursor so the slicer never produces a negative/garbled range.
+    if (m.start < cursor) continue;
     if (m.start > cursor) out.push(value.slice(cursor, m.start));
     out.push(
       <SpanMark
         key={i}
         match={m}
-        domId={fieldKey ? `vital-${fieldKey}-${i}` : undefined}
+        domId={domId}
         onClick={(rect) => onSpanClick(m, rect)}
       />
     );
@@ -191,6 +239,7 @@ function SpanMark({
 }) {
   const isCritical = match.kind === 'vital-critical';
   const isUncertain = match.kind === 'uncertain';
+  const isAiUncertain = match.kind === 'ai-uncertain';
 
   let style: React.CSSProperties = {
     padding: '0 2px',
@@ -199,7 +248,18 @@ function SpanMark({
     fontWeight: 500,
   };
 
-  if (isUncertain) {
+  if (isAiUncertain) {
+    // A2 — AI flagged this for review. Amber DOTTED underline + soft amber wash,
+    // deliberately distinct from the red/gold vital marks and the wavy
+    // transcription-uncertainty mark.
+    style = {
+      ...style,
+      background: 'rgba(183, 121, 31, 0.10)',
+      color: 'var(--color-text)',
+      borderBottom: '2px dotted var(--color-gold)',
+      textUnderlineOffset: '3px',
+    };
+  } else if (isUncertain) {
     // Word-style spell-check underline. Background subtle.
     style = {
       ...style,
@@ -230,13 +290,14 @@ function SpanMark({
   return (
     <mark
       id={domId}
-      data-vital
+      data-uncertain={isAiUncertain ? '' : undefined}
+      data-vital={isAiUncertain ? undefined : ''}
       onClick={(e) => {
         e.stopPropagation();
         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
         onClick(rect);
       }}
-      className="vital-mark"
+      className={isAiUncertain ? 'uncertain-mark' : 'vital-mark'}
       style={style}
     >
       {match.display}
@@ -278,11 +339,8 @@ function HighlightPopover({
 
   const isCritical = match.kind === 'vital-critical';
   const isUncertain = match.kind === 'uncertain';
-  const accentColor = isCritical
-    ? 'var(--color-red)'
-    : isUncertain
-    ? 'var(--color-gold)'
-    : 'var(--color-gold)';
+  const isAiUncertain = match.kind === 'ai-uncertain';
+  const accentColor = isCritical ? 'var(--color-red)' : 'var(--color-gold)';
 
   // Viewport-aware positioning
   const PW = 320;
@@ -310,16 +368,30 @@ function HighlightPopover({
         >
           {isCritical
             ? '🚨 Критично'
+            : isAiUncertain
+            ? '🔎 Маркирано за преглед'
             : isUncertain
             ? '✎ Несигурно разпознаване'
             : '⚠ Извън нормата'}
         </div>
         <div
-          className="text-sm leading-snug mb-3"
+          className={
+            isAiUncertain && match.suggestion
+              ? 'text-sm leading-snug mb-2'
+              : 'text-sm leading-snug mb-3'
+          }
           style={{ color: 'var(--color-text)' }}
         >
           {match.message}
         </div>
+        {isAiUncertain && match.suggestion && (
+          <div
+            className="text-xs leading-snug mb-3"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            Предложение: <span style={{ fontWeight: 600 }}>{match.suggestion}</span>
+          </div>
+        )}
         <div className="flex gap-2">
           <button
             onClick={onEdit}

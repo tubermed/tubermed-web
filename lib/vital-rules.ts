@@ -7,7 +7,8 @@
 export type HighlightKind =
   | 'vital-warn'
   | 'vital-critical'
-  | 'uncertain';
+  | 'uncertain'        // low-confidence TRANSCRIPTION marker ([[...]] in the text)
+  | 'ai-uncertain';    // backend AI-uncertainty span (fields.uncertain_spans, A2)
 
 export interface HighlightMatch {
   start: number;       // position in source text
@@ -17,6 +18,7 @@ export interface HighlightMatch {
   display: string;     // what to render inside the highlight (e.g. inner word, no brackets)
   label: string;       // short category label e.g. "Температура"
   message: string;     // human-readable reason
+  suggestion?: string; // optional proposed correction (ai-uncertain spans)
 }
 
 function parseDecimal(s: string): number {
