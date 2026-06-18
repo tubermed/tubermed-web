@@ -1005,6 +1005,65 @@ web code shipped in that session, so the matching web work is tracked here.
   change (the modal already re-fetches; the backend null-cache makes the reopen
   fresh). Verified by code-read; tracked under the now-resolved Known-issue [P1-03].
 
+# A2 — surface the AI's uncertainty (uncertain_spans now rendered) (2026-06-18)
+
+The documented "uncertain_spans are not surfaced" gap is CLOSED. The backend
+already computes `fields.uncertain_spans` (gazetteer drug-name borderlines,
+missing/mismatched vitals, allergy-stem flags, ungrounded denials); the result
+page (`app/app/scribe/result/page.tsx`) now renders them inline as a second
+highlight kind and folds them into the EXISTING review counter. **Advisory only
+— NOT a new approval gate** (the main diagnosis is already hard-blocked via
+`mkb_review`; these are review markers the doctor steps through + acknowledges).
+
+- **Pure core — `lib/uncertain-spans.ts` `resolveUncertainSpans(fields,
+  acknowledged) → ResolvedUncertainSpan[]`.** Groups `uncertain_spans` by field
+  and for each: re-locates `original` in the CURRENT `fields[field]` text via
+  `indexOf` (the backend `start`/`end` is loose / may be stale after edits — NEVER
+  trusted), dropping the span if `original` is gone (doctor edited it out →
+  self-clearing, exactly like a vital); drops acknowledged spans; de-dups the main
+  diagnosis (below). Sorted by start within each field. Pure (no React) — asserted
+  by `scripts/uncertain-spans.ts` (`npx tsx`, 19/19). `UNCERTAIN_FIELDS` (the 6
+  EditableField fields) + `uncertainAckKey` are exported here.
+- **Field coverage — a SUPERSET of the 4 vital-scanned fields:** `anamneza`,
+  `obektivno`, `izsledvania`, `terapia`, **`napravlenia`**, **`naznacheni`**. The
+  last two had no review wiring before — they now pass `fieldKey` + `uncertainSpans`
+  + `highlightVitals={false}` (uncertainty marks but NOT vital-range scanning — they
+  were never in the vital counter). `osnovna_diagnoza` is intentionally NOT in the
+  set: it renders via `DiagnosesSection` (not `EditableField`) and its ungrounding is
+  surfaced by the `mkb_review` banner (see the de-dup).
+- **Inline rendering — `EditableField` + `lib/vital-rules.ts`.** `HighlightKind`
+  gained `'ai-uncertain'` (distinct from the existing `'uncertain'` for `[[…]]`
+  transcription markers) and `HighlightMatch` gained optional `suggestion`.
+  EditableField takes `uncertainSpans` + `onAcknowledgeUncertain`, converts the
+  resolved spans to `ai-uncertain` HighlightMatches, and merges them with the vital
+  matches into ONE by-start-sorted, overlap-safe decoration list. Uncertain marks
+  render as `<mark class="uncertain-mark">` (amber DOTTED underline — visually
+  distinct from the red/gold vital marks and the wavy transcription mark) with
+  `id="uncertain-${fieldKey}-${j}"`; the popover shows `reason` + `suggestion` (when
+  present) + ✎ Редактирай / ✓ Потвърди. **The vital path is byte-for-byte unchanged**
+  (same `findHighlights` matches, same `vital-${fieldKey}-${i}` ids).
+- **Unified review counter.** `reviewItems` now emits BOTH kinds, each tagged
+  `reviewKind: 'vital' | 'uncertain'`; the "N за преглед" counter sums them and
+  `goToNextReview` scrolls+flashes the right id (`vital-…` / `uncertain-…`). Per-kind
+  `localIdx` keeps the counter aligned with EditableField's render order.
+- **Acknowledge — distinct key namespace.** Uncertain spans acknowledge into the
+  SAME `acknowledged` Set under the `unc::${field}::${original}` prefix (via
+  `acknowledgeUncertain`), which can NEVER collide with the vital
+  `${fieldKey}::${raw}` keys. Acknowledging clears the mark + decrements the counter;
+  editing the token out self-clears it. **Note confirmation / `isLocked` /
+  `mkb_review` 409 are NOT affected** — acknowledging is not required to approve.
+- **`mkb_review` de-dup.** When the main diagnosis is already surfaced by the
+  `mkb_review` banner (`needs_review && reason === 'diagnosis_text_not_grounded'`),
+  `resolveUncertainSpans` drops the matching `osnovna_diagnoza` span so the diagnosis
+  isn't flagged twice (the realistic P0-01b case — the backend emits both together).
+  Conditional on that reason, not a blanket exclusion.
+- **CSS (`app/globals.css`).** `.uncertain-mark.flash-review` rides the existing
+  `flash-review` keyframes; a `prefers-reduced-motion` guard was added for BOTH flash
+  classes (the vital flash had none); `.uncertain-mark` is print-stripped alongside
+  `.vital-mark` (review affordance, never in the exported document).
+- **Verify:** `npx tsx scripts/uncertain-spans.ts` (19/19) + `scripts/mkb-validity.ts`
+  (11/11) + `npx tsc --noEmit` + `npm run build` — all clean.
+
 # Known issues / gotchas
 
 - **Break-it audit (2026-06-13) — `AUDIT-FINDINGS-2026-06-13.md` (repo root, web
@@ -1077,20 +1136,19 @@ web code shipped in that session, so the matching web work is tracked here.
   frontend, but must NOT be assumed reachable from the backend's filesystem. Flag any
   cross-repo runtime read in review.
 
-- **`uncertain_spans` have no visible result-page UI indicator (pre-existing, NOT a
-  regression — confirmed 2026-06-01).** The yellow highlighting on the result page is
-  vital-range warnings (`lib/vital-rules.ts`, out-of-normal-range vital VALUES) — a
-  SEPARATE system. `uncertain_spans` (AI-unsure-field markers computed by the backend
-  validators and persisted in `extracted_fields`) are NOT surfaced to the doctor.
-  Decision pending for a future session (safety affordance, possibly lawyer-relevant);
-  do NOT fix unprompted. Full detail in tubermed-backend/CLAUDE.md. NB: per-field **source
-  traceability** („виж източника", shipped 2026-06-15 — see that dated section above) is a
-  SEPARATE, now-shipped affordance — OBJECTIVE transcript grounding, not a confidence display;
-  `uncertain_spans` themselves remain UNsurfaced. As of P0-01b (2026-06-17) the backend injects
-  an `osnovna_diagnoza` uncertain-span for an ungrounded MAIN diagnosis; it stays INERT here (no
-  rendering path) — that case is surfaced instead via `mkb_review.reason ===
-  'diagnosis_text_not_grounded'` (the 409 gate + the `DiagnosesSection` banner, see the P0-01b
-  dated section). Any future `uncertain_spans` surface should align its copy with `mkbReviewCopy`.
+- **`uncertain_spans` ARE NOW surfaced on the result page (A2, 2026-06-18 — see that
+  dated section above; the earlier "no visible UI indicator" gap is CLOSED).** They
+  render inline as amber dotted `uncertain-mark` highlights and fold into the unified
+  review counter (`lib/uncertain-spans.ts` `resolveUncertainSpans` + `EditableField`'s
+  `ai-uncertain` kind). ADVISORY — no new approval gate. Still THREE separate systems,
+  do not conflate: red/gold **vital-range** warnings (`lib/vital-rules.ts`,
+  out-of-range vital VALUES), the new amber **AI-uncertainty** spans, and **source
+  traceability** („виж източника", objective transcript grounding). The
+  `osnovna_diagnoza` uncertain-span (P0-01b) is de-duped against the `mkb_review`
+  banner rather than rendered (no `EditableField` surface for the diagnosis); any future
+  span surface for `osnovna_diagnoza` / meds / comorbidities should align its copy with
+  `mkbReviewCopy`. Full detail: tubermed-backend/CLAUDE.md (backend validators) + the A2
+  dated section above.
 
 - **`app/(workspace)/app/patients/page.tsx` — two pre-existing ESLint errors at lines
   111 / 120 (NOT yet fixed).** `loadPatient` calls `applyPage(...)` (~line 111) but
