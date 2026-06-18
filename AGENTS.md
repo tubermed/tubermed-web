@@ -1098,6 +1098,70 @@ highlight kind and folds them into the EXISTING review counter. **Advisory only
 - **Verify:** `npx tsx scripts/uncertain-spans.ts` (19/19) + `scripts/mkb-validity.ts`
   (11/11) + `npx tsc --noEmit` + `npm run build` — all clean.
 
+# Skeleton loaders across waiting surfaces (2026-06-18)
+
+Blank / "Зареждане…" waits were replaced with footprint-matched pulsing
+placeholders so the app feels faster and stops layout-shifting on load.
+**UI-only, client-side CSS — no new network requests, no server/bandwidth cost,
+no loading-decision or `api.*` change anywhere.** Reuses the EXISTING primitive
+(`components/SkeletonInput.tsx` → an `aria-hidden` `.nv-skeleton` box; the shimmer
++ its `prefers-reduced-motion` HARD-STOP live in `app/globals.css:356`) — **no new
+skeleton system, no new animation/CSS.** Reduced-motion is honored automatically by
+anything rendering `.nv-skeleton`. The settings page was the prior lone user; these
+surfaces now follow the same `{loading ? <SkeletonInput/> : <real/>}` pattern.
+
+- **Value card (`components/ValueStatsCard.tsx`, `…/new-visit/page.tsx`).** New
+  optional `loading` prop: while loading → a card-shaped skeleton (headline + two
+  subtext lines) in the real card chrome. **The honesty invariant is preserved —
+  settled-with-no-stats (error) still renders `null`; the card can NEVER break
+  new-visit.** The parent feeds a `valueStatsLoading` flag (set false in `.finally`);
+  the fetch/`.then`/`.catch`/null-on-error behavior is byte-unchanged.
+- **Result note (`app/app/scribe/result/page.tsx`).** Highest-impact (post-recording
+  wait). A local `NoteSkeleton` mirrors the loaded note: a document-header card then
+  section cards in the SAME canonical order (Диагнози [+ comorbidity chip row] →
+  Анамнеза → Обективен статус → Изследвания → Терапия), reusing the real card chrome
+  (`bg-white rounded-2xl border` / `--color-border`; header `p-8`, sections `p-6`;
+  `space-y-4`). Used by BOTH the `Suspense fallback={<BootSplash/>}` AND the inner
+  `!doctor || !original` guard (now `return <BootSplash/>` — one source, byte-identical
+  waits). `doctor` is null during the wait so AppShell can't mount → centered
+  single-column document; the real 3-column `.result-grid` re-mounts once doctor + the
+  note resolve (a layout change there is unavoidable, not a skeleton defect). The
+  documented edit/flush machinery + every fetch/bootstrap/recovery/reconcile effect are
+  untouched.
+- **Patients (`app/(workspace)/app/patients/page.tsx`).** `loadingList` → ~6 rows
+  mirroring `VisitRow` (date line + status-pill on top, diagnosis-title line). 
+  `loadingDetail` → a record skeleton mirroring `ReadOnlyNote` (header card + ~3
+  `ReadOnlySection` cards, same `bg-white rounded-xl p-6` / `--color-border-soft` +
+  `--shadow-raised` chrome). **Left alone:** the `PatientsBootSplash` Suspense fallback
+  (honest first paint is the empty two-panel shell, not loaded content) and the
+  `loadingMore` "Зарежда…" button busy-label. The pre-existing `loadPatient`/`applyPage`
+  ESLint baseline (~lines 111/120) was NOT disturbed.
+- **Today rail (`components/TodayConsultations.tsx`).** The pre-existing 3× solid-44px
+  bars were refined to 4 `SkeletonRailRow` placeholders mirroring a real `Row`
+  (`pl-3 pr-2 py-2`; time line over name line; status-pill box).
+- **Patient-summary modal (`components/PatientSummaryModal.tsx`).** The
+  `phase.kind==='loading'` body's centered "Генериране на резюмето…" text → a `gap-3`
+  column skeleton mirroring the `ready` body (caption line → 12rem textarea block →
+  disclaimer box). The `load()`/regenerate/429-notice/disclaimer-split logic + footer
+  busy-labels are untouched.
+
+- **Deliberately LEFT AS-IS (not a follow-up gap):** the scribe record screen
+  (`app/app/scribe/page.tsx` `BootSplash` + `!doctor` gate) and the workspace shell boot
+  (`app/(workspace)/layout.tsx` `!ready`). Their loaded content is the full AppShell
+  chrome (navy sidebar rail + top bar + Stepper + 80px mic/waveform) — NOT a column of
+  input-height rows — so a `SkeletonInput` stack can't mirror it and would ITSELF reflow
+  the instant AppShell mounts. Both gates also clear in one synchronous client tick
+  (`getSession()` then `setReady`/`setDoctor`; no field fetch awaited), so the splash
+  barely flashes. If polish is ever wanted there, the right move is a neutral brand
+  splash, not a field-stack skeleton. Recovery-gated splashes are untouched.
+- **Accessibility:** skeleton boxes are `aria-hidden` (via `SkeletonInput`); where the
+  old loading UI announced text, an `sr-only` / `role="status"` equivalent is preserved
+  (result page, summary modal). Button busy-states (login "Влизане…", saves) are NOT
+  skeletons — left as-is.
+- **Verify:** `npx tsc --noEmit` + `npm run build` — clean (no unit runner for pure UI).
+  Worth a real visual pass post-deploy on a throttled connection (DevTools → Slow 3G) to
+  actually see the skeletons and confirm nothing jumps when data lands.
+
 # Known issues / gotchas
 
 - **Break-it audit (2026-06-13) — `AUDIT-FINDINGS-2026-06-13.md` (repo root, web
