@@ -337,10 +337,17 @@ function PatientsPageInner() {
               </div>
 
               {loadingList ? (
-                <div className="divide-y" style={{ borderColor: 'var(--color-border-soft)' }}>
-                  {[0, 1, 2, 3].map((i) => (
-                    <div key={i} className="px-4 py-3">
-                      <SkeletonInput height="52px" />
+                // ~6 placeholders mirroring a VisitRow's footprint: a date line +
+                // status pill on top, a diagnosis-title line below — so the list
+                // doesn't jump when the real rows land.
+                <div className="divide-y" style={{ borderColor: 'var(--color-border-soft)' }} aria-hidden>
+                  {[0, 1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className="px-4 py-3 flex flex-col gap-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <SkeletonInput height="12px" width="40%" />
+                        <SkeletonInput height="16px" width="56px" style={{ borderRadius: 4 }} />
+                      </div>
+                      <SkeletonInput height="16px" width="80%" />
                     </div>
                   ))}
                 </div>
@@ -444,7 +451,34 @@ function PatientsPageInner() {
                 {!activeVisitId ? (
                   <EmptyPanel message="Изберете посещение от списъка вляво, за да видите попълнения лист." />
                 ) : loadingDetail ? (
-                  <EmptyPanel message="Зареждане на лист…" />
+                  // Record-shaped skeleton mirroring ReadOnlyNote: a header card
+                  // (title + sub-line) then ~3 section cards (title + text lines),
+                  // same card chrome so the box edges don't reflow on load. The
+                  // sr-only status restores the "Зареждане на лист…" announcement
+                  // the old EmptyPanel gave screen readers.
+                  <>
+                  <span className="sr-only" role="status">Зареждане на лист…</span>
+                  <div className="space-y-4" aria-hidden>
+                    <div
+                      className="bg-white rounded-xl p-6"
+                      style={{ border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
+                    >
+                      <SkeletonInput height="28px" width="55%" />
+                      <SkeletonInput height="14px" width="35%" style={{ marginTop: 10 }} />
+                    </div>
+                    {[0, 1, 2].map((i) => (
+                      <div
+                        key={i}
+                        className="bg-white rounded-xl p-6"
+                        style={{ border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
+                      >
+                        <SkeletonInput height="22px" width="40%" style={{ marginBottom: 16 }} />
+                        <SkeletonInput height="14px" width="100%" style={{ marginBottom: 8 }} />
+                        <SkeletonInput height="14px" width="85%" />
+                      </div>
+                    ))}
+                  </div>
+                  </>
                 ) : !detail ? (
                   <EmptyPanel message="Листът не може да бъде зареден." />
                 ) : (
