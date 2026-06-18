@@ -97,10 +97,11 @@ export default function TodayConsultations({ refreshKey, currentConsultationId }
           </div>
         )}
         {!err && !data && (
-          <div className="flex flex-col gap-2 px-2 py-2">
-            <SkeletonInput height="44px" />
-            <SkeletonInput height="44px" />
-            <SkeletonInput height="44px" />
+          <div className="px-2 py-2" aria-hidden>
+            <SkeletonRailRow />
+            <SkeletonRailRow />
+            <SkeletonRailRow />
+            <SkeletonRailRow />
           </div>
         )}
         {data && data.consultations.length === 0 && (
@@ -123,6 +124,21 @@ export default function TodayConsultations({ refreshKey, currentConsultationId }
         ))}
       </div>
     </aside>
+  );
+}
+
+// Loading placeholder mirroring a real Row's footprint — a time line over a
+// name line on the left, a status-pill box on the right, same pl-3 pr-2 py-2 —
+// so the rail doesn't visibly jump when the consultations land.
+function SkeletonRailRow() {
+  return (
+    <div className="relative flex items-center justify-between gap-2 pl-3 pr-2 py-2">
+      <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+        <SkeletonInput height="11px" width="38px" />
+        <SkeletonInput height="15px" width="62%" />
+      </div>
+      <SkeletonInput height="16px" width="58px" className="flex-shrink-0" style={{ borderRadius: 4 }} />
+    </div>
   );
 }
 
