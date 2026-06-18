@@ -7,6 +7,7 @@ import AppShell from '@/components/AppShell';
 import Stepper from '@/components/Stepper';
 import { SCRIBE_FLOW_STEPS } from '@/lib/flow';
 import EditableField from '@/components/EditableField';
+import SkeletonInput from '@/components/SkeletonInput';
 import MkbPicker from '@/components/MkbPicker';
 import MkbTypeahead from '@/components/MkbTypeahead';
 import MedsPanel from '@/components/MedsPanel';
@@ -166,12 +167,63 @@ export default function ResultPage() {
 
 function BootSplash() {
   return (
-    <main
-      className="min-h-screen flex items-center justify-center"
-      style={{ color: 'var(--color-text-muted)' }}
-    >
-      Зареждане…
+    <main className="min-h-screen p-6">
+      <span className="sr-only">Зареждане…</span>
+      <div className="max-w-3xl mx-auto">
+        <NoteSkeleton />
+      </div>
     </main>
+  );
+}
+
+// Note-shaped loading placeholder — a document-header card then the section
+// cards in the SAME canonical order the loaded note renders (Диагнози → Анамнеза
+// → Обективен статус → Изследвания → Терапия), reusing the real card chrome
+// (bg-white rounded-2xl border / --color-border) so the box edges don't reflow
+// when the note lands. Reuses .nv-skeleton via SkeletonInput (reduced-motion
+// hard-stop honored in globals.css). doctor is still null during this wait, so
+// AppShell can't mount — this is the centered single-column document; the real
+// 3-column grid takes over once doctor + the note resolve.
+function NoteSkeleton() {
+  const sections: { label: string; lines: string[]; chips?: boolean }[] = [
+    { label: '34%', lines: ['100%', '92%', '70%'], chips: true }, // Диагнози МКБ-10 (+ comorbidity chips)
+    { label: '22%', lines: ['100%', '96%', '60%'] },              // Анамнеза
+    { label: '40%', lines: ['100%', '84%'] },                     // Обективен статус
+    { label: '26%', lines: ['100%', '72%'] },                     // Изследвания
+    { label: '18%', lines: ['100%', '88%', '64%'] },              // Терапия
+  ];
+  return (
+    <div className="space-y-4" aria-hidden>
+      {/* document header card ("Амбулаторен лист") */}
+      <div
+        className="bg-white rounded-2xl border p-8 flex items-baseline justify-between"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <SkeletonInput height="32px" width="240px" />
+        <SkeletonInput height="18px" width="90px" />
+      </div>
+      {sections.map((s, i) => (
+        <div
+          key={i}
+          className="bg-white rounded-2xl border p-6"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          <SkeletonInput height="22px" width={s.label} style={{ marginBottom: '16px' }} />
+          <div className="space-y-2">
+            {s.lines.map((w, j) => (
+              <SkeletonInput key={j} height="14px" width={w} />
+            ))}
+          </div>
+          {s.chips && (
+            <div className="flex flex-wrap gap-2 mt-3">
+              <SkeletonInput height="28px" width="120px" style={{ borderRadius: '9999px' }} />
+              <SkeletonInput height="28px" width="96px" style={{ borderRadius: '9999px' }} />
+              <SkeletonInput height="28px" width="110px" style={{ borderRadius: '9999px' }} />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1062,14 +1114,9 @@ function ResultPageInner() {
   }, [fields.izsledvania, fields.napravlenia, fields.naznacheni]);
 
   if (!doctor || !original) {
-    return (
-      <main
-        className="min-h-screen flex items-center justify-center"
-        style={{ color: 'var(--color-text-muted)' }}
-      >
-        Зареждане…
-      </main>
-    );
+    // Same note-shaped skeleton as the Suspense fallback — this is the wait the
+    // doctor actually sees after recording (bootstrap / recovery / reconcile).
+    return <BootSplash />;
   }
 
   // Source-grounding affordance is disabled when there's no transcript to point
