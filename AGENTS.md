@@ -972,6 +972,39 @@ task fixes the doctor being MISLED by the flag. All in
   `scripts/mkb-validity.ts` (11/11, client/backend gate parity intact) +
   `npx tsc --noEmit` + `npm run build` — all clean.
 
+# Backend safety gates this session — what the web now sees (2026-06-18)
+
+Three deterministic backend P1s landed (`tubermed-backend` `main`, pushed; detail
+in its CLAUDE.md P1-01/P1-03/P1-07). They change responses the web consumes — no
+web code shipped in that session, so the matching web work is tracked here.
+
+- **409 `consultation_retrying` is a NEW response on `/approve` `/export` `/edit`
+  `/patient-summary`** (P1-07 — a row stuck mid-retry-extraction is now gated). The
+  result page only special-cases the 409 `mkb_review_required` code (`confirmReview`
+  catch in `app/app/scribe/result/page.tsx` ~848); a `consultation_retrying` 409
+  falls through to the GENERIC red error toast (`'Грешка при потвърждаване: ' +
+  message`) — the backend's Bulgarian message („Консултацията се обработва в момента
+  — опитайте отново след малко.") IS shown and the action IS blocked (degrades
+  safely), but as a red error, not the calm-notice treatment. **WEB TODO (polish,
+  not a broken state):** classify `body.code === 'consultation_retrying'` and render
+  the calm „обработва се, опитайте отново" notice (same family as the
+  `PatientSummaryModal` 429 calm-notice), across the approve/export/patient-summary
+  call sites.
+- **ЕГН / `birth_date` with an implausible (pre-1900) age now gets a hard 400** from
+  the backend (P1-01). `lib/egn.ts` `dobFromEgn` has only a FUTURE-date guard, no
+  lower bound — a 1899/1800 decode is a valid past date, so `canSubmit` does NOT
+  block it client-side and the doctor only learns at submit. **WEB TODO:** mirror the
+  floor — a `validateEgnPlausibleAge`-style bound on `canSubmit` (earlier feedback
+  only; the backend is the authoritative gate). This is the deferred frontend age
+  mirror tracked under Known-issue [P1-01]; still-open sibling [P1-02] (lnch/foreign
+  stale-identity drop) is a separate web session.
+- **Patient-summary cache is now invalidated server-side** on `/edit` AND
+  `/retry-extraction` (P1-03 — both writers of `extracted_fields`). So
+  `PatientSummaryModal` `load(false)` reopen now finds a null cache and REGENERATES
+  from the current note — the wrong-dose take-home hazard is closed with NO web
+  change (the modal already re-fetches; the backend null-cache makes the reopen
+  fresh). Verified by code-read; tracked under the now-resolved Known-issue [P1-03].
+
 # Known issues / gotchas
 
 - **Break-it audit (2026-06-13) — `AUDIT-FINDINGS-2026-06-13.md` (repo root, web
@@ -984,11 +1017,18 @@ task fixes the doctor being MISLED by the flag. All in
     front or back — a one-digit month typo silently flips the century 100 years.
     The checksum fix (above) killed the "invalid-shown-as-valid" half; this
     implausible-age sibling survives (correctable via PATCH → P1, not data-loss).
-    Fix = a `validateEgnPlausibleAge` bound on `canSubmit` (and backend).
-  - **[P1-03] Stale patient-summary cache survives a note edit.** Backend
-    `POST /:id/edit` never NULLs `patient_summary`; reopening `PatientSummaryModal`
-    (`load(false)`) serves the PRE-edit summary → a patient can leave with a
-    wrong-dose take-home. Fix = invalidate the cache on `/edit` (backend).
+    Fix = a `validateEgnPlausibleAge` bound on `canSubmit` (and backend). **Backend
+    half DONE (2026-06-18 — hard 400 on POST + PATCH, ЕГН + `birth_date`; see the
+    "Backend safety gates this session" section + tubermed-backend P1-01). The
+    `canSubmit` mirror is the remaining WEB TODO** — `dobFromEgn` still returns a
+    valid date for a pre-1900 decode, so the client doesn't block it.
+  - **[P1-03] ✅ RESOLVED backend-side (2026-06-18) — stale patient-summary cache.**
+    Was: backend `POST /:id/edit` never NULLed `patient_summary`, so reopening
+    `PatientSummaryModal` (`load(false)`) served the PRE-edit summary → wrong-dose
+    take-home. Backend now NULLs the cache on `/edit` AND `/retry-extraction` (both
+    `extracted_fields` writers — see the "Backend safety gates this session" section
+    + tubermed-backend P1-03), so `load(false)` reopen REGENERATES fresh; the modal
+    needs NO web change. Web-side hazard closed.
   - **[P1-02] Drop-on-invalid-ID fires only for ЕГН, not ЛНЧ / foreign** — the
     already-documented egn-only drop gap below; the audit re-confirms it as a
     wrong-patient-filing hazard for the foreign subset.
