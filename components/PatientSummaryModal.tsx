@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, patientSummaryLimitFromError } from '@/lib/api';
 import { copyToClipboard, escapeHtml, openPdfPreview } from '@/lib/exporters';
+import SkeletonInput from '@/components/SkeletonInput';
 
 interface PatientSummaryModalProps {
   isOpen: boolean;
@@ -288,8 +289,14 @@ export default function PatientSummaryModal({
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {phase.kind === 'loading' && (
-            <div className="py-10 text-center text-sm" style={{ color: 'var(--color-text-muted)' }}>
-              Генериране на резюмето…
+            // Mirrors the 'ready' body footprint (caption line → 12rem textarea
+            // block → two-line disclaimer box) in the same gap-3 column, so the
+            // text lands with minimal reflow. sr-only keeps the announcement.
+            <div className="flex flex-col gap-3" role="status">
+              <span className="sr-only">Генериране на резюмето…</span>
+              <SkeletonInput height="0.75rem" width="60%" />
+              <SkeletonInput height="12rem" width="100%" />
+              <SkeletonInput height="2.75rem" width="100%" />
             </div>
           )}
 
