@@ -435,8 +435,16 @@ html, body {
   }
 }
 
-.vital-mark.flash-review {
+.vital-mark.flash-review,
+.uncertain-mark.flash-review {
   animation: flash-review 0.7s ease 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vital-mark.flash-review,
+  .uncertain-mark.flash-review {
+    animation: none;
+  }
 }
 
 /* ── Print fallback ────────────────────────────────────────── */
@@ -452,7 +460,8 @@ html, body {
     display: block !important;
     padding: 0 !important;
   }
-  .vital-mark {
+  .vital-mark,
+  .uncertain-mark {
     background: transparent !important;
     color: inherit !important;
     border: none !important;
