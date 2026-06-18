@@ -105,11 +105,15 @@ non-obvious rules — do not "simplify" them:
    off-by-one: dropping a digit clears birth_date+gender, which then read as a "change" vs the
    loaded patient on the NEXT keystroke and fired a spurious guard. With them excluded, a
    loaded patient with **unsaved edits** fires the guard the instant the ЕГН first diverges;
-   a loaded patient with **no unsaved edits** never fires the guard — instead, once the ЕГН
-   stops being a valid 10-digit identity, `handleFormChange` **DROPS** the patient (clears the
-   loaded identity AND the visit context, keeping only the in-progress ЕГН so re-typing a
-   valid one re-loads). (Derived fields are still PATCHed by `persistPatient`; their exclusion
-   from `changedEditableLabels` only affects edit-tracking.)
+   a loaded patient with **no unsaved edits** never fires the guard — instead, once the ID
+   stops being **valid for its `national_id_type`** (P1-02, 2026-06-18 — ALL id types, not
+   just ЕГН: egn = 10 digits + DOB + checksum, lnch = 10 digits, foreign = non-empty, none =
+   n/a; via `shouldDropLoadedPatient` in `lib/national-id.ts`), `handleFormChange` **DROPS**
+   the patient (clears the loaded identity AND the visit context, keeping only the in-progress
+   ID so re-typing a valid one re-loads — ЕГН auto-loads). A save-time last4 guard in
+   `handleSaveDraft`/`handleStartVisit` is the backstop for a valid-but-different id. (Derived
+   fields are still PATCHed by `persistPatient`; their exclusion from `changedEditableLabels`
+   only affects edit-tracking.)
 
 5. **DEFERRED — not built:** visit/edit *migration* on patient switch ("move edits between
    patients" / "revert wrong-patient edits"). Considered and deliberately not built — it's a
@@ -1118,9 +1122,12 @@ highlight kind and folds them into the EXISTING review counter. **Advisory only
     `extracted_fields` writers — see the "Backend safety gates this session" section
     + tubermed-backend P1-03), so `load(false)` reopen REGENERATES fresh; the modal
     needs NO web change. Web-side hazard closed.
-  - **[P1-02] Drop-on-invalid-ID fires only for ЕГН, not ЛНЧ / foreign** — the
-    already-documented egn-only drop gap below; the audit re-confirms it as a
-    wrong-patient-filing hazard for the foreign subset.
+  - **[P1-02] ✅ RESOLVED (2026-06-18) — stale-loaded-patient drop now covers ALL
+    id types** (was ЕГН-only → a mismatched ЛНЧ/foreign id left the loaded patient
+    pinned = wrong-patient-filing hazard). `handleFormChange` drops via
+    `shouldDropLoadedPatient(type, id)` (`lib/national-id.ts` `isValidIdForType`,
+    mirroring the backend per-type rules) + a save-time last4 mismatch guard. See
+    the resolved known-issue below.
 
 - **Patient-summary 429s are surfaced in the UI (done — `89f6f70`, `f970cd6`).** `lib/api.ts`
   `patientSummaryLimitFromError(err)` classifies a 429 `ApiError` whose body `code` is
@@ -1192,14 +1199,23 @@ highlight kind and folds them into the EXISTING review counter. **Advisory only
   they're tracked. Fix = hoist the `applyPage` `useCallback` above `loadPatient` (and add it
   to `loadPatient`'s dep array) so the declaration precedes its use.
 
-- **Drop-on-ЕГН-invalidation is gated to `national_id_type === 'egn'` (lnch/foreign NOT
-  covered).** The single-predicate drop in `handleFormChange` (rule 4) only drops a loaded
-  patient when an **ЕГН** stops being a valid 10-digit identity. A loaded **lnch / foreign**
-  patient whose ID is edited to an incomplete/invalid value falls through to the prior
-  straight-through apply — its name + bubble persist next to the now-mismatched ID (the same
-  stale-identity shape the ЕГН drop fixes). Known gap, deliberately scoped out for now (only
-  ЕГН has an auto-load identity key + `dobFromEgn` validity notion). Fix = generalise the
-  drop's validity check per id-type (lnch via `validateLnchFormat`, etc.).
+- **✅ RESOLVED (P1-02, 2026-06-18) — stale-loaded-patient drop is now ALL id types.**
+  Was: the `handleFormChange` drop (rule 4) only fired when an **ЕГН** stopped being a
+  valid 10-digit identity; a loaded **ЛНЧ / foreign** patient whose ID was edited to an
+  invalid/mismatched value fell through to a straight apply — name + bubble pinned next
+  to the wrong ID (a wrong-patient-filing hazard). **Fix:** new pure `lib/national-id.ts`
+  `isValidIdForType(type,id)` / `shouldDropLoadedPatient(type,id)` mirroring the backend
+  per-type rules (egn = format + derivable DOB + checksum [the strict client gate];
+  lnch = `/^\d{10}$/`; foreign = non-empty; none = never drops on this basis — same
+  cross-repo parity as `lib/egn.ts` ↔ `national-id.js`). The drop predicate is now
+  type-agnostic; the HOLD branch (unsaved-edits guard) was already type-agnostic, so
+  ЛНЧ/foreign get the same hold-then-drop as ЕГН (egn behaviour byte-preserved — the egn
+  case of `isValidIdForType` === the old `egnStillValid` check). **Belt-and-suspenders:**
+  `handleSaveDraft` / `handleStartVisit` refuse to save when the form id's last4 no longer
+  matches the loaded `selected.national_id_last4` (`idLast4` mirrors backend `last4`) —
+  catches a valid-but-DIFFERENT ЛНЧ/foreign id (those don't auto-load); only a NON-EMPTY
+  mismatch blocks, so the post-load/post-save (fromPatient-blanked) id field isn't a false
+  positive. Test `scripts/national-id.ts` (28); tsc + build clean.
 
 - **Dependabot: `postcss` 8.4.31 XSS (CVE-2026-41305 / GHSA-qx2v-qp2m-jg93, moderate, CVSS
   6.1) — DEFERRED, not reachable.** The flagged copy is the one **Next bundles internally**
