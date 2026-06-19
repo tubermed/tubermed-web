@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AppShell from '@/components/AppShell';
+import { DoctorProvider } from '@/components/DoctorContext';
 import { getSession } from '@/lib/api';
 import type { DoctorInfo } from '@/lib/api';
 
@@ -37,5 +38,12 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     );
   }
 
-  return <AppShell doctor={doctor}>{children}</AppShell>;
+  // Provide the doctor state setter so a descendant page (Настройки) can push a
+  // profile-save into the SAME state that feeds the sidebar — instant re-render,
+  // no reload. The persisted half (session merge) lives in updateSessionDoctor.
+  return (
+    <DoctorProvider value={{ doctor, setDoctor }}>
+      <AppShell doctor={doctor}>{children}</AppShell>
+    </DoctorProvider>
+  );
 }

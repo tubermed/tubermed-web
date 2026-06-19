@@ -17,8 +17,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, clearSession, getSession, ApiError } from '@/lib/api';
-import type { MeResponse, UpdateMePayload } from '@/lib/api';
+import { api, clearSession, getSession, updateSessionDoctor, ApiError } from '@/lib/api';
+import type { DoctorInfo, MeResponse, UpdateMePayload } from '@/lib/api';
+import { useDoctorContext } from '@/components/DoctorContext';
 import SpecialtyTypeahead from '@/components/SpecialtyTypeahead';
 import PasswordInput from '@/components/PasswordInput';
 import SkeletonInput from '@/components/SkeletonInput';
@@ -94,6 +95,10 @@ function changedValue(current: string, loaded: string | null | undefined): strin
 
 export default function SettingsPage() {
   const router = useRouter();
+  // Live sidebar channel (provided by app/(workspace)/layout.tsx). Null-safe:
+  // null when no provider is mounted — the save then still persists via the
+  // session merge, so a reload reflects it.
+  const doctorCtx = useDoctorContext();
 
   const [pane, setPane] = useState<PaneKey>('profile');
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -178,6 +183,18 @@ export default function SettingsPage() {
       const updated = await api.updateMe(payload);
       setMe(updated);
       setForm(formFromMe(updated));
+      // Propagate the saved identity to the sidebar — both facets. Build the
+      // doctor partial ONLY from non-empty fields on the server truth (mirrors
+      // the form's "non-empty" discipline; never blanks specialty/org if the
+      // response omits one — DoctorInfo.specialty is non-nullable, org nullable).
+      const doctorPatch: Partial<DoctorInfo> = {};
+      if (updated.name) doctorPatch.name = updated.name;
+      if (updated.specialty) doctorPatch.specialty = updated.specialty;
+      if (updated.organizationName) doctorPatch.organizationName = updated.organizationName;
+      if (Object.keys(doctorPatch).length > 0) {
+        updateSessionDoctor(doctorPatch);                              // (A) reload-persistent
+        doctorCtx?.setDoctor((d) => (d ? { ...d, ...doctorPatch } : d)); // (B) live re-render
+      }
       setSaveOk(true);
     } catch (err) {
       setSaveError(

@@ -76,6 +76,28 @@ export function clearSession(): void {
   sessionStorage.removeItem(STORAGE_KEY);
 }
 
+// Pure merge — shallow-overlay `partial` onto `session.doctor`, preserving the
+// token and any doctor field not in the partial. Never mutates its input.
+export function mergeSessionDoctor(session: Session, partial: Partial<DoctorInfo>): Session {
+  return { ...session, doctor: { ...session.doctor, ...partial } };
+}
+
+// Persist an identity change (Профил save) back into the stored session so a
+// page reload keeps the sidebar correct. Reads the current session; merges the
+// partial onto its doctor; re-persists to the SAME storage it currently lives in
+// — preserving "Запомни ме" (localStorage vs sessionStorage), the token and its
+// expiry. No-ops when there is no session. (The LIVE sidebar update is a separate
+// facet via DoctorContext; this one is the reload-persistent half.)
+export function updateSessionDoctor(partial: Partial<DoctorInfo>): void {
+  const session = getSession();
+  if (!session) return;
+  // getSession returns non-null only in the browser, so storage access is safe
+  // here. setSession clears the other location, so exactly one holds the token —
+  // a localStorage hit means remember=true; otherwise it lives in sessionStorage.
+  const remember = localStorage.getItem(STORAGE_KEY) !== null;
+  setSession(mergeSessionDoctor(session, partial), remember);
+}
+
 export function getToken(): string | null {
   return getSession()?.token ?? null;
 }
