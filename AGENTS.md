@@ -1162,6 +1162,40 @@ surfaces now follow the same `{loading ? <SkeletonInput/> : <real/>}` pattern.
   Worth a real visual pass post-deploy on a throttled connection (DevTools → Slow 3G) to
   actually see the skeletons and confirm nothing jumps when data lands.
 
+# Settings save now refreshes the sidebar identity (2026-06-19)
+
+Saving Профил (Име / Специалност / Място на работа) in Настройки used to leave the
+dark sidebar STALE — the clinic panel (org name + specialty) and the bottom doctor
+name only updated on re-login. Root cause: `app/(workspace)/layout.tsx` reads the
+session ONCE on mount (`setDoctor(getSession().doctor)`) and feeds it to
+`AppShell` → `ClinicSidebar`; the settings `saveProfile()` updated only its local
+`me`/`form`, never the persisted session NOR the layout's `doctor` state. Fixed in
+TWO facets so the sidebar updates instantly AND survives a reload — both are
+required (either alone regresses the other half):
+
+- **(A) Persisted — `lib/api.ts` `updateSessionDoctor(partial)` (+ pure
+  `mergeSessionDoctor`).** Merges the partial onto `session.doctor` and re-persists
+  to the SAME storage the token currently lives in — preserving "Запомни ме"
+  (localStorage vs sessionStorage), the JWT and its expiry; never flips remember-me;
+  no-ops without a session. So a reload (`getSession()`) paints the new identity.
+  Pure-merge + storage round-trip tested: `npx tsx scripts/session-doctor.ts` (23).
+- **(B) Live — `components/DoctorContext.tsx` (`DoctorProvider` / `useDoctorContext`).**
+  The workspace layout now wraps `AppShell` in `DoctorProvider value={{ doctor,
+  setDoctor }}`, exposing its `doctor` state setter. `saveProfile()` calls
+  `doctorCtx?.setDoctor(d => d ? { ...d, ...partial } : d)` after a successful
+  `updateMe`, so the sidebar re-renders WITHOUT a reload. `useDoctorContext()` is
+  null-safe (returns null outside the provider — e.g. scribe/result render AppShell
+  directly; those pages are untouched).
+
+The doctor partial is built ONLY from non-empty fields on the server truth
+(`{ name, specialty, organizationName }` from the `updateMe` response), mirroring
+the form's "non-empty" discipline — never blanks specialty/org if the response omits
+one. `ClinicSidebar`'s clinic line is `clinicName ?? organizationName`; no caller
+passes `clinicName` (it's decorative), so updating `doctor.organizationName` drives
+the clinic line. `AppShell`/`ClinicSidebar` are unchanged (they already take `doctor`
+as a prop). No backend call, PATCH payload, or "Запазено." flow changed — only the
+result is propagated. Verify: `npx tsc --noEmit` + `npm run build` clean.
+
 # Known issues / gotchas
 
 - **Break-it audit (2026-06-13) — `AUDIT-FINDINGS-2026-06-13.md` (repo root, web
