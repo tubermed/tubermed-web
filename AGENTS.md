@@ -1240,17 +1240,20 @@ HARD-STOPPED under `prefers-reduced-motion` (globals.css `.dialog-*`).
   MedsPicker / PatientSummary (the last keeps its unsaved-edits confirm guard via
   `onClose={handleClose}`). Hard gate (no Esc/backdrop): **ConsentModal**
   (`dismissible={false}`). Pickers pass `initialFocus={inputRef}` (search input).
-- **⚠ OnboardingWizard is NOT migrated — deliberate (Radix incompatibility).** Its
-  Esc handshake (Esc closes the `SpecialtyTypeahead` dropdown FIRST, then the
-  wizard) relies on the wizard's BUBBLE-phase `document` Esc listener reading the
-  `e.defaultPrevented` that the typeahead sets. Radix DismissableLayer's Esc
-  handler runs in the **CAPTURE phase** (`useEscapeKeydown` registers
-  `{capture:true}`) and `preventDefault()`s before dismissing — i.e. BEFORE the
-  typeahead's bubble-phase `preventDefault`. On Radix, Esc-with-dropdown-open would
-  close the whole wizard and PATCH `onboarding_completed` (the exact 2026-06-11
-  bug); the only lever (`onEscapeKeyDown`→preventDefault) instead kills
-  Esc-to-close. A faithful fix needs the OUT-OF-SCOPE `SpecialtyTypeahead` to lift
-  its dropdown-open state. Left on its own hand-rolled overlay + handshake (works).
+- **OnboardingWizard — MIGRATED with a state-gated two-step Esc (P1b).** It can't
+  use the default Radix Esc: Radix DismissableLayer's Esc runs in the **CAPTURE
+  phase** (`useEscapeKeydown` registers `{capture:true}`) and `preventDefault()`s
+  before dismissing — BEFORE the `SpecialtyTypeahead`'s bubble-phase
+  `preventDefault`, so a bubble-phase `defaultPrevented` handshake is invisible to
+  it (this would close the wizard on Esc-with-dropdown-open and PATCH
+  `onboarding_completed` — the 2026-06-11 bug). **FIX:** the typeahead reports its
+  dropdown state via `onOpenChange`; the wizard mirrors it in `specialtyOpen` and
+  passes `onEscapeKeyDown={(e) => { if (specialtyOpen) e.preventDefault(); }}` (gate
+  by its OWN state — capture-safe) + `onInteractOutside={(e) => e.preventDefault()}`
+  (no backdrop close). So: dropdown OPEN + Esc → only the dropdown closes, **no
+  PATCH**; dropdown CLOSED + Esc → `onClose={() => finish(false)}` closes the wizard
+  (PATCH once). The completion PATCH lives in `finish()` and fires ONLY on a real
+  exit. Do NOT route the wizard's Esc through plain `dismissible` — the gate is load-bearing.
 - **Out of scope (NOT modals):** `SpotlightTour` (anchored coachmark) and
   `components/ui/DateInputBg` (calendar popover) — do NOT force them into Dialog.
 

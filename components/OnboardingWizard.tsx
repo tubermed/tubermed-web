@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Image from 'next/image';
 import SpecialtyTypeahead from '@/components/SpecialtyTypeahead';
 import { api, type ConsultationsBand, type MeResponse, type UpdateMePayload } from '@/lib/api';
+import { Dialog } from '@/components/ui/Dialog';
 
 // ── A4 first-run wizard ──────────────────────────────────────────────────────
 // Shown ONCE EVER, server-tracked: the new-visit page opens it only when
@@ -54,6 +55,9 @@ export default function OnboardingWizard({ me, onClose, onStartTour, welcomeMedi
   // and the wizard advanced as if saved). Stay on step 2 so Продължи retries;
   // Пропусни still skips the save entirely.
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Mirrors the SpecialtyTypeahead dropdown's open-state (via its onOpenChange)
+  // so the wizard's Esc can be gated: an open dropdown swallows the first Esc.
+  const [specialtyOpen, setSpecialtyOpen] = useState(false);
 
   // The single exit point — marks onboarding complete (once; the wizard
   // unmounts immediately after) and routes to the tour or plain close.
@@ -64,21 +68,6 @@ export default function OnboardingWizard({ me, onClose, onStartTour, welcomeMedi
     if (startTour) onStartTour();
     else onClose();
   }
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      // defaultPrevented = some inner control already consumed this Esc (the
-      // SpecialtyTypeahead closing its dropdown). stopPropagation can NOT
-      // shield us: Next's App Router hydrates the whole document, so React's
-      // delegated listeners sit ON document — the same node as this listener,
-      // and stopPropagation only blocks FURTHER nodes, never same-node
-      // listeners. preventDefault is the ordering-independent handshake.
-      if (e.key === 'Escape' && !e.defaultPrevented) finish(false);
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- finish is stable in behavior; re-binding per render is unnecessary
-  }, []);
 
   async function submitProfile() {
     const payload: UpdateMePayload = {};
@@ -104,21 +93,24 @@ export default function OnboardingWizard({ me, onClose, onStartTour, welcomeMedi
   }
 
   return (
-    // ⚠ NO backdrop click-to-close — deliberate (bug fix, 2026-06-11). The
-    // browser fires `click` on the nearest COMMON ANCESTOR of the mousedown
-    // and mouseup targets, so selecting text in a wizard input with a drag
-    // that releases outside the card landed a click on this backdrop — which
-    // closed the wizard AND (by design of finish()) permanently marked
-    // onboarding complete. Verified live. The wizard closes ONLY via its
-    // explicit controls: Пропусни / Не сега / Esc / Започни.
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(27, 42, 65, 0.55)' }}
+    // Esc handshake (2026-06-11 invariant): while the specialty dropdown is open,
+    // Esc closes ONLY the dropdown — onEscapeKeyDown preventDefaults so Radix does
+    // NOT dismiss the wizard (finish()'s completion PATCH never fires); with the
+    // dropdown closed, Esc closes the wizard via finish(false). Backdrop NEVER
+    // closes (deliberate — onInteractOutside preventDefault). No X (showClose=false).
+    <Dialog
+      open
+      dismissible
+      showClose={false}
+      size="sm"
+      title="Първи стъпки в TuberMed"
+      className="overflow-hidden"
+      onClose={() => finish(false)}
+      onInteractOutside={(e) => e.preventDefault()}
+      onEscapeKeyDown={(e) => {
+        if (specialtyOpen) e.preventDefault();
+      }}
     >
-      <div
-        className="rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
-        style={{ background: 'var(--color-bg-card)' }}
-      >
         {step === 1 && (
           <>
             {welcomeMedia ?? <WelcomeBand />}
@@ -157,7 +149,7 @@ export default function OnboardingWizard({ me, onClose, onStartTour, welcomeMedi
               </p>
               <div className="space-y-4">
                 <WizardField label="Специалност">
-                  <SpecialtyTypeahead value={specialty} onChange={setSpecialty} disabled={saving} />
+                  <SpecialtyTypeahead value={specialty} onChange={setSpecialty} disabled={saving} onOpenChange={setSpecialtyOpen} />
                 </WizardField>
                 <WizardField label="Място на работа">
                   <input
@@ -237,8 +229,7 @@ export default function OnboardingWizard({ me, onClose, onStartTour, welcomeMedi
             />
           </>
         )}
-      </div>
-    </div>
+    </Dialog>
   );
 }
 
