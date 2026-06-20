@@ -876,7 +876,7 @@ function DiagnosisRow({ diagnoza, mkb }: { diagnoza: string; mkb: string }) {
       <span style={{ color: 'var(--color-ink)' }}>{diagnoza || '—'}</span>
       {mkb && (
         <span
-          className="font-[family-name:var(--font-jetbrains)] text-xs px-2 py-0.5 rounded"
+          className="font-[family-name:var(--font-jetbrains)] tabular-nums text-xs px-2 py-0.5 rounded"
           style={{ color: 'var(--color-gold)', background: 'var(--color-gold-soft)' }}
         >
           {mkb}

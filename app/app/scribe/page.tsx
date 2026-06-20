@@ -911,7 +911,7 @@ function PhoneMode({
           </div>
           {expiresIn > 0 && (
             <div
-              className="text-xs mt-2 font-[family-name:var(--font-jetbrains)]"
+              className="text-xs mt-2 font-[family-name:var(--font-jetbrains)] tabular-nums"
               style={{ color: 'var(--color-text-hint)' }}
             >
               Изтича след {Math.floor(expiresIn / 60)}:
@@ -1194,7 +1194,7 @@ function PcMode({
       </button>
 
       <div
-        className="mt-5 text-2xl font-[family-name:var(--font-jetbrains)]"
+        className="mt-5 text-2xl font-[family-name:var(--font-jetbrains)] tabular-nums"
         style={{
           color: recording
             ? 'var(--color-red)'

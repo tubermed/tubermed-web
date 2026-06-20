@@ -162,7 +162,7 @@ export default function MkbTypeahead({
         {hasValue ? (
           <>
             <span
-              className="font-[family-name:var(--font-jetbrains)] text-[11px] px-2 py-1 rounded font-semibold flex-shrink-0"
+              className="font-[family-name:var(--font-jetbrains)] tabular-nums text-[11px] px-2 py-1 rounded font-semibold flex-shrink-0"
               style={{
                 background: invalid ? 'var(--color-red-soft)' : 'var(--color-brand-soft)',
                 color: invalid ? 'var(--color-red)' : 'var(--color-brand)',

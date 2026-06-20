@@ -481,7 +481,7 @@ function Slot({ value }: { value: string | undefined }) {
       </span>
     );
   }
-  return <span>{(value || '').trim()}</span>;
+  return <span className="tabular-nums">{(value || '').trim()}</span>;
 }
 
 function Sep() {
