@@ -12,6 +12,7 @@ import MkbPicker from '@/components/MkbPicker';
 import MkbTypeahead from '@/components/MkbTypeahead';
 import MedsPanel from '@/components/MedsPanel';
 import { Icon, type IconName } from '@/components/ui/Icon';
+import { Button } from '@/components/ui/Button';
 import PatientHeaderStrip from '@/components/PatientHeaderStrip';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import { api, ApiError, getSession } from '@/lib/api';
@@ -1187,46 +1188,56 @@ function ResultPageInner() {
           />
         )}
         <div className="flex items-center gap-2">
-          <TopbarBtn
-            locked={isLocked}
-            disabled={isLocked}
+          <Button
+            variant="toolbar"
             onClick={handlePdf}
-            icon="download"
-            label="PDF"
-            lockedHint="Първо потвърдете прегледа"
-          />
-          <TopbarBtn
-            locked={isLocked}
             disabled={isLocked}
+            title={isLocked ? 'Първо потвърдете прегледа' : undefined}
+          >
+            {isLocked && <Icon name="lock" />}
+            <Icon name="download" />
+            PDF
+          </Button>
+          <Button
+            variant="toolbar"
             onClick={handleWord}
-            icon="download"
-            label="Word"
-            lockedHint="Първо потвърдете прегледа"
-          />
-          <TopbarBtn
-            locked={isLocked}
             disabled={isLocked}
+            title={isLocked ? 'Първо потвърдете прегледа' : undefined}
+          >
+            {isLocked && <Icon name="lock" />}
+            <Icon name="download" />
+            Word
+          </Button>
+          <Button
+            variant="toolbar"
             onClick={handleCopy}
-            icon="copy"
-            label="Копирай"
-            lockedHint="Първо потвърдете прегледа"
-          />
-          <TopbarBtn
-            locked={isLocked}
             disabled={isLocked}
+            title={isLocked ? 'Първо потвърдете прегледа' : undefined}
+          >
+            {isLocked && <Icon name="lock" />}
+            <Icon name="copy" />
+            Копирай
+          </Button>
+          <Button
+            variant="toolbar"
             onClick={handlePrint}
-            icon="printer"
-            label="Печат"
-            lockedHint="Първо потвърдете прегледа"
-          />
-          <TopbarBtn
-            locked={isLocked}
             disabled={isLocked}
+            title={isLocked ? 'Първо потвърдете прегледа' : undefined}
+          >
+            {isLocked && <Icon name="lock" />}
+            <Icon name="printer" />
+            Печат
+          </Button>
+          <Button
+            variant="toolbar"
             onClick={() => setSummaryOpen(true)}
-            icon="file-text"
-            label="Резюме за пациента"
-            lockedHint="Първо потвърдете прегледа"
-          />
+            disabled={isLocked}
+            title={isLocked ? 'Първо потвърдете прегледа' : undefined}
+          >
+            {isLocked && <Icon name="lock" />}
+            <Icon name="file-text" />
+            Резюме за пациента
+          </Button>
         </div>
       </div>
 
@@ -1882,40 +1893,6 @@ function StatusBadge({
         </div>
       )}
     </div>
-  );
-}
-
-function TopbarBtn({
-  label,
-  icon,
-  onClick,
-  disabled,
-  locked,
-  lockedHint,
-}: {
-  label: string;
-  icon?: IconName;
-  onClick?: () => void;
-  disabled?: boolean;
-  locked?: boolean;
-  lockedHint?: string;
-}) {
-  const finalDisabled = disabled || locked;
-  return (
-    <button
-      onClick={onClick}
-      disabled={finalDisabled}
-      title={locked ? lockedHint : undefined}
-      className="px-3 py-1.5 rounded-md text-sm font-medium border transition hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
-      style={{
-        borderColor: 'var(--color-border-mid)',
-        color: 'var(--color-text-muted)',
-      }}
-    >
-      {locked && <Icon name="lock" />}
-      {icon && <Icon name={icon} />}
-      {label}
-    </button>
   );
 }
 
