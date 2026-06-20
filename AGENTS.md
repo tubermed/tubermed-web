@@ -1237,9 +1237,20 @@ HARD-STOPPED under `prefers-reduced-motion` (globals.css `.dialog-*`).
   e.g. a picker's search input), `className?` (width/height overrides).
 - **Dismissibility is per-modal and MUST be preserved.** Dismissible (Esc +
   backdrop → cancel): Dedup / EgnSwitchGuard / PatientLoadConfirm / MkbPicker /
-  MedsPicker / PatientSummary. Hard gate (no Esc/backdrop): **ConsentModal**
-  (`dismissible={false}`). OnboardingWizard: Esc closes, backdrop does NOT
-  (`onInteractOutside`→preventDefault) — its deliberate no-backdrop rule.
+  MedsPicker / PatientSummary (the last keeps its unsaved-edits confirm guard via
+  `onClose={handleClose}`). Hard gate (no Esc/backdrop): **ConsentModal**
+  (`dismissible={false}`). Pickers pass `initialFocus={inputRef}` (search input).
+- **⚠ OnboardingWizard is NOT migrated — deliberate (Radix incompatibility).** Its
+  Esc handshake (Esc closes the `SpecialtyTypeahead` dropdown FIRST, then the
+  wizard) relies on the wizard's BUBBLE-phase `document` Esc listener reading the
+  `e.defaultPrevented` that the typeahead sets. Radix DismissableLayer's Esc
+  handler runs in the **CAPTURE phase** (`useEscapeKeydown` registers
+  `{capture:true}`) and `preventDefault()`s before dismissing — i.e. BEFORE the
+  typeahead's bubble-phase `preventDefault`. On Radix, Esc-with-dropdown-open would
+  close the whole wizard and PATCH `onboarding_completed` (the exact 2026-06-11
+  bug); the only lever (`onEscapeKeyDown`→preventDefault) instead kills
+  Esc-to-close. A faithful fix needs the OUT-OF-SCOPE `SpecialtyTypeahead` to lift
+  its dropdown-open state. Left on its own hand-rolled overlay + handshake (works).
 - **Out of scope (NOT modals):** `SpotlightTour` (anchored coachmark) and
   `components/ui/DateInputBg` (calendar popover) — do NOT force them into Dialog.
 
