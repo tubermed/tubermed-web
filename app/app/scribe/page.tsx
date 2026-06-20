@@ -26,6 +26,7 @@ import type {
 import ConsentModal from '@/components/ConsentModal';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import { useColdStartRecovery } from '@/lib/use-cold-start-recovery';
+import { Icon } from '@/components/ui/Icon';
 
 type Mode = 'phone' | 'pc';
 type View = 'record' | 'processing';
@@ -523,10 +524,14 @@ function ModeTabs({
   return (
     <div className="flex gap-2 mb-6">
       <TabBtn active={mode === 'phone'} onClick={() => onChange('phone')}>
-        📱 Телефон (QR)
+        <span className="inline-flex items-center gap-1.5">
+          <Icon name="smartphone" /> Телефон (QR)
+        </span>
       </TabBtn>
       <TabBtn active={mode === 'pc'} onClick={() => onChange('pc')}>
-        🎙 Микрофон на компютъра
+        <span className="inline-flex items-center gap-1.5">
+          <Icon name="mic" /> Микрофон на компютъра
+        </span>
       </TabBtn>
     </div>
   );
@@ -852,7 +857,12 @@ function PhoneMode({
         className="bg-white rounded-2xl border p-12 flex flex-col items-center text-center"
         style={{ borderColor: 'var(--color-border)' }}
       >
-        <div className="text-5xl mb-3">📱</div>
+        <Icon
+          name="smartphone"
+          size={48}
+          className="mb-3"
+          style={{ color: 'var(--color-brand)' }}
+        />
         <div
           className="text-lg font-medium mb-1"
           style={{ color: 'var(--color-brand)' }}
