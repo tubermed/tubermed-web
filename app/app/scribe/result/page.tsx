@@ -1261,27 +1261,22 @@ function ResultPageInner() {
                   <button
                     key={item.id}
                     onClick={() => navTo(item)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors"
+                    className="text-left py-1.5 transition-colors"
                     style={{
-                      paddingLeft: item.indent ? '28px' : '12px',
+                      paddingLeft: item.indent ? '24px' : '12px',
                       fontSize: item.indent ? '13px' : '14px',
                       color: isActive
                         ? 'var(--color-brand)'
                         : 'var(--color-text-muted)',
-                      background: isActive
-                        ? 'var(--color-brand-soft)'
-                        : 'transparent',
                       fontWeight: isActive ? 600 : 500,
+                      // Calm-clinical: an accent LEFT-BAR marks the active section
+                      // (no box / no pill). Inactive keeps a transparent bar so the
+                      // label never shifts horizontally between states.
+                      borderLeft: `2px solid ${
+                        isActive ? 'var(--color-accent)' : 'transparent'
+                      }`,
                     }}
                   >
-                    <span
-                      className="w-1.5 h-1.5 rounded-full flex-shrink-0 transition-colors"
-                      style={{
-                        background: isActive
-                          ? 'var(--color-brand)'
-                          : 'var(--color-border-mid)',
-                      }}
-                    />
                     {item.label}
                   </button>
                 );
