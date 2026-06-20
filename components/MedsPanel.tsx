@@ -6,6 +6,7 @@ import type { SafetyAlert } from '@/lib/drug-safety';
 import { getIalDataSync, loadIal } from '@/lib/ial-meds';
 import MedsPicker from './MedsPicker';
 import { copyToClipboard } from '@/lib/exporters';
+import { Icon } from '@/components/ui/Icon';
 
 interface MedsPanelProps {
   meds: Medication[];
@@ -154,7 +155,7 @@ export default function MedsPanel({
                 className="flex items-start gap-2 px-2 py-1.5 rounded-md text-[11px] leading-tight"
                 style={{ background: 'var(--color-danger-soft)', color: 'var(--color-danger)' }}
               >
-                <span className="flex-shrink-0">🚨</span>
+                <Icon name="alert-octagon" className="flex-shrink-0" />
                 <div>
                   <div className="font-semibold uppercase tracking-wide text-[10px]">
                     Внимание
@@ -219,7 +220,7 @@ export default function MedsPanel({
               background: 'white',
             }}
           >
-            <span aria-hidden="true">{isLocked ? '🔒' : '⧉'}</span>
+            <Icon name={isLocked ? 'lock' : 'copy'} />
             <span>Копирай медикаментите</span>
           </button>
         )}
@@ -238,10 +239,10 @@ export default function MedsPanel({
               style={{ color: 'var(--color-text)' }}
             >
               <span
-                className="font-semibold"
+                className="font-semibold inline-flex items-center gap-1"
                 style={{ color: 'var(--color-gold)' }}
               >
-                ⚠ Актуализирайте Терапия
+                <Icon name="alert-triangle" /> Актуализирайте Терапия
               </span>
               <br />
               Премахнатото лекарство все още фигурира в текста.
@@ -404,10 +405,17 @@ function MedRow({
             {rx ? 'Rx' : 'БЛП'}
           </span>
           <div className="text-sm font-medium leading-snug min-w-0 break-words [overflow-wrap:anywhere]">
-            {triggered && <span className="mr-1">🚨</span>}
+            {triggered && (
+              <Icon
+                name="alert-octagon"
+                size={14}
+                className="inline-block mr-1"
+                style={{ color: 'var(--color-danger)', verticalAlign: '-0.125em' }}
+              />
+            )}
             {med.inn || (
-              <span style={{ color: 'var(--color-gold)' }}>
-                ⚠ {NOT_SPECIFIED}
+              <span className="inline-flex items-center gap-1" style={{ color: 'var(--color-gold)' }}>
+                <Icon name="alert-triangle" size={14} /> {NOT_SPECIFIED}
               </span>
             )}
           </div>
@@ -444,9 +452,7 @@ function MedRow({
             background: 'white',
           }}
         >
-          <span aria-hidden="true">
-            {isLocked ? '🔒' : '⧉'}
-          </span>
+          <Icon name={isLocked ? 'lock' : 'copy'} />
         </button>
         <button
           type="button"
@@ -467,10 +473,11 @@ function Slot({ value }: { value: string | undefined }) {
   if (isMissingField(value)) {
     return (
       <span
+        className="inline-flex items-center gap-1"
         style={{ color: 'var(--color-gold)', fontWeight: 600 }}
         title="липсва — попълни"
       >
-        ⚠ {NOT_SPECIFIED}
+        <Icon name="alert-triangle" size={14} /> {NOT_SPECIFIED}
       </span>
     );
   }
