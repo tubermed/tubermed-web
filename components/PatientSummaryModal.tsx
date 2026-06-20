@@ -21,6 +21,7 @@ import { api, ApiError, patientSummaryLimitFromError } from '@/lib/api';
 import { copyToClipboard, escapeHtml, openPdfPreview } from '@/lib/exporters';
 import SkeletonInput from '@/components/SkeletonInput';
 import { Icon } from '@/components/ui/Icon';
+import { Dialog } from '@/components/ui/Dialog';
 
 interface PatientSummaryModalProps {
   isOpen: boolean;
@@ -211,16 +212,6 @@ export default function PatientSummaryModal({
     onClose();
   }, [draft, originalBody, onClose]);
 
-  // Esc to close.
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, handleClose]);
-
-  if (!isOpen) return null;
-
   const edited = draft.trim() !== originalBody.trim();
   const finalText = composeFinal(draft, disclaimer);
   const canExport = phase.kind === 'ready' && draft.trim().length > 0;
@@ -253,19 +244,14 @@ export default function PatientSummaryModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 no-print"
-      style={{ background: 'rgba(15, 23, 42, 0.45)' }}
-      onClick={handleClose}
+    <Dialog
+      open={isOpen}
+      onClose={handleClose}
+      title="Резюме за пациента"
+      size="md"
+      showClose={false}
+      className="max-h-[85vh] flex flex-col no-print"
     >
-      <div
-        className="bg-white rounded-2xl border w-full max-w-lg max-h-[85vh] flex flex-col shadow-xl"
-        style={{ borderColor: 'var(--color-border)' }}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Резюме за пациента"
-      >
         {/* Header */}
         <div
           className="flex items-center justify-between gap-3 px-5 py-4 border-b"
@@ -427,7 +413,6 @@ export default function PatientSummaryModal({
             </div>
           </div>
         )}
-      </div>
-    </div>
+    </Dialog>
   );
 }
