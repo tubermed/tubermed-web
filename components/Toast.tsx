@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { Icon } from '@/components/ui/Icon';
 
 export type ToastKind = 'success' | 'error' | 'info';
 
@@ -58,6 +59,9 @@ export default function Toast({
         animation: 'toast-in 0.18s ease-out',
       }}
     >
+      {toast.kind === 'success' && (
+        <Icon name="check" className="flex-shrink-0" />
+      )}
       <span className="text-sm font-medium flex-1">{toast.message}</span>
       <button
         onClick={onDismiss}
