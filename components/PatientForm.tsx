@@ -5,6 +5,7 @@ import { dobFromEgn, genderFromEgn, isValidEgnChecksum } from '@/lib/egn';
 import { ageFromBirthDate } from '@/lib/age';
 import { dobError } from '@/lib/date';
 import { api } from '@/lib/api';
+import { Icon } from '@/components/ui/Icon';
 import ChipInput from './ChipInput';
 import MkbPicker from './MkbPicker';
 import PatientResultRow from './PatientResultRow';
@@ -692,10 +693,12 @@ function EgnField({
         {egnValid && (
           <span
             aria-hidden
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-sm"
+            className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center"
             style={{ color: 'var(--color-ok)' }}
             title="Валидно ЕГН"
-          >✓</span>
+          >
+            <Icon name="check" />
+          </span>
         )}
       </span>
       {egnInvalid && (

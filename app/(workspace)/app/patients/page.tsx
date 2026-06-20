@@ -267,7 +267,7 @@ function PatientsPageInner() {
       setPatient(res.patient);
       setAllergies(res.patient.allergies || []);
       setChronic(res.patient.chronic_conditions || []);
-      showToast('success', '✓ Записано');
+      showToast('success', 'Записано');
     } catch (err) {
       showToast('error', err instanceof ApiError ? err.message : 'Грешка при запазване');
     } finally {

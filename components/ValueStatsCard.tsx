@@ -1,5 +1,6 @@
 import type { ValueStats } from '@/lib/api';
 import SkeletonInput from './SkeletonInput';
+import { Icon } from '@/components/ui/Icon';
 
 // B2 — the "% of notes TuberMed wrote" value card shown at the top of
 // /app/new-visit. The headline is a MEASURED number (the share of generated
@@ -55,8 +56,8 @@ export default function ValueStatsCard({
       role="status"
     >
       {building ? (
-        <p className="text-sm" style={{ color: 'var(--color-ink)' }}>
-          ✍️ Одобрете няколко прегледа и тук ще видите колко от документацията поема TuberMed.
+        <p className="text-sm flex items-start gap-1.5" style={{ color: 'var(--color-ink)' }}>
+          <Icon name="pencil" className="flex-shrink-0 mt-0.5" /> Одобрете няколко прегледа и тук ще видите колко от документацията поема TuberMed.
         </p>
       ) : (
         <>
