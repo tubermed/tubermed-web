@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { loadMkb, getMkbDataSync, searchMkb, type MkbRow } from '@/lib/mkb10';
+import { Icon } from '@/components/ui/Icon';
 
 interface MkbTypeaheadProps {
   /** Current code ('' when none yet). */
@@ -178,7 +179,7 @@ export default function MkbTypeahead({
         ) : (
           <span className="text-base" style={{ color: 'var(--color-text-hint)' }}>{placeholder}</span>
         )}
-        <span className="text-sm flex-shrink-0" style={{ color: 'var(--color-text-hint)' }}>✎</span>
+        <Icon name="pencil" className="flex-shrink-0" style={{ color: 'var(--color-text-hint)' }} />
       </button>
       {onBrowse && (
         <button
@@ -190,7 +191,7 @@ export default function MkbTypeahead({
           className="w-9 h-9 flex items-center justify-center rounded border transition flex-shrink-0 hover:bg-[var(--color-bg)] disabled:opacity-40"
           style={{ borderColor: 'var(--color-border-mid)', color: 'var(--color-text-muted)' }}
         >
-          🔍
+          <Icon name="search" />
         </button>
       )}
       {onRemove && (
@@ -203,7 +204,7 @@ export default function MkbTypeahead({
           className="w-8 h-8 flex items-center justify-center rounded transition flex-shrink-0 hover:bg-[var(--color-red-soft)] disabled:opacity-40"
           style={{ color: 'var(--color-text-hint)' }}
         >
-          ✕
+          <Icon name="x" />
         </button>
       )}
     </div>

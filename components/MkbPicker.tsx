@@ -13,6 +13,7 @@ import {
   type MkbRow,
 } from '@/lib/mkb10';
 import { getPinned, togglePin } from '@/lib/mkb-pins';
+import { Icon } from '@/components/ui/Icon';
 
 // Stable no-op subscribe for useSyncExternalStore — the `mounted` flag flips once
 // (server/hydration snapshot false → client true) and never emits store updates,
@@ -146,10 +147,10 @@ export default function MkbPicker({
           {chapterIdx !== null && !query.trim() && (
             <button
               onClick={() => setChapterIdx(null)}
-              className="text-sm hover:underline whitespace-nowrap"
+              className="text-sm hover:underline whitespace-nowrap inline-flex items-center gap-1"
               style={{ color: 'var(--color-brand)' }}
             >
-              ← Глави
+              <Icon name="chevron-left" size={14} /> Глави
             </button>
           )}
           <div className="flex-1 min-w-0">
@@ -338,7 +339,7 @@ function PinnedSection({
         className="px-3 pt-3 pb-1 text-[11px] uppercase tracking-wider font-semibold flex items-center gap-1"
         style={{ color: 'var(--color-gold)' }}
       >
-        <span>★ Закачени</span>
+        <span className="inline-flex items-center gap-1"><Icon name="star-filled" size={12} /> Закачени</span>
         <span
           className="text-[10px] font-normal"
           style={{ color: 'var(--color-text-hint)' }}
@@ -487,7 +488,7 @@ function RowItem({
         onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
         onFocus={(e) => (e.currentTarget.style.opacity = '1')}
       >
-        {pinned ? '★' : '☆'}
+        <Icon name={pinned ? 'star-filled' : 'star'} />
       </button>
       <style jsx>{`
         div:hover > button:last-of-type {

@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, patientSummaryLimitFromError } from '@/lib/api';
 import { copyToClipboard, escapeHtml, openPdfPreview } from '@/lib/exporters';
 import SkeletonInput from '@/components/SkeletonInput';
+import { Icon } from '@/components/ui/Icon';
 
 interface PatientSummaryModalProps {
   isOpen: boolean;
@@ -228,7 +229,7 @@ export default function PatientSummaryModal({
     const ok = await copyToClipboard(finalText);
     onToast(
       ok ? 'success' : 'error',
-      ok ? '✓ Резюмето е копирано' : 'Копирането не е възможно в този браузър',
+      ok ? 'Резюмето е копирано' : 'Копирането не е възможно в този браузър',
     );
   }
 
@@ -271,7 +272,7 @@ export default function PatientSummaryModal({
           style={{ borderColor: 'var(--color-border)' }}
         >
           <div className="flex items-center gap-2">
-            <span aria-hidden="true">📄</span>
+            <Icon name="file-text" />
             <h2 className="text-lg font-semibold" style={{ color: 'var(--color-ink)' }}>
               Резюме за пациента
             </h2>
@@ -398,7 +399,9 @@ export default function PatientSummaryModal({
               style={{ borderColor: 'var(--color-border-mid)', color: 'var(--color-text-muted)' }}
               title="Генерирай наново от текущата бележка"
             >
-              {regenerating ? '↻ …' : '↻ Регенерирай'}
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <Icon name="refresh" /> {regenerating ? '…' : 'Регенерирай'}
+              </span>
             </button>
             <div className="flex items-center gap-2">
               <button
@@ -407,7 +410,9 @@ export default function PatientSummaryModal({
                 className="px-3 py-1.5 rounded-md text-sm font-medium border transition hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ borderColor: 'var(--color-border-mid)', color: 'var(--color-text-muted)' }}
               >
-                ⎙ Печат
+                <span className="inline-flex items-center justify-center gap-1.5">
+                  <Icon name="printer" /> Печат
+                </span>
               </button>
               <button
                 onClick={handleCopy}
@@ -415,7 +420,9 @@ export default function PatientSummaryModal({
                 className="px-3 py-1.5 rounded-md text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'var(--gradient-brand)' }}
               >
-                ⧉ Копирай
+                <span className="inline-flex items-center justify-center gap-1.5">
+                  <Icon name="copy" /> Копирай
+                </span>
               </button>
             </div>
           </div>

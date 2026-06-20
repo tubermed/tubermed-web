@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { findHighlights, type HighlightMatch } from '@/lib/vital-rules';
 import type { ResolvedUncertainSpan } from '@/lib/uncertain-spans';
+import { Icon } from '@/components/ui/Icon';
 
 interface EditableFieldProps {
   value: string;
@@ -363,16 +364,27 @@ function HighlightPopover({
     >
       <div className="p-3">
         <div
-          className="text-xs uppercase tracking-wider font-semibold mb-1.5"
+          className="text-xs uppercase tracking-wider font-semibold mb-1.5 flex items-center gap-1.5"
           style={{ color: accentColor }}
         >
+          <Icon
+            name={
+              isCritical
+                ? 'alert-octagon'
+                : isAiUncertain
+                ? 'search'
+                : isUncertain
+                ? 'pencil'
+                : 'alert-triangle'
+            }
+          />
           {isCritical
-            ? '🚨 Критично'
+            ? 'Критично'
             : isAiUncertain
-            ? '🔎 Маркирано за преглед'
+            ? 'Маркирано за преглед'
             : isUncertain
-            ? '✎ Несигурно разпознаване'
-            : '⚠ Извън нормата'}
+            ? 'Несигурно разпознаване'
+            : 'Извън нормата'}
         </div>
         <div
           className={
@@ -398,7 +410,9 @@ function HighlightPopover({
             className="flex-1 py-2 rounded text-sm font-medium text-white transition hover:opacity-90"
             style={{ background: 'var(--color-brand)' }}
           >
-            ✎ Редактирай
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <Icon name="pencil" /> Редактирай
+            </span>
           </button>
           <button
             onClick={onAck}
@@ -409,7 +423,9 @@ function HighlightPopover({
             }}
             title="Маркирай като нормално за този пациент"
           >
-            ✓ Потвърди
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <Icon name="check" /> Потвърди
+            </span>
           </button>
         </div>
       </div>

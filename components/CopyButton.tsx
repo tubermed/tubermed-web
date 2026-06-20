@@ -12,6 +12,7 @@
 // Toast wiring on the result page handles the user-visible confirmation.
 
 import { copyToClipboard } from '@/lib/exporters';
+import { Icon } from '@/components/ui/Icon';
 
 interface CopyButtonProps {
   /** Plain-text payload to write to the clipboard. */
@@ -59,7 +60,7 @@ export default function CopyButton({
         color: 'var(--color-text-muted)',
       }}
     >
-      <span aria-hidden="true">{disabled ? '🔒' : '⧉'}</span>
+      <Icon name={disabled ? 'lock' : 'copy'} />
       {label && <span>{label}</span>}
     </button>
   );
