@@ -13,6 +13,7 @@ import MkbTypeahead from '@/components/MkbTypeahead';
 import MedsPanel from '@/components/MedsPanel';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Button } from '@/components/ui/Button';
+import { NoteSectionHead } from '@/components/ui/NoteSection';
 import PatientHeaderStrip from '@/components/PatientHeaderStrip';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import { api, ApiError, getSession } from '@/lib/api';
@@ -1351,11 +1352,13 @@ function ResultPageInner() {
             </div>
           </details>
 
-          {/* Document header */}
+          {/* Document — ONE calm sheet: sections inside read via label + hairline,
+              NOT per-section boxes. Elevation stays RESERVED for the safety rail. */}
           <div
-            className="bg-white rounded-2xl border p-8 mb-4 flex items-baseline justify-between flex-wrap gap-4"
+            className="bg-white rounded-2xl border p-6 sm:p-8"
             style={{ borderColor: 'var(--color-border)' }}
           >
+          <div className="flex items-baseline justify-between flex-wrap gap-4 mb-6">
             <h1
               className="text-3xl font-semibold"
               style={{ color: 'var(--color-ink)', letterSpacing: '-0.01em' }}
@@ -1370,7 +1373,7 @@ function ResultPageInner() {
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-6">
             <DiagnosesSection
               osnovnaDiagnoza={fields.osnovna_diagnoza || ''}
               osnovnaMkb={fields.osnovna_mkb || ''}
@@ -1448,11 +1451,7 @@ function ResultPageInner() {
               }
             />
             {visibleSections['sec-izsledvania'] && (
-              <div
-                id="sec-izsledvania"
-                className="bg-white rounded-2xl border p-6 scroll-mt-24"
-                style={{ borderColor: 'var(--color-border)' }}
-              >
+              <div id="sec-izsledvania" className="scroll-mt-24">
                 <SectionHead title="Изследвания" />
 
                 {visibleSections['sec-rezultati'] && (
@@ -1538,11 +1537,7 @@ function ResultPageInner() {
             />
 
             {visibleSections['sec-izdadeni'] && (
-              <div
-                id="sec-izdadeni"
-                className="bg-white rounded-2xl border p-6 scroll-mt-24"
-                style={{ borderColor: 'var(--color-border)' }}
-              >
+              <div id="sec-izdadeni" className="scroll-mt-24">
                 <SectionHead title="Издадени документи" />
 
                 {visibleSections['sec-napravlenia'] && (
@@ -1580,6 +1575,7 @@ function ResultPageInner() {
                 {fields._disclaimer}
               </div>
             )}
+          </div>
           </div>
         </main>
 
@@ -1992,6 +1988,9 @@ function TranscriptBody({
   return <>{out}</>;
 }
 
+// Calm-clinical section header — delegates to the shared NoteSectionHead (accent
+// tick + UPPERCASE navy label + hairline), replacing the old bold near-black h2.
+// All section consumers (TextSection, Изследвания, Издадени, Диагнози) flip at once.
 function SectionHead({
   title,
   actions,
@@ -1999,33 +1998,13 @@ function SectionHead({
   title: string;
   actions?: React.ReactNode;
 }) {
-  if (actions) {
-    return (
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <h2
-          className="text-xl font-semibold"
-          style={{ color: 'var(--color-ink)' }}
-        >
-          {title}
-        </h2>
-        <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>
-      </div>
-    );
-  }
-  return (
-    <h2
-      className="text-xl font-semibold mb-4"
-      style={{ color: 'var(--color-ink)' }}
-    >
-      {title}
-    </h2>
-  );
+  return <NoteSectionHead title={title} action={actions} />;
 }
 
 function SubsectionHead({ title, icon }: { title: string; icon?: IconName }) {
   return (
     <div
-      className="text-sm font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5"
+      className="text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5"
       style={{ color: 'var(--color-brand)' }}
     >
       {icon && <Icon name={icon} />}
@@ -2058,11 +2037,7 @@ function TextSection({
   headerRight?: React.ReactNode;
 }) {
   return (
-    <div
-      id={id}
-      className="bg-white rounded-2xl border p-6 scroll-mt-24"
-      style={{ borderColor: 'var(--color-border)' }}
-    >
+    <div id={id} className="scroll-mt-24">
       <SectionHead title={title} actions={headerRight} />
       <EditableField
         value={value}
@@ -2128,11 +2103,7 @@ function DiagnosesSection({
   const showCue = !needsReview && spokenDivergesFromOfficial(originalSpoken, osnovnaMkbTerm);
 
   return (
-    <div
-      id="sec-diag"
-      className="bg-white rounded-2xl border p-6 scroll-mt-24"
-      style={{ borderColor: 'var(--color-border)' }}
-    >
+    <div id="sec-diag" className="scroll-mt-24">
       <SectionHead title="Диагнози МКБ-10" />
 
       <div className="mb-4 pb-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
