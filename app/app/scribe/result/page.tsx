@@ -11,6 +11,7 @@ import SkeletonInput from '@/components/SkeletonInput';
 import MkbPicker from '@/components/MkbPicker';
 import MkbTypeahead from '@/components/MkbTypeahead';
 import MedsPanel from '@/components/MedsPanel';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import PatientHeaderStrip from '@/components/PatientHeaderStrip';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import { api, ApiError, getSession } from '@/lib/api';
@@ -985,7 +986,7 @@ function ResultPageInner() {
     (ok: boolean) => {
       showToast(
         ok ? 'success' : 'error',
-        ok ? '✓ Копирано в клипборда' : 'Копирането не е възможно в този браузър'
+        ok ? 'Копирано в клипборда' : 'Копирането не е възможно в този браузър'
       );
     },
     [showToast]
@@ -1023,7 +1024,7 @@ function ResultPageInner() {
     const text = formatPlainText(fields);
     const ok = await copyToClipboard(text);
     if (ok) {
-      showToast('success', '✓ Копирано в клипборда');
+      showToast('success', 'Копирано в клипборда');
       signalExport('copy');
     } else {
       showToast('error', 'Копирането не е възможно в този браузър');
@@ -1040,7 +1041,7 @@ function ResultPageInner() {
     const html = generatePdfHtml(fields, dateStr, exportIdentity);
     const opened = openPdfPreview(html);
     if (opened) {
-      showToast('success', '✓ Преглед отворен — Запази като PDF от бутона');
+      showToast('success', 'Преглед отворен — Запази като PDF от бутона');
       signalExport('pdf');
     } else {
       showToast(
@@ -1064,7 +1065,7 @@ function ResultPageInner() {
       '.doc';
     try {
       downloadWord(html, filename);
-      showToast('success', '✓ Word файлът е свален');
+      showToast('success', 'Word файлът е свален');
       signalExport('docx');
     } catch {
       showToast('error', 'Грешка при генериране на Word файла');
@@ -1143,10 +1144,10 @@ function ResultPageInner() {
         >
           <div className="max-w-6xl mx-auto">
             <div
-              className="text-sm font-bold uppercase tracking-wider mb-2"
+              className="text-sm font-bold uppercase tracking-wider mb-2 flex items-center gap-2"
               style={{ color: 'var(--color-red)' }}
             >
-              🚨 Внимание — Проверка за безопасност
+              <Icon name="alert-octagon" /> Внимание — Проверка за безопасност
             </div>
             <div className="space-y-2">
               {criticals.map((a, i) => (
@@ -1190,35 +1191,40 @@ function ResultPageInner() {
             locked={isLocked}
             disabled={isLocked}
             onClick={handlePdf}
-            label="⬇ PDF"
+            icon="download"
+            label="PDF"
             lockedHint="Първо потвърдете прегледа"
           />
           <TopbarBtn
             locked={isLocked}
             disabled={isLocked}
             onClick={handleWord}
-            label="⬇ Word"
+            icon="download"
+            label="Word"
             lockedHint="Първо потвърдете прегледа"
           />
           <TopbarBtn
             locked={isLocked}
             disabled={isLocked}
             onClick={handleCopy}
-            label="⎘ Копирай"
+            icon="copy"
+            label="Копирай"
             lockedHint="Първо потвърдете прегледа"
           />
           <TopbarBtn
             locked={isLocked}
             disabled={isLocked}
             onClick={handlePrint}
-            label="⎙ Печат"
+            icon="printer"
+            label="Печат"
             lockedHint="Първо потвърдете прегледа"
           />
           <TopbarBtn
             locked={isLocked}
             disabled={isLocked}
             onClick={() => setSummaryOpen(true)}
-            label="📄 Резюме за пациента"
+            icon="file-text"
+            label="Резюме за пациента"
             lockedHint="Първо потвърдете прегледа"
           />
         </div>
@@ -1462,7 +1468,7 @@ function ResultPageInner() {
                 {visibleSections['sec-naznacheni'] && (
                   <div id="sec-naznacheni" className="scroll-mt-24">
                     <div className="flex items-center justify-between gap-2">
-                      <SubsectionHead title="🔬 Назначени изследвания" />
+                      <SubsectionHead icon="flask" title="Назначени изследвания" />
                       <SourceButton
                         onClick={() => showSource('naznacheni', fields.naznacheni || '')}
                         disabled={!hasTranscript}
@@ -1531,7 +1537,7 @@ function ResultPageInner() {
                 {visibleSections['sec-napravlenia'] && (
                   <div id="sec-napravlenia" className="scroll-mt-24">
                     <div className="flex items-center justify-between gap-2">
-                      <SubsectionHead title="📋 Направления за консултация" />
+                      <SubsectionHead icon="clipboard" title="Направления за консултация" />
                       <SourceButton
                         onClick={() => showSource('napravlenia', fields.napravlenia || '')}
                         disabled={!hasTranscript}
@@ -1597,10 +1603,10 @@ function ResultPageInner() {
                 style={{ borderColor: 'var(--color-border)' }}
               >
                 <div
-                  className="text-xs uppercase tracking-wider mb-2 font-medium"
+                  className="text-xs uppercase tracking-wider mb-2 font-medium flex items-center gap-1.5"
                   style={{ color: 'var(--color-gold)' }}
                 >
-                  ⚠ Предупреждения
+                  <Icon name="alert-triangle" /> Предупреждения
                 </div>
                 <div className="space-y-2">
                   {warnings.map((a, i) => (
@@ -1642,7 +1648,9 @@ function ResultPageInner() {
                   color: 'var(--color-text-muted)',
                 }}
               >
-                {isLocked ? '🔒' : '⎙'} Печат
+                <span className="inline-flex items-center justify-center gap-1.5">
+                  <Icon name={isLocked ? 'lock' : 'printer'} /> Печат
+                </span>
               </button>
             </div>
           </div>
@@ -1691,7 +1699,12 @@ function CriticalChip({ alert }: { alert: SafetyAlert }) {
         borderWidth: 1,
       }}
     >
-      <span className="text-lg flex-shrink-0">🚨</span>
+      <Icon
+        name="alert-octagon"
+        size={18}
+        className="flex-shrink-0"
+        style={{ color: 'var(--color-red)' }}
+      />
       <div className="flex-1 min-w-0">
         <div
           className="text-xs font-bold uppercase tracking-wider"
@@ -1720,7 +1733,11 @@ function WarningChip({ alert }: { alert: SafetyAlert }) {
         borderWidth: 1,
       }}
     >
-      <span className="text-sm flex-shrink-0">⚠️</span>
+      <Icon
+        name="alert-triangle"
+        className="flex-shrink-0"
+        style={{ color: 'var(--color-gold)' }}
+      />
       <div
         className="text-xs leading-snug"
         style={{ color: 'var(--color-text)' }}
@@ -1774,9 +1791,9 @@ function ReviewCounter({
         borderWidth: 1,
       }}
     >
-      <span>⚠</span>
+      <Icon name="alert-triangle" />
       <span>{display}</span>
-      <span style={{ fontSize: '14px' }}>▶</span>
+      <Icon name="chevron-right" size={14} />
     </button>
   );
 }
@@ -1820,9 +1837,15 @@ function StatusBadge({
               : 'var(--color-gold)',
           }}
         />
-        {isConfirmed
-          ? '✓ Потвърдено от лекар'
-          : '🔒 Чака преглед — действията са заключени'}
+        {isConfirmed ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="check" /> Потвърдено от лекар
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="lock" /> Чака преглед — действията са заключени
+          </span>
+        )}
       </button>
       {popupOpen && !isConfirmed && (
         <div
@@ -1843,14 +1866,18 @@ function StatusBadge({
             className="text-left px-3 py-2 rounded-md text-sm font-medium transition hover:bg-[var(--color-ok-soft)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
             style={{ color: 'var(--color-ok)' }}
           >
-            ✓ Вярно! Потвърждавам прегледа
+            <span className="inline-flex items-center gap-1.5">
+              <Icon name="check" /> Вярно! Потвърждавам прегледа
+            </span>
           </button>
           <button
             onClick={onDismiss}
             className="text-left px-3 py-2 rounded-md text-sm transition hover:bg-[var(--color-bg)]"
             style={{ color: 'var(--color-text-muted)' }}
           >
-            ✎ Ще редактирам още
+            <span className="inline-flex items-center gap-1.5">
+              <Icon name="pencil" /> Ще редактирам още
+            </span>
           </button>
         </div>
       )}
@@ -1860,12 +1887,14 @@ function StatusBadge({
 
 function TopbarBtn({
   label,
+  icon,
   onClick,
   disabled,
   locked,
   lockedHint,
 }: {
   label: string;
+  icon?: IconName;
   onClick?: () => void;
   disabled?: boolean;
   locked?: boolean;
@@ -1877,13 +1906,14 @@ function TopbarBtn({
       onClick={onClick}
       disabled={finalDisabled}
       title={locked ? lockedHint : undefined}
-      className="px-3 py-1.5 rounded-md text-sm font-medium border transition hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed"
+      className="px-3 py-1.5 rounded-md text-sm font-medium border transition hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
       style={{
         borderColor: 'var(--color-border-mid)',
         color: 'var(--color-text-muted)',
       }}
     >
-      {locked ? '🔒 ' : ''}
+      {locked && <Icon name="lock" />}
+      {icon && <Icon name={icon} />}
       {label}
     </button>
   );
@@ -2015,12 +2045,13 @@ function SectionHead({
   );
 }
 
-function SubsectionHead({ title }: { title: string }) {
+function SubsectionHead({ title, icon }: { title: string; icon?: IconName }) {
   return (
     <div
-      className="text-sm font-semibold uppercase tracking-wider mb-2"
+      className="text-sm font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5"
       style={{ color: 'var(--color-brand)' }}
     >
+      {icon && <Icon name={icon} />}
       {title}
     </div>
   );
@@ -2171,8 +2202,8 @@ function DiagnosesSection({
             className="mt-2 rounded-md border px-3 py-2"
             style={{ borderColor: 'var(--color-red)', background: 'var(--color-red-soft)', color: 'var(--color-red)' }}
           >
-            <div className="text-sm font-semibold">
-              ⚠ {mkbReviewCopy(mkbReview, osnovnaMkb).bannerTitle}
+            <div className="text-sm font-semibold flex items-center gap-1.5">
+              <Icon name="alert-triangle" /> {mkbReviewCopy(mkbReview, osnovnaMkb).bannerTitle}
             </div>
             <div className="text-xs mt-0.5">
               {mkbReviewCopy(mkbReview, osnovnaMkb).bannerDetail}
