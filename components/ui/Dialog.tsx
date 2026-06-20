@@ -77,7 +77,7 @@ export function Dialog({
     >
       <RadixDialog.Portal>
         <RadixDialog.Overlay
-          className="dialog-overlay fixed inset-0 z-50"
+          className="dialog-overlay fixed inset-0 z-50 no-print"
           style={{ background: 'rgba(27, 42, 65, 0.55)' }}
         />
         <RadixDialog.Content
@@ -85,7 +85,11 @@ export function Dialog({
             'dialog-content fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
             'w-[calc(100%-2rem)]',
             SIZES[size],
-            'max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl shadow-2xl focus:outline-none',
+            'rounded-2xl shadow-2xl focus:outline-none',
+            // Height + scroll are left to each modal (via `className`) to avoid a
+            // conflicting base `max-h`: short confirms grow to fit (as the old
+            // hand-rolled cards did); tall ones (summary, pickers) pass their own
+            // `max-h-[…] flex flex-col` and scroll an inner body.
             className ?? '',
           ].join(' ')}
           style={{ background: 'var(--color-bg-card)' }}
