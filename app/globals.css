@@ -68,6 +68,10 @@
   --color-border-light: #EDF0F4;
   --color-border-mid:   #C2CAD4;
 
+  /* Calm-clinical hairline — the section divider in the note document. Lighter
+     than --color-border so sections read as separated by AIR, not boxes. */
+  --color-hairline:     #E7ECF2;
+
   /* Navy rail */
   --color-nav-bg:         #1B2D49;
   --color-nav-bg-elev:    #24395A;
