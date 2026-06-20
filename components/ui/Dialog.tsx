@@ -10,7 +10,7 @@
 // See AGENTS.md ("Dialog").
 
 import * as RadixDialog from '@radix-ui/react-dialog';
-import type { ReactNode, RefObject } from 'react';
+import type { ComponentProps, ReactNode, RefObject } from 'react';
 import { Icon } from '@/components/ui/Icon';
 
 const SIZES = {
@@ -51,6 +51,14 @@ export type DialogProps = {
   initialFocus?: RefObject<HTMLElement | null>;
   /** Extra classes on the content surface (width/height overrides, e.g. pickers). */
   className?: string;
+  /**
+   * Per-modal overrides forwarded to Radix Content, taking PRECEDENCE over the
+   * `dismissible`-derived defaults (unchanged when omitted). The onboarding wizard
+   * uses these for its two-step Esc handshake (preventDefault Esc only while a
+   * child dropdown is open) and to block backdrop-close while staying dismissible.
+   */
+  onEscapeKeyDown?: ComponentProps<typeof RadixDialog.Content>['onEscapeKeyDown'];
+  onInteractOutside?: ComponentProps<typeof RadixDialog.Content>['onInteractOutside'];
   children: ReactNode;
 };
 
@@ -65,6 +73,8 @@ export function Dialog({
   showClose,
   initialFocus,
   className,
+  onEscapeKeyDown,
+  onInteractOutside,
   children,
 }: DialogProps) {
   const withClose = showClose ?? dismissible;
@@ -95,8 +105,12 @@ export function Dialog({
           style={{ background: 'var(--color-bg-card)' }}
           // No description rendered → opt out of Radix's missing-description warning.
           aria-describedby={description ? undefined : undefined}
-          onEscapeKeyDown={dismissible ? undefined : (e) => e.preventDefault()}
-          onInteractOutside={dismissible ? undefined : (e) => e.preventDefault()}
+          onEscapeKeyDown={
+            onEscapeKeyDown ?? (dismissible ? undefined : (e) => e.preventDefault())
+          }
+          onInteractOutside={
+            onInteractOutside ?? (dismissible ? undefined : (e) => e.preventDefault())
+          }
           onOpenAutoFocus={
             initialFocus
               ? (e) => {
