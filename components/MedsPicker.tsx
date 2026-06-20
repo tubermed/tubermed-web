@@ -10,6 +10,7 @@ import {
   type SearchHit,
 } from '@/lib/ial-meds';
 import type { Medication } from '@/lib/types';
+import { Dialog } from '@/components/ui/Dialog';
 
 interface MedsPickerProps {
   isOpen: boolean;
@@ -59,13 +60,12 @@ export default function MedsPicker({
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Reset on open. In edit mode, preset the query to the med's INN so the
-  // matching IAL row surfaces immediately and auto-expands below.
+  // matching IAL row surfaces immediately and auto-expands below. <Dialog>
+  // focuses the search input via initialFocus={inputRef}.
   useEffect(() => {
     if (!isOpen) return;
     setQuery(sanitizeInitial(initialMed?.inn) || '');
     setExpandedInn(null);
-    const t = setTimeout(() => inputRef.current?.focus(), 50);
-    return () => clearTimeout(t);
   }, [isOpen, initialMed]);
 
   useEffect(() => {
@@ -96,15 +96,6 @@ export default function MedsPicker({
     );
     if (match) setExpandedInn(match.i);
   }, [isOpen, isEditing, data, initialMed]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
 
   // Empty query → most option-rich drugs first (rough usage proxy)
   const hits: SearchHit[] = useMemo(() => {
@@ -162,16 +153,15 @@ export default function MedsPicker({
     query.trim().length > 0;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(31, 20, 24, 0.55)' }}
-      onClick={onClose}
+    <Dialog
+      open={isOpen}
+      onClose={onClose}
+      title={isEditing ? 'Редакция на лекарство' : 'Избор на лекарство'}
+      size="lg"
+      showClose={false}
+      initialFocus={inputRef}
+      className="max-h-[85vh] flex flex-col"
     >
-      <div
-        className="rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col"
-        style={{ background: 'var(--color-bg-card)', maxHeight: '85vh' }}
-        onClick={(e) => e.stopPropagation()}
-      >
         <div
           className="p-5 border-b flex items-center gap-3"
           style={{ borderColor: 'var(--color-border)' }}
@@ -288,8 +278,7 @@ export default function MedsPicker({
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }
 
