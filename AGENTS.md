@@ -1196,6 +1196,21 @@ the clinic line. `AppShell`/`ClinicSidebar` are unchanged (they already take `do
 as a prop). No backend call, PATCH payload, or "Запазено." flow changed — only the
 result is propagated. Verify: `npx tsc --noEmit` + `npm run build` clean.
 
+# Icon system — shared `<Icon/>`, never emoji as UI icons (2026-06-20)
+
+`components/ui/Icon.tsx` is the ONE icon set for the workspace app — a zero-dep
+inline-SVG wrapper (lucide-style geometry, `currentColor`, stroke 1.75, default
+16px). Use `<Icon name="…" />` for every UI icon; **never an emoji as a
+functional icon** (🎙 / 📱 / ⚠ / 🚨 / 🔒 / ⬇ / ⎙ / ⎘ / 📄 / 📋 / 🔬 / ✎ / ✓ / 🔍 /
+✕ / ★ / ↻ were all migrated to it). Decorative icons are `aria-hidden` by
+default; an icon that REPLACES a text label on an icon-only control passes
+`label` (→ `role="img"` + `aria-label`). The set is swappable in this one file
+(e.g. to `lucide-react`) since call sites only import `<Icon/>`, never an icon
+library directly. **The landing (`components/landing/*`, `app/page.tsx`,
+`app/privacy`) is a SEPARATE design world (`--lp-*`) and deliberately does NOT
+use `<Icon/>`** — its faux-app mock glyphs stay landing-local (the standing rule:
+never import workspace UI into the landing, or vice-versa).
+
 # Known issues / gotchas
 
 - **Break-it audit (2026-06-13) — `AUDIT-FINDINGS-2026-06-13.md` (repo root, web
