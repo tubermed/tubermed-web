@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Dialog } from '@/components/ui/Dialog';
 import {
   MKB_CHAPTERS,
   loadMkb,
@@ -14,11 +14,6 @@ import {
 } from '@/lib/mkb10';
 import { getPinned, togglePin } from '@/lib/mkb-pins';
 import { Icon } from '@/components/ui/Icon';
-
-// Stable no-op subscribe for useSyncExternalStore — the `mounted` flag flips once
-// (server/hydration snapshot false → client true) and never emits store updates,
-// so the subscriber is a permanent no-op. Same idiom as app/app/login/page.tsx.
-const subscribeNoop = () => () => {};
 
 interface MkbPickerProps {
   isOpen: boolean;
@@ -42,26 +37,14 @@ export default function MkbPicker({
   const [pinned, setPinned] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // The overlay is portaled to document.body so its `position: fixed` resolves
-  // against the VIEWPORT, not a transformed ancestor. This picker mounts inside a
-  // `.nv-card-enter` SectionCard whose entrance animation applies a `transform`,
-  // which makes that card the containing block for fixed-position descendants —
-  // trapping (and clipping) the modal in the card's box instead of centering it on
-  // screen. Portaling out is the same fix the DOB calendar popover uses
-  // (components/ui/DateInputBg.tsx). `mounted` is false on the server + hydration
-  // snapshot and true on the client, so createPortal never touches document.body
-  // during SSR; useSyncExternalStore (not useEffect+setState) keeps that
-  // hydration-safe AND clear of the react-hooks/set-state-in-effect rule.
-  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
-
-  // Reset state, load pins, focus search on open
+  // Reset state + load pins on open. <Dialog> (Radix) portals to document.body
+  // — escaping the transformed `.nv-card-enter` SectionCard that used to trap the
+  // fixed overlay — and focuses the search input via `initialFocus={inputRef}`.
   useEffect(() => {
     if (!isOpen) return;
     setQuery(initialQuery);
     setChapterIdx(null);
     setPinned(getPinned());
-    const t = setTimeout(() => inputRef.current?.focus(), 50);
-    return () => clearTimeout(t);
   }, [isOpen, initialQuery]);
 
   // Lazy-load MKB data on first open
@@ -81,16 +64,6 @@ export default function MkbPicker({
       cancelled = true;
     };
   }, [isOpen, data]);
-
-  // Esc to close
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
 
   const handleTogglePin = useCallback((code: string) => {
     setPinned(togglePin(code));
@@ -128,17 +101,16 @@ export default function MkbPicker({
     onClose();
   }
 
-  const overlay = (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(31, 20, 24, 0.55)' }}
-      onClick={onClose}
+  return (
+    <Dialog
+      open={isOpen}
+      onClose={onClose}
+      title={title || 'Избор на МКБ-10 код'}
+      size="lg"
+      showClose={false}
+      initialFocus={inputRef}
+      className="max-h-[80vh] flex flex-col"
     >
-      <div
-        className="rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col"
-        style={{ background: 'var(--color-bg-card)', maxHeight: '80vh' }}
-        onClick={(e) => e.stopPropagation()}
-      >
         {/* Header */}
         <div
           className="p-5 border-b flex items-center gap-3"
@@ -255,11 +227,8 @@ export default function MkbPicker({
             />
           )}
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
-
-  return mounted ? createPortal(overlay, document.body) : null;
 }
 
 function LoadingView() {
