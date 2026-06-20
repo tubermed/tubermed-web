@@ -7,7 +7,7 @@
 // NOT a closed list: free text is always kept verbatim — the suggestions only
 // replace the value when explicitly picked. No deps.
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 // Curated common Bulgarian specialties — suggestions only, not a closed list.
 const SPECIALTIES = [
@@ -44,14 +44,24 @@ export default function SpecialtyTypeahead({
   value,
   onChange,
   disabled,
+  onOpenChange,
 }: {
   value: string;
   onChange: (v: string) => void;
   disabled?: boolean;
+  /** Optional — fired whenever the suggestion dropdown opens/closes, so a host
+   *  (the onboarding wizard) can gate its own Esc handling. ADD-ONLY: existing
+   *  consumers (the settings page) omit it and are unaffected. */
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Report dropdown open-state to an optional host — no behavior change.
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
 
   const q = value.trim().toLowerCase();
   const matches = (q
