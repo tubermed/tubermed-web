@@ -18,11 +18,11 @@
 // consent text lives in exactly one place (CONSENT_TEXT below).
 //
 // Visual / interaction:
-//   - Fixed inset-0 overlay matching DedupModal's style (semi-transparent
-//     navy backdrop + centered card).
+//   - Shared <Dialog> (Radix): focus-trap + scroll-lock + role=dialog/aria-modal.
 //   - One checkbox the doctor must tick.
 //   - Confirm button stays disabled until the checkbox is ticked.
-//   - No backdrop-click or Esc dismiss — this is a hard gate.
+//   - HARD GATE — `dismissible={false}`: NO backdrop-click, Esc, or close button.
+//     The doctor cannot bypass consent; the parent closes it after success.
 //   - On confirm: calls api.recordConsent. Success → onConsented (parent
 //     proceeds). Failure → onError so the parent's existing Toast wires it
 //     up; modal stays open for retry.
@@ -30,6 +30,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import type { ConsentResponse } from '@/lib/types';
+import { Dialog } from '@/components/ui/Dialog';
 
 // PLACEHOLDER — final wording must be reviewed by a GDPR/medical-law professional before production.
 export const CONSENT_TEXT =
@@ -84,80 +85,72 @@ export default function ConsentModal({
     }
   }, [checked, submitting, consultationId, onConsented, onError]);
 
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(27, 42, 65, 0.55)' }}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="consent-modal-title"
+    <Dialog
+      open={open}
+      onClose={() => {}}
+      title="Съгласие за аудиозапис"
+      size="md"
+      dismissible={false}
     >
       <div
-        className="rounded-2xl shadow-2xl max-w-lg w-full"
-        style={{ background: 'var(--color-bg-card)' }}
+        className="p-5 border-b"
+        style={{ borderColor: 'var(--color-border)' }}
       >
-        <div
-          className="p-5 border-b"
-          style={{ borderColor: 'var(--color-border)' }}
+        <h2
+          className="text-lg font-semibold"
+          style={{ color: 'var(--color-ink)' }}
         >
-          <h2
-            id="consent-modal-title"
-            className="text-lg font-semibold"
-            style={{ color: 'var(--color-ink)' }}
-          >
-            Съгласие за аудиозапис
-          </h2>
-          <p
-            className="text-sm mt-1"
-            style={{ color: 'var(--color-text-muted)' }}
-          >
-            Преди да започнете записа, потвърдете, че пациентът е информиран.
-          </p>
-        </div>
-
-        <div className="px-5 py-4">
-          <label
-            className="flex items-start gap-3 cursor-pointer select-none"
-            style={{ color: 'var(--color-text)' }}
-          >
-            <input
-              type="checkbox"
-              checked={checked}
-              onChange={(e) => setChecked(e.target.checked)}
-              disabled={submitting}
-              className="mt-0.5 w-5 h-5 flex-shrink-0 cursor-pointer"
-              style={{ accentColor: 'var(--color-brand)' }}
-              aria-describedby="consent-modal-text"
-            />
-            <span
-              id="consent-modal-text"
-              className="text-sm leading-relaxed"
-            >
-              {CONSENT_TEXT}
-            </span>
-          </label>
-        </div>
-
-        <div
-          className="px-5 py-4 flex items-center justify-end gap-2 border-t"
-          style={{ borderColor: 'var(--color-border)' }}
+          Съгласие за аудиозапис
+        </h2>
+        <p
+          className="text-sm mt-1"
+          style={{ color: 'var(--color-text-muted)' }}
         >
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={!checked || submitting}
-            className="text-sm px-4 py-2 rounded-md font-medium transition disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{
-              background: 'var(--color-brand)',
-              color: 'white',
-            }}
-          >
-            {submitting ? 'Записва се…' : 'Потвърждавам'}
-          </button>
-        </div>
+          Преди да започнете записа, потвърдете, че пациентът е информиран.
+        </p>
       </div>
-    </div>
+
+      <div className="px-5 py-4">
+        <label
+          className="flex items-start gap-3 cursor-pointer select-none"
+          style={{ color: 'var(--color-text)' }}
+        >
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={(e) => setChecked(e.target.checked)}
+            disabled={submitting}
+            className="mt-0.5 w-5 h-5 flex-shrink-0 cursor-pointer"
+            style={{ accentColor: 'var(--color-brand)' }}
+            aria-describedby="consent-modal-text"
+          />
+          <span
+            id="consent-modal-text"
+            className="text-sm leading-relaxed"
+          >
+            {CONSENT_TEXT}
+          </span>
+        </label>
+      </div>
+
+      <div
+        className="px-5 py-4 flex items-center justify-end gap-2 border-t"
+        style={{ borderColor: 'var(--color-border)' }}
+      >
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={!checked || submitting}
+          className="text-sm px-4 py-2 rounded-md font-medium transition disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{
+            background: 'var(--color-brand)',
+            color: 'white',
+          }}
+        >
+          {submitting ? 'Записва се…' : 'Потвърждавам'}
+        </button>
+      </div>
+    </Dialog>
   );
 }
