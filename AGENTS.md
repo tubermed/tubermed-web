@@ -1211,6 +1211,11 @@ library directly. **The landing (`components/landing/*`, `app/page.tsx`,
 use `<Icon/>`** — its faux-app mock glyphs stay landing-local (the standing rule:
 never import workspace UI into the landing, or vice-versa).
 
+Regression guard: `npx tsx scripts/no-emoji-ui.ts` fails if a pictographic emoji
+reappears as a UI icon in `app/`/`components/` (code comments, prose arrows
+`→ ← ↔`, and the landing are allowlisted). Run it with the other `scripts/*.ts`
+regressions.
+
 # Known issues / gotchas
 
 - **Break-it audit (2026-06-13) — `AUDIT-FINDINGS-2026-06-13.md` (repo root, web
