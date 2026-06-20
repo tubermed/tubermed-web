@@ -27,6 +27,7 @@ import ConsentModal from '@/components/ConsentModal';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import { useColdStartRecovery } from '@/lib/use-cold-start-recovery';
 import { Icon } from '@/components/ui/Icon';
+import { Segmented } from '@/components/ui/Segmented';
 
 type Mode = 'phone' | 'pc';
 type View = 'record' | 'processing';
@@ -522,43 +523,29 @@ function ModeTabs({
   onChange: (m: Mode) => void;
 }) {
   return (
-    <div className="flex gap-2 mb-6">
-      <TabBtn active={mode === 'phone'} onClick={() => onChange('phone')}>
-        <span className="inline-flex items-center gap-1.5">
-          <Icon name="smartphone" /> Телефон (QR)
-        </span>
-      </TabBtn>
-      <TabBtn active={mode === 'pc'} onClick={() => onChange('pc')}>
-        <span className="inline-flex items-center gap-1.5">
-          <Icon name="mic" /> Микрофон на компютъра
-        </span>
-      </TabBtn>
-    </div>
-  );
-}
-
-function TabBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex-1 px-4 py-2 rounded-md text-sm font-medium transition"
-      style={{
-        background: active ? 'var(--color-brand)' : 'var(--color-bg-card)',
-        color: active ? 'white' : 'var(--color-text-muted)',
-        borderColor: 'var(--color-border)',
-        borderWidth: 1,
-      }}
-    >
-      {children}
-    </button>
+    <Segmented
+      className="mb-6"
+      value={mode}
+      onChange={onChange}
+      options={[
+        {
+          value: 'phone',
+          content: (
+            <span className="inline-flex items-center gap-1.5">
+              <Icon name="smartphone" /> Телефон (QR)
+            </span>
+          ),
+        },
+        {
+          value: 'pc',
+          content: (
+            <span className="inline-flex items-center gap-1.5">
+              <Icon name="mic" /> Микрофон на компютъра
+            </span>
+          ),
+        },
+      ]}
+    />
   );
 }
 
