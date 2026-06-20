@@ -1216,6 +1216,33 @@ reappears as a UI icon in `app/`/`components/` (code comments, prose arrows
 `→ ← ↔`, and the landing are allowlisted). Run it with the other `scripts/*.ts`
 regressions.
 
+# Dialog system — shared `<Dialog/>` (Radix), never hand-roll an overlay (2026-06-20)
+
+`components/ui/Dialog.tsx` is the ONE modal primitive — a thin wrapper over
+`@radix-ui/react-dialog` that gives every modal a real focus-trap + focus-RETURN,
+body scroll-lock, `role="dialog"` + `aria-modal`, an accessible name, a portal,
+and Esc/outside-click handling for free. **Never hand-roll a `fixed inset-0`
+backdrop / `document` Escape listener / manual `.focus()` trap again** — use
+`<Dialog open onClose title …>`. Styling matches the old hand-rolled modals
+(navy scrim `rgba(27,42,65,.55)`, `rounded-2xl shadow-2xl` card, `--color-*`
+tokens) so migrations are visually unchanged; a subtle opacity fade on open is
+HARD-STOPPED under `prefers-reduced-motion` (globals.css `.dialog-*`).
+
+- **API.** `open`, `onClose` (fires on Esc/backdrop/close-button; wire to the
+  modal's cancel handler), `title` (accessible name — Radix Title, **visually
+  hidden by default** so the modal keeps its own visible `<h2>`), `description?`,
+  `size?` (sm/md/lg/xl → max-w-md/lg/2xl/4xl), `dismissible?` (default true;
+  **`false` = hard gate**: Esc + outside-click `preventDefault` and no close X —
+  for ConsentModal), `showClose?` (default = dismissible), `initialFocus?` (ref —
+  e.g. a picker's search input), `className?` (width/height overrides).
+- **Dismissibility is per-modal and MUST be preserved.** Dismissible (Esc +
+  backdrop → cancel): Dedup / EgnSwitchGuard / PatientLoadConfirm / MkbPicker /
+  MedsPicker / PatientSummary. Hard gate (no Esc/backdrop): **ConsentModal**
+  (`dismissible={false}`). OnboardingWizard: Esc closes, backdrop does NOT
+  (`onInteractOutside`→preventDefault) — its deliberate no-backdrop rule.
+- **Out of scope (NOT modals):** `SpotlightTour` (anchored coachmark) and
+  `components/ui/DateInputBg` (calendar popover) — do NOT force them into Dialog.
+
 # Known issues / gotchas
 
 - **Break-it audit (2026-06-13) — `AUDIT-FINDINGS-2026-06-13.md` (repo root, web
