@@ -8,8 +8,10 @@
 //   primary   — filled accent CTA (white text, soft accent shadow), hover + press
 //   secondary — navy-outline on transparent, press
 //   danger    — red-outline on transparent, press
+//   toolbar   — small bordered ghost (px-3 py-1.5, hover bg) for action bars;
+//               reproduces the old result-page TopbarBtn byte-for-byte
 
-type ButtonVariant = 'primary' | 'secondary' | 'danger';
+type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'toolbar';
 
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
   primary:
@@ -18,12 +20,15 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
     'text-sm px-4 py-2 rounded-md font-medium transition active:scale-[0.985] motion-reduce:active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed',
   danger:
     'text-sm px-4 py-2 rounded-md font-medium transition active:scale-[0.985] motion-reduce:active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed',
+  toolbar:
+    'px-3 py-1.5 rounded-md text-sm font-medium border transition hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5',
 };
 
 const VARIANT_STYLE: Record<ButtonVariant, React.CSSProperties> = {
   primary: { background: 'var(--color-accent)', boxShadow: '0 2px 8px rgba(39, 76, 119, 0.25)' },
   secondary: { background: 'transparent', color: 'var(--color-brand)', border: '1px solid var(--color-brand)' },
   danger: { background: 'transparent', color: 'var(--color-danger)', border: '1px solid var(--color-border-strong)' },
+  toolbar: { borderColor: 'var(--color-border-mid)', color: 'var(--color-text-muted)' },
 };
 
 export function Button({
