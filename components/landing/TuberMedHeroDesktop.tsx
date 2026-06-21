@@ -78,11 +78,15 @@ const PHASES: Phase[] = [
   // beat 3 — processing (snappy, short)
   { id: 'processing',  dur: 1150, screen: 'proc', zoom: 1.05, focus: 'center', cursor: null, camDur: 420, ease: SNAP },
   // beat 4 — the note snaps together (confident move onto the doc)
-  { id: 'note_snap',   dur: 2900, screen: 'result', zoom: 1.04, focus: 'diag', cursor: null, camDur: 560, ease: SNAP },
+  { id: 'note_snap',   dur: 2700, screen: 'result', zoom: 1.04, focus: 'diag', cursor: null, camDur: 560, ease: SNAP },
+  // beat 5 — trust: click "виж източника", the supporting transcript zips in
+  { id: 'grounding',   dur: 2500, screen: 'result', zoom: 1.16, focus: 'ground', dy: 34, cursor: 'ground', click: true, camDur: 560, ease: SNAP },
   // beat 6 — CLIMAX: the catch (pan to the safety rail, the alert SLAMS in)
   { id: 'climax',      dur: 2800, screen: 'result', zoom: 1.34, focus: 'alert', cursor: null, camDur: 600, ease: PUNCH },
-  // beat 7 — doctor approves
-  { id: 'approve',     dur: 2200, screen: 'result', zoom: 1.18, focus: 'confirm', dy: -6, cursor: 'confirm', click: true, camDur: 620, ease: SNAP },
+  // beat 7 — doctor approves (locked -> confirmed, exports unlock)
+  { id: 'approve',     dur: 2100, screen: 'result', zoom: 1.18, focus: 'confirm', dy: -6, cursor: 'confirm', click: true, camDur: 620, ease: SNAP },
+  // beat 7b — handoff: exports unlocked, ready for НЗИС / в практиката
+  { id: 'handoff',     dur: 1700, screen: 'result', zoom: 1.14, focus: 'confirm', dy: -6, cursor: null, camDur: 520, ease: SNAP },
   // beat 8 — PAYOFF sign-off end card (covers the app; seamless fade back to hook)
   { id: 'payoff',      dur: 3000, screen: 'result', zoom: 1.0,  focus: 'center', cursor: null, camDur: 600, ease: GLIDE },
 ];
@@ -106,13 +110,14 @@ export default function TuberMedHeroDesktop() {
   const recRef = useRef<HTMLButtonElement>(null);
   const alertRef = useRef<HTMLDivElement>(null);
   const diagRef = useRef<HTMLDivElement>(null);
+  const groundRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const [targets, setTargets] = useState<Record<string, Pt>>({
     cta: { fx: 565, fy: 548 },
     rec: { fx: 510, fy: 300 }, alert: { fx: 720, fy: 250 },
-    diag: { fx: 430, fy: 150 }, confirm: { fx: 360, fy: 110 },
+    diag: { fx: 430, fy: 150 }, ground: { fx: 470, fy: 250 }, confirm: { fx: 360, fy: 110 },
   });
 
   const appCoords = useCallback((el: Element | null): Pt | null => {
@@ -135,6 +140,7 @@ export default function TuberMedHeroDesktop() {
       const r = appCoords(recRef.current); if (r) next.rec = r;
       const a = appCoords(alertRef.current); if (a) next.alert = a;
       const d = appCoords(diagRef.current); if (d) next.diag = d;
+      const g = appCoords(groundRef.current); if (g) next.ground = g;
       const cf = appCoords(confirmRef.current); if (cf) next.confirm = cf;
       return next;
     });
@@ -228,7 +234,10 @@ export default function TuberMedHeroDesktop() {
 
   // semantic flags derived from the phase (decouples screens from exact ids)
   const recLive = phase.id === 'listening';
-  const alertShown = phase.screen === 'result' && (phase.id === 'climax' || phase.id === 'approve');
+  const groundingShown = phase.screen === 'result' &&
+    ['grounding', 'climax', 'approve', 'handoff'].includes(phase.id);
+  const alertShown = phase.screen === 'result' &&
+    ['climax', 'approve', 'handoff'].includes(phase.id);
   const overlay: 'hook' | 'payoff' | null =
     phase.id === 'hook' ? 'hook' : phase.id === 'payoff' ? 'payoff' : null;
 
@@ -395,6 +404,7 @@ export default function TuberMedHeroDesktop() {
                               <Ico n={confirmed ? 'check' : 'lock'} size={13} />
                               {confirmed ? 'Потвърдено от лекар' : 'Вярно! Потвърждавам прегледа'}
                             </button>
+                            {confirmed && <span className="tmd-handoff">→ НЗИС · в практиката</span>}
                             <div className={`tmd-exports ${confirmed ? 'on' : ''}`}>
                               <span className="tmd-expbtn"><Ico n={confirmed ? 'download' : 'lock'} size={12} /> PDF</span>
                               <span className="tmd-expbtn"><Ico n={confirmed ? 'download' : 'lock'} size={12} /> Word</span>
@@ -430,8 +440,25 @@ export default function TuberMedHeroDesktop() {
                                 <div className="tmd-diagrow"><span>Предсърдно мъждене</span><span className="tmd-mkb">I48.9</span></div>
                               </Sec>
 
-                              <Sec i={1} title="Анамнеза" icon="file-text">
-                                Болки в лумбалната област от 3 дни, без травма. Хронична антикоагулантна терапия с варфарин.
+                              <Sec
+                                i={1}
+                                title="Анамнеза"
+                                icon="file-text"
+                                action={
+                                  <button ref={groundRef} className={`tmd-srcbtn ${groundingShown ? 'on' : ''}`}>
+                                    <Ico n="search" size={11} /> виж източника
+                                  </button>
+                                }
+                              >
+                                <div>Болки в лумбалната област от 3 дни, без травма. Хронична антикоагулантна терапия с варфарин.</div>
+                                {groundingShown && (
+                                  <div className="tmd-source">
+                                    <div className="tmd-source-h"><Ico n="search" size={11} /> Източник · транскрипт</div>
+                                    <div className="tmd-source-b">
+                                      „…имам <mark>болки в кръста</mark> вече <mark>три дни</mark>, <mark>без</mark> да съм падал… взимам <mark>варфарин</mark> за сърцето…“
+                                    </div>
+                                  </div>
+                                )}
                               </Sec>
 
                               <Sec i={2} title="Обективно състояние" icon="stethoscope">
@@ -617,14 +644,15 @@ function Stepper({ current }: { current: number }) {
 
 // A de-boxed NoteSection: accent tick + small navy icon + uppercase navy label +
 // hairline + content — the shipped calm-clinical head (NoteSectionHead).
-const Sec = React.forwardRef<HTMLDivElement, { i: number; title: string; icon: string; children: ReactNode }>(
-  function Sec({ i, title, icon, children }, ref) {
+const Sec = React.forwardRef<HTMLDivElement, { i: number; title: string; icon: string; action?: ReactNode; children: ReactNode }>(
+  function Sec({ i, title, icon, action, children }, ref) {
     return (
       <div ref={ref} className="tmd-sec" style={{ animationDelay: `${120 + i * 190}ms` }}>
         <div className="tmd-sechead">
           <span className="tmd-sectick" />
           <span className="tmd-secico"><Ico n={icon} size={15} /></span>
           <span className="tmd-seclabel">{title}</span>
+          {action && <span className="tmd-secaction">{action}</span>}
         </div>
         <div className="tmd-sechair" />
         <div className="tmd-secbody">{children}</div>
@@ -935,6 +963,22 @@ const CSS = `
   padding:2px 8px;border-radius:5px;min-width:58px;text-align:center;
   animation:tmd-pop .42s cubic-bezier(.2,1.4,.35,1) .34s backwards; }
 
+/* result — source-grounding (виж източника -> supporting transcript) */
+.tmd-secaction{ margin-left:auto; display:inline-flex; align-items:center; }
+.tmd-srcbtn{ display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);
+  background:none;border:none;font-family:inherit;cursor:pointer;
+  text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px;transition:color .3s ease; }
+.tmd-srcbtn.on{ color:var(--steel); }
+.tmd-source{ margin-top:10px;padding:9px 11px;border-radius:8px;background:var(--tint);border:1px solid var(--hair);
+  opacity:0; animation:tmd-srcin .42s cubic-bezier(.2,.9,.3,1) forwards; }
+.tmd-source-h{ display:flex;align-items:center;gap:5px;font-size:9.5px;text-transform:uppercase;letter-spacing:.07em;
+  font-weight:600;color:var(--muted);margin-bottom:5px; }
+.tmd-source-b{ font-size:12px;line-height:1.65;color:var(--muted); }
+.tmd-source-b mark{ background:var(--steel-soft);color:var(--ink);padding:0 3px;border-radius:3px;
+  border-bottom:2px solid var(--steel);font-weight:500; }
+.tmd-handoff{ font-size:11.5px;font-weight:600;color:var(--steel);display:inline-flex;align-items:center;gap:4px;
+  background:var(--steel-soft);padding:5px 10px;border-radius:7px; opacity:0; animation:tmd-fu .4s ease forwards; }
+
 /* result — right meds/safety rail */
 .tmd-rrail{ display:flex;flex-direction:column;gap:12px; }
 .tmd-medcard{ background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px; box-shadow:var(--shadow-card); }
@@ -1005,6 +1049,8 @@ const CSS = `
 
 @keyframes tmd-spin{ to{transform:rotate(360deg)} }
 @keyframes tmd-rf{ from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+@keyframes tmd-srcin{ from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+@keyframes tmd-fu{ from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
 @keyframes tmd-slam{ 0%{opacity:0;transform:translateY(16px) scale(.92)} 62%{opacity:1;transform:translateY(0) scale(1.03)} 100%{opacity:1;transform:translateY(0) scale(1)} }
 @keyframes tmd-pop{ 0%{transform:scale(.62)} 60%{transform:scale(1.1)} 100%{transform:scale(1)} }
 @keyframes tmd-ap{ 0%,100%{transform:scale(1)} 50%{transform:scale(1.16)} }
@@ -1016,6 +1062,6 @@ const CSS = `
 
 @media (prefers-reduced-motion: reduce) {
   .tmd-cam, .tmd-cursor { transition: none !important; }
-  .tmd-sec, .tmd-crit, .tmd-crit-ico, .tmd-mkb, .tmd-ring, .tmd-recdot { animation: none !important; opacity: 1 !important; }
+  .tmd-sec, .tmd-crit, .tmd-crit-ico, .tmd-mkb, .tmd-source, .tmd-handoff, .tmd-ring, .tmd-recdot { animation: none !important; opacity: 1 !important; }
 }
 `;
