@@ -33,6 +33,10 @@
   /* Semantic clinical signals — distinct hue family from the accent */
   --color-ok:        #2E7D5B;
   --color-ok-soft:   #E3F0EA;
+  /* AA-safe green for TEXT on --color-ok-soft (the scribe "На запис" pill):
+     --color-ok (#2E7D5B) is only ~4.27:1 on #E3F0EA and fails AA for text;
+     this darker green is ~5.5:1 on the soft fill (~6.4:1 on white). */
+  --color-ok-strong: #1B6B46;
   --color-warn:      #B7791F;
   --color-warn-soft: #F7EDDA;
   --color-danger:      #C0392B;

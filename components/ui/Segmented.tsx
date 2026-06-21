@@ -1,9 +1,9 @@
-// Shared equal-width segmented toggle — lifted from the scribe Микрофон/Телефон
-// `TabBtn` so that ad-hoc toggle is gone and both pills come from ONE place.
-// Byte-identical to the old TabBtn: equal-width pills, active = filled
-// `--color-brand` (white text), inactive = `--color-bg-card` + hairline border.
-// Chrome only — no a11y semantics added here (kept identical to the original);
-// `className` is for layout (e.g. the ModeTabs `mb-6`).
+// Shared equal-width segmented toggle (the scribe Микрофон/Телефон switch).
+// Calm-clinical "track" style: a soft hairline-bordered track holds two
+// equal-width pills; the ACTIVE pill is a white sheet (navy heading text +
+// whisper shadow), INACTIVE pills are transparent with muted text — matching
+// the approved calm_scribe house style. Chrome only — no a11y semantics added
+// here; `className` is for layout/width (e.g. ModeTabs `max-w-md mx-auto`).
 
 import type { ReactNode } from 'react';
 
@@ -21,7 +21,13 @@ export function Segmented<T extends string>({
   className?: string;
 }) {
   return (
-    <div className={['flex gap-2', className].filter(Boolean).join(' ')}>
+    <div
+      className={['flex gap-1 p-1 rounded-lg', className].filter(Boolean).join(' ')}
+      style={{
+        background: 'var(--color-bg-subtle)',
+        border: '1px solid var(--color-hairline)',
+      }}
+    >
       {options.map((opt) => {
         const active = opt.value === value;
         return (
@@ -31,10 +37,9 @@ export function Segmented<T extends string>({
             onClick={() => onChange(opt.value)}
             className="flex-1 px-4 py-2 rounded-md text-sm font-medium transition"
             style={{
-              background: active ? 'var(--color-brand)' : 'var(--color-bg-card)',
-              color: active ? 'white' : 'var(--color-text-muted)',
-              borderColor: 'var(--color-border)',
-              borderWidth: 1,
+              background: active ? '#fff' : 'transparent',
+              color: active ? 'var(--color-heading)' : 'var(--color-text-muted)',
+              boxShadow: active ? 'var(--shadow-card)' : 'none',
             }}
           >
             {opt.content}

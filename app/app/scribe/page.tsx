@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 import AppShell from '@/components/AppShell';
@@ -28,6 +28,7 @@ import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import { useColdStartRecovery } from '@/lib/use-cold-start-recovery';
 import { Icon } from '@/components/ui/Icon';
 import { Segmented } from '@/components/ui/Segmented';
+import { Button } from '@/components/ui/Button';
 
 type Mode = 'phone' | 'pc';
 type View = 'record' | 'processing';
@@ -307,10 +308,6 @@ function ScribePageInner() {
             <ProcessingView main={procMain} sub={procSub} />
           )}
 
-          {view === 'record' && (
-            <ModeTabs mode={mode} onChange={setMode} />
-          )}
-
           {/* PhoneMode owns a long-lived WebSocket and the recovery
               (reconnect + slow-poll) path against /api/sessions/:id/status.
               If it unmounts the moment view flips to 'processing', the WS
@@ -329,6 +326,8 @@ function ScribePageInner() {
             <div style={{ display: view === 'record' ? 'block' : 'none' }}>
               <PhoneMode
                 active={mode === 'phone'}
+                mode={mode}
+                onModeChange={setMode}
                 consultationId={consultationId}
                 onProcessing={() =>
                   goToProcessing('AI анализира...', 'Транскрипция и извличане')
@@ -341,6 +340,8 @@ function ScribePageInner() {
 
           {view === 'record' && mode === 'pc' && (
             <PcMode
+              mode={mode}
+              onModeChange={setMode}
               consultationId={consultationId}
               onRecordingChange={setPcRecording}
               onProcessing={() =>
@@ -463,8 +464,8 @@ function RecoveryPanel({
 
   return (
     <div
-      className="bg-white rounded-2xl border p-10 flex flex-col items-center text-center"
-      style={{ borderColor: 'var(--color-border)' }}
+      className="bg-white rounded-2xl border p-8 sm:p-10 flex flex-col items-center text-center"
+      style={{ borderColor: 'var(--color-border)', boxShadow: 'var(--shadow-card)' }}
     >
       <div
         className="text-xl font-semibold mb-2"
@@ -488,28 +489,13 @@ function RecoveryPanel({
 
       <div className="flex flex-wrap gap-3 justify-center mt-6">
         {!blocked && (
-          <button
-            onClick={retry}
-            disabled={retrying}
-            className="px-5 py-2.5 rounded-md text-sm font-medium transition disabled:opacity-60"
-            style={{ background: 'var(--color-brand)', color: 'white' }}
-          >
+          <Button variant="primary" onClick={retry} disabled={retrying}>
             {retrying ? 'Обработва се…' : 'Опитайте отново'}
-          </button>
+          </Button>
         )}
-        <button
-          onClick={onRestart}
-          disabled={retrying}
-          className="px-5 py-2.5 rounded-md text-sm font-medium transition disabled:opacity-60"
-          style={{
-            background: 'var(--color-bg-card)',
-            color: 'var(--color-text-muted)',
-            borderColor: 'var(--color-border)',
-            borderWidth: 1,
-          }}
-        >
+        <Button variant="secondary" onClick={onRestart} disabled={retrying}>
           Започни нов преглед
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -518,29 +504,31 @@ function RecoveryPanel({
 function ModeTabs({
   mode,
   onChange,
+  className = '',
 }: {
   mode: Mode;
   onChange: (m: Mode) => void;
+  className?: string;
 }) {
   return (
     <Segmented
-      className="mb-6"
+      className={className}
       value={mode}
       onChange={onChange}
       options={[
         {
-          value: 'phone',
+          value: 'pc',
           content: (
-            <span className="inline-flex items-center gap-1.5">
-              <Icon name="smartphone" /> Телефон (QR)
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <Icon name="mic" /> Микрофон
             </span>
           ),
         },
         {
-          value: 'pc',
+          value: 'phone',
           content: (
-            <span className="inline-flex items-center gap-1.5">
-              <Icon name="mic" /> Микрофон на компютъра
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <Icon name="smartphone" /> Телефон (QR)
             </span>
           ),
         },
@@ -549,16 +537,53 @@ function ModeTabs({
   );
 }
 
+// Calm-clinical card shell shared by the record-mode bodies (PC mic + phone QR):
+// a whisper-shadow hairline sheet with a navy NoteSection-consistent header
+// (title + subtitle + hairline divider) and the Микрофон/Телефон segmented
+// toggle. Purely presentational — no state / lifecycle — so wrapping the
+// always-mounted PhoneMode in it never touches the WebSocket recovery path.
+function RecordCardShell({
+  mode,
+  onModeChange,
+  children,
+}: {
+  mode: Mode;
+  onModeChange: (m: Mode) => void;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="bg-white rounded-2xl border p-6 sm:p-8"
+      style={{ borderColor: 'var(--color-border)', boxShadow: 'var(--shadow-card)' }}
+    >
+      <div className="mb-5">
+        <h1
+          className="text-xl font-semibold"
+          style={{ color: 'var(--color-heading)', letterSpacing: '-0.01em' }}
+        >
+          Запис на консултацията
+        </h1>
+        <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+          AI слуша и води транскрипт на живо. Нищо не напуска ЕС.
+        </p>
+        <div className="mt-4" style={{ borderBottom: '1px solid var(--color-hairline)' }} />
+      </div>
+      <ModeTabs mode={mode} onChange={onModeChange} className="max-w-md mx-auto mb-8" />
+      {children}
+    </div>
+  );
+}
+
 function ProcessingView({ main, sub }: { main: string; sub: string }) {
   return (
     <div
-      className="bg-white rounded-2xl border p-16 flex flex-col items-center text-center"
-      style={{ borderColor: 'var(--color-border)' }}
+      className="bg-white rounded-2xl border p-12 flex flex-col items-center text-center"
+      style={{ borderColor: 'var(--color-border)', boxShadow: 'var(--shadow-card)' }}
     >
       <Spinner />
       <div
-        className="text-xl font-medium mt-6 mb-2"
-        style={{ color: 'var(--color-brand)' }}
+        className="text-lg font-semibold mt-6 mb-1"
+        style={{ color: 'var(--color-heading)' }}
       >
         {main}
       </div>
@@ -587,12 +612,16 @@ function Spinner() {
 
 function PhoneMode({
   active,
+  mode,
+  onModeChange,
   consultationId,
   onProcessing,
   onResult,
   onError,
 }: {
   active: boolean;
+  mode: Mode;
+  onModeChange: (m: Mode) => void;
   consultationId: string | null;
   onProcessing: () => void;
   onResult: (r: TranscribeResult) => void;
@@ -840,81 +869,79 @@ function PhoneMode({
 
   if (phoneConnected) {
     return (
-      <div
-        className="bg-white rounded-2xl border p-12 flex flex-col items-center text-center"
-        style={{ borderColor: 'var(--color-border)' }}
-      >
-        <Icon
-          name="smartphone"
-          size={48}
-          className="mb-3"
-          style={{ color: 'var(--color-brand)' }}
-        />
-        <div
-          className="text-lg font-medium mb-1"
-          style={{ color: 'var(--color-brand)' }}
-        >
-          Телефонът е свързан
+      <RecordCardShell mode={mode} onModeChange={onModeChange}>
+        <div className="flex flex-col items-center text-center py-4">
+          <Icon
+            name="smartphone"
+            size={48}
+            className="mb-3"
+            style={{ color: 'var(--color-brand)' }}
+          />
+          <div
+            className="text-lg font-semibold mb-1"
+            style={{ color: 'var(--color-heading)' }}
+          >
+            Телефонът е свързан
+          </div>
+          <div
+            className="text-sm mb-6"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            Говорете — AI слуша
+          </div>
+          <Spinner />
         </div>
-        <div
-          className="text-sm mb-6"
-          style={{ color: 'var(--color-text-muted)' }}
-        >
-          Говорете — AI слуша
-        </div>
-        <Spinner />
-      </div>
+      </RecordCardShell>
     );
   }
 
   return (
-    <div
-      className="bg-white rounded-2xl border p-10 flex flex-col items-center text-center"
-      style={{ borderColor: 'var(--color-border)' }}
-    >
-      <div
-        className="text-sm mb-4"
-        style={{ color: 'var(--color-text-muted)' }}
-      >
-        Сканирайте с телефона
-      </div>
-      {session ? (
-        <>
+    <RecordCardShell mode={mode} onModeChange={onModeChange}>
+      <div className="flex flex-col items-center text-center">
+        <div
+          className="text-sm mb-4"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          Сканирайте с телефона
+        </div>
+        {session ? (
+          <>
+            <div
+              className="p-3 rounded-lg"
+              style={{
+                borderColor: 'var(--color-border)',
+                borderWidth: 1,
+                background: 'white',
+              }}
+            >
+              <QRCodeSVG value={session.mobileUrl} size={188} fgColor="#1C2B44" />
+            </div>
+            <div
+              className="text-xs mt-4"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              Насочете камерата на телефона към QR кода.
+            </div>
+            {expiresIn > 0 && (
+              <div
+                className="text-xs mt-2 font-[family-name:var(--font-jetbrains)] tabular-nums"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                Изтича след {Math.floor(expiresIn / 60)}:
+                {String(expiresIn % 60).padStart(2, '0')}
+              </div>
+            )}
+          </>
+        ) : (
           <div
-            className="p-3 rounded-lg"
-            style={{
-              borderColor: 'var(--color-border)',
-              borderWidth: 1,
-              background: 'white',
-            }}
-          >
-            <QRCodeSVG value={session.mobileUrl} size={188} fgColor="#1C2B44" />
-          </div>
-          <div
-            className="text-xs mt-4"
+            className="text-sm py-12"
             style={{ color: 'var(--color-text-muted)' }}
           >
-            Насочете камерата на телефона към QR кода.
+            Генерира се QR код…
           </div>
-          {expiresIn > 0 && (
-            <div
-              className="text-xs mt-2 font-[family-name:var(--font-jetbrains)] tabular-nums"
-              style={{ color: 'var(--color-text-hint)' }}
-            >
-              Изтича след {Math.floor(expiresIn / 60)}:
-              {String(expiresIn % 60).padStart(2, '0')}
-            </div>
-          )}
-        </>
-      ) : (
-        <div
-          className="text-sm py-12"
-          style={{ color: 'var(--color-text-hint)' }}
-        >
-          Генерира се QR код…
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </RecordCardShell>
   );
 }
 
@@ -925,6 +952,8 @@ function PhoneMode({
 const WAVE_BARS = 32;
 
 function PcMode({
+  mode,
+  onModeChange,
   consultationId,
   onRecordingChange,
   onProcessing,
@@ -934,6 +963,8 @@ function PcMode({
   onBackToIdle,
   requestConsent,
 }: {
+  mode: Mode;
+  onModeChange: (m: Mode) => void;
   consultationId: string | null;
   /** Bubbles the local recording state up so the page can lock the sidebar. */
   onRecordingChange: (active: boolean) => void;
@@ -1142,60 +1173,95 @@ function PcMode({
   const ss = String(seconds % 60).padStart(2, '0');
 
   return (
-    <div
-      className="bg-white rounded-2xl border p-10 flex flex-col items-center"
-      style={{ borderColor: 'var(--color-border)' }}
-    >
-      <div
-        className="text-sm mb-6"
-        style={{ color: 'var(--color-text-muted)' }}
-      >
-        Запис от микрофон
-      </div>
+    <RecordCardShell mode={mode} onModeChange={onModeChange}>
+      <div className="flex flex-col items-center text-center">
+        {/* Record control — the focal red action. Pale concentric rings sit
+            behind it while recording (decorative). onClick + aria UNCHANGED. */}
+        <div
+          className="relative flex items-center justify-center"
+          style={{ width: 176, height: 152 }}
+        >
+          {recording && (
+            <>
+              <span
+                aria-hidden
+                className="absolute rounded-full"
+                style={{ width: 148, height: 148, background: 'var(--color-brand-light)', opacity: 0.55 }}
+              />
+              <span
+                aria-hidden
+                className="absolute rounded-full"
+                style={{ width: 116, height: 116, background: 'var(--color-brand-soft)', opacity: 0.7 }}
+              />
+            </>
+          )}
+          <button
+            onClick={recording ? stopRecording : startRecording}
+            className="relative w-24 h-24 rounded-full flex items-center justify-center transition hover:opacity-90 focus-ring"
+            style={{
+              background: recording ? 'var(--color-red)' : 'var(--gradient-brand)',
+              boxShadow: recording
+                ? '0 8px 24px rgba(192, 57, 43, 0.30)'
+                : '0 4px 14px rgba(39, 76, 119, 0.22)',
+            }}
+            aria-label={recording ? 'Стоп запис' : 'Започни запис'}
+          >
+            {recording ? (
+              <svg viewBox="0 0 24 24" width="30" height="30" fill="white">
+                <path d="M6 6h12v12H6z" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" width="34" height="34" fill="white">
+                <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm6-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+              </svg>
+            )}
+          </button>
+        </div>
 
-      <div
-        ref={waveWrapRef}
-        className="flex items-end gap-1 mb-8"
-        style={{ height: '64px' }}
-      />
+        {/* Timer — navy, tabular, mono (mono is reserved for the scribe timer). */}
+        <div
+          className="text-4xl font-[family-name:var(--font-jetbrains)] tabular-nums"
+          style={{ color: 'var(--color-heading)' }}
+        >
+          {recording ? `${mm}:${ss}` : '00:00'}
+        </div>
 
-      <button
-        onClick={recording ? stopRecording : startRecording}
-        className="w-20 h-20 rounded-full flex items-center justify-center transition hover:opacity-90 shadow-lg"
-        style={{
-          background: recording
-            ? 'var(--color-red)'
-            : 'var(--gradient-brand)',
-        }}
-        aria-label={recording ? 'Стоп запис' : 'Започни запис'}
-      >
+        {/* Status — soft-green "На запис" pill while recording, else a hint. */}
         {recording ? (
-          <svg viewBox="0 0 24 24" width="28" height="28" fill="white">
-            <path d="M6 6h12v12H6z" />
-          </svg>
+          <div
+            className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium"
+            style={{ background: 'var(--color-ok-soft)', color: 'var(--color-ok-strong)' }}
+          >
+            <span
+              aria-hidden
+              className="inline-block w-2 h-2 rounded-full"
+              style={{ background: 'var(--color-ok)' }}
+            />
+            На запис · AI слуша
+          </div>
         ) : (
-          <svg viewBox="0 0 24 24" width="32" height="32" fill="white">
-            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm6-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
-          </svg>
+          <div className="mt-3 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+            Натиснете за запис
+          </div>
         )}
-      </button>
 
-      <div
-        className="mt-5 text-2xl font-[family-name:var(--font-jetbrains)] tabular-nums"
-        style={{
-          color: recording
-            ? 'var(--color-red)'
-            : 'var(--color-text-muted)',
-        }}
-      >
-        {recording ? `${mm}:${ss}` : '00:00'}
+        {/* Waveform — bars are created + animated by the effects above; the ref
+            and height stay untouched so the WebAudio recording path is intact. */}
+        <div
+          ref={waveWrapRef}
+          className="flex items-end justify-center gap-1 mt-6"
+          style={{ height: '64px' }}
+        />
+
+        {/* Stop & process — the accent CTA. Same stop+submit as the red control. */}
+        {recording && (
+          <div className="mt-6 w-full flex justify-center">
+            <Button variant="primary" onClick={stopRecording} className="px-6">
+              <Icon name="check" /> Спри и обработи
+            </Button>
+          </div>
+        )}
       </div>
-      <div
-        className="mt-2 text-sm"
-        style={{ color: 'var(--color-text-muted)' }}
-      >
-        {recording ? 'Записва се — натиснете за стоп' : 'Натиснете за запис'}
-      </div>
-    </div>
+    </RecordCardShell>
   );
 }
