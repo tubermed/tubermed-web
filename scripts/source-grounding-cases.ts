@@ -171,5 +171,22 @@ console.log('\n— PART 4: matched-token ranges (A4 — highlight only the match
     'A4: every matched token lies within the reported span');
 }
 
+console.log('\n— PART 5: vitals grounding (Обективен статус — numbers ARE the signal) —');
+// Reproduces the live miss (P6): the Обективен-статус field is mostly numbers
+// (RR 130/89, ДЧ 16) plus injected "не е измерено" placeholders. The matcher
+// deliberately ignores numbers as needles, so the only content needles that match
+// are "очистено"/"дишането" (2 of ~6) → below the coverage gate → null → the
+// confusing "Не открихме ясен източник", even though the BP/RR was clearly said.
+// Numbers must ground when they sit with their vital cue (and ONLY then).
+const VITALS_FIELD =
+  'RR: 130/89 mmHg | ЧСС: не е измерено | Температура: не е измерено | SpO2: не е измерено | ДЧ: 16/мин. Дишането очистено везикуларно.';
+const VITALS_TRANSCRIPT =
+  'Обективно, кръвно 130 на 89. Пулс не отчетох. Дишане 16 дихателни движения в минута, малко е очистено дишането.';
+{
+  const s = hit('obektivno', VITALS_FIELD, VITALS_TRANSCRIPT);
+  assert(s !== null && s.includes('130') && s.includes('89') && s.includes('16'),
+    'P6: RR 130/89 + ДЧ 16 ground to the transcript (was a blanket "no source")');
+}
+
 console.log(`\n${passed + failed} assertions: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
