@@ -1413,6 +1413,7 @@ function ResultPageInner() {
             <TextSection
               id="sec-anamneza"
               title="Анамнеза"
+              icon="file-text"
               fieldKey="anamneza"
               value={fields.anamneza || ''}
               onChange={(v) => updateField('anamneza', v)}
@@ -1437,6 +1438,7 @@ function ResultPageInner() {
             <TextSection
               id="sec-obektivno"
               title="Обективно състояние"
+              icon="stethoscope"
               fieldKey="obektivno"
               value={fields.obektivno || ''}
               onChange={(v) => updateField('obektivno', v)}
@@ -1460,7 +1462,7 @@ function ResultPageInner() {
             />
             {visibleSections['sec-izsledvania'] && (
               <div id="sec-izsledvania" className="scroll-mt-24">
-                <SectionHead title="Изследвания" />
+                <SectionHead title="Изследвания" icon="flask" />
 
                 {visibleSections['sec-rezultati'] && (
                   <div id="sec-rezultati" className="mb-4 scroll-mt-24">
@@ -1522,6 +1524,7 @@ function ResultPageInner() {
             <TextSection
               id="sec-terapia"
               title="Терапия"
+              icon="pill"
               fieldKey="terapia"
               value={fields.terapia || ''}
               onChange={(v) => updateField('terapia', v)}
@@ -1546,7 +1549,7 @@ function ResultPageInner() {
 
             {visibleSections['sec-izdadeni'] && (
               <div id="sec-izdadeni" className="scroll-mt-24">
-                <SectionHead title="Издадени документи" />
+                <SectionHead title="Издадени документи" icon="file-text" />
 
                 {visibleSections['sec-napravlenia'] && (
                   <div id="sec-napravlenia" className="scroll-mt-24">
@@ -2001,12 +2004,20 @@ function TranscriptBody({
 // All section consumers (TextSection, Изследвания, Издадени, Диагнози) flip at once.
 function SectionHead({
   title,
+  icon,
   actions,
 }: {
   title: string;
+  icon?: IconName;
   actions?: React.ReactNode;
 }) {
-  return <NoteSectionHead title={title} action={actions} />;
+  return (
+    <NoteSectionHead
+      title={title}
+      icon={icon ? <Icon name={icon} /> : undefined}
+      action={actions}
+    />
+  );
 }
 
 function SubsectionHead({ title, icon }: { title: string; icon?: IconName }) {
@@ -2024,6 +2035,7 @@ function SubsectionHead({ title, icon }: { title: string; icon?: IconName }) {
 function TextSection({
   id,
   title,
+  icon,
   value,
   onChange,
   fieldKey,
@@ -2035,6 +2047,7 @@ function TextSection({
 }: {
   id: string;
   title: string;
+  icon?: IconName;
   value: string;
   onChange: (v: string) => void;
   fieldKey?: string;
@@ -2046,7 +2059,7 @@ function TextSection({
 }) {
   return (
     <div id={id} className="scroll-mt-24">
-      <SectionHead title={title} actions={headerRight} />
+      <SectionHead title={title} icon={icon} actions={headerRight} />
       <EditableField
         value={value}
         onChange={onChange}
@@ -2112,7 +2125,7 @@ function DiagnosesSection({
 
   return (
     <div id="sec-diag" className="scroll-mt-24">
-      <SectionHead title="Диагнози МКБ-10" />
+      <SectionHead title="Диагнози МКБ-10" icon="clipboard" />
 
       <div className="mb-4 pb-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
         <div className="flex items-center justify-between gap-2 mb-2">

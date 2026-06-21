@@ -5,7 +5,7 @@ import { dobFromEgn, genderFromEgn, isValidEgnChecksum } from '@/lib/egn';
 import { ageFromBirthDate } from '@/lib/age';
 import { dobError } from '@/lib/date';
 import { api } from '@/lib/api';
-import { Icon } from '@/components/ui/Icon';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import ChipInput from './ChipInput';
 import MkbPicker from './MkbPicker';
 import PatientResultRow from './PatientResultRow';
@@ -285,10 +285,12 @@ type SetFn = <K extends keyof PatientFormState>(key: K, value: PatientFormState[
 // visible (default) so an absolutely-positioned dropdown inside is never clipped.
 function FormSection({
   title,
+  icon,
   children,
   dataTour,
 }: {
   title: string;
+  icon?: IconName;
   children: React.ReactNode;
   dataTour?: string;
 }) {
@@ -298,7 +300,7 @@ function FormSection({
       data-tour={dataTour}
       style={{ borderColor: 'var(--color-border)', boxShadow: 'var(--shadow-card)' }}
     >
-      <NoteSectionHead title={title} />
+      <NoteSectionHead title={title} icon={icon ? <Icon name={icon} /> : undefined} />
       {children}
     </section>
   );
@@ -438,7 +440,7 @@ function IdentificationSection({
 
   return (
     <>
-    <FormSection title="Идентификация" dataTour="egn">
+    <FormSection title="Идентификация" icon="user" dataTour="egn">
       {/* Loaded-patient banner + clear control. The search bar that used to host
           the patient chip is gone; clearing here returns the form to the empty
           NEW-patient state (page resets dirty state in the same pass). */}
@@ -734,7 +736,7 @@ function EgnField({
 function ClinicalContextSection({ state, set }: { state: PatientFormState; set: SetFn }) {
   const [mkbOpen, setMkbOpen] = useState(false);
   return (
-    <FormSection title="Клиничен контекст">
+    <FormSection title="Клиничен контекст" icon="clipboard">
       <div className="flex flex-col gap-4">
         <label className="md:max-w-sm">
           <FieldLabel>Здравно осигуряване</FieldLabel>
@@ -803,7 +805,7 @@ const VISIT_TYPES: Array<{ value: VisitType; label: string }> = [
 
 function VisitTypeSection({ state, set }: { state: PatientFormState; set: SetFn }) {
   return (
-    <FormSection title="Тип на посещението">
+    <FormSection title="Тип на посещението" icon="stethoscope">
       <div className="flex flex-wrap gap-2">
         {VISIT_TYPES.map((t) => {
           const isActive = state.visit_type === t.value;
@@ -831,7 +833,7 @@ function VisitTypeSection({ state, set }: { state: PatientFormState; set: SetFn 
 // ── Section: Главна жалба ───────────────────────────────────────────────────
 function ChiefComplaintSection({ state, set }: { state: PatientFormState; set: SetFn }) {
   return (
-    <FormSection title="Главна жалба">
+    <FormSection title="Главна жалба" icon="message-square">
       <textarea
         className={`${inputClass()} nv-field--area leading-relaxed`}
         value={state.chief_complaint}
@@ -849,7 +851,7 @@ function ChiefComplaintSection({ state, set }: { state: PatientFormState; set: S
 // ── Section: Документация ───────────────────────────────────────────────────
 function DocumentationSection({ state, set }: { state: PatientFormState; set: SetFn }) {
   return (
-    <FormSection title="Документация">
+    <FormSection title="Документация" icon="file-text">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <label>
           <FieldLabel>Език</FieldLabel>

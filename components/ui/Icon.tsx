@@ -27,6 +27,10 @@ export type IconName =
   | 'file-text'
   | 'clipboard'
   | 'flask'
+  | 'stethoscope'
+  | 'pill'
+  | 'message-square'
+  | 'info'
   | 'pencil'
   | 'copy'
   | 'search'
@@ -110,6 +114,29 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2" />
       <path d="M8.5 2h7" />
       <path d="M7 16h10" />
+    </>
+  ),
+  stethoscope: (
+    <>
+      <path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6 6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3" />
+      <path d="M8 15v1a6 6 0 0 0 6 6 6 6 0 0 0 6-6v-4" />
+      <circle cx="20" cy="10" r="2" />
+    </>
+  ),
+  pill: (
+    <>
+      <path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z" />
+      <path d="m8.5 8.5 7 7" />
+    </>
+  ),
+  'message-square': (
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  ),
+  info: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
     </>
   ),
   pencil: (

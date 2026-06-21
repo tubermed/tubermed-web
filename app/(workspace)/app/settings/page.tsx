@@ -24,6 +24,7 @@ import SpecialtyTypeahead from '@/components/SpecialtyTypeahead';
 import PasswordInput from '@/components/PasswordInput';
 import SkeletonInput from '@/components/SkeletonInput';
 import { NoteSectionHead } from '@/components/ui/NoteSection';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { Field, TextInput } from '@/components/ui/Field';
 import { Button } from '@/components/ui/Button';
 
@@ -304,7 +305,7 @@ export default function SettingsPage() {
             </div>
           )}
           {pane === 'profile' && (
-            <Pane title="Профил">
+            <Pane title="Профил" icon="user">
               <div className="flex flex-col gap-4">
                 <Field label="Име">
                   <TextInput
@@ -332,7 +333,7 @@ export default function SettingsPage() {
           )}
 
           {pane === 'practice' && (
-            <Pane title="Практика и документ">
+            <Pane title="Практика и документ" icon="file-text">
               <p className="text-xs mb-4" style={{ color: 'var(--color-text-muted)' }}>
                 Тези данни се отпечатват в горната част на Амбулаторния лист.
               </p>
@@ -404,7 +405,7 @@ export default function SettingsPage() {
           )}
 
           {pane === 'security' && (
-            <Pane title="Сигурност">
+            <Pane title="Сигурност" icon="lock">
               <div className="flex flex-col gap-6">
                 <div>
                   <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--color-text-primary)' }}>
@@ -480,7 +481,7 @@ export default function SettingsPage() {
           )}
 
           {pane === 'about' && (
-            <Pane title="За приложението">
+            <Pane title="За приложението" icon="info">
               <div className="text-sm flex flex-col gap-1" style={{ color: 'var(--color-text-muted)' }}>
                 <div>
                   <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
@@ -501,13 +502,21 @@ export default function SettingsPage() {
 // Calm-clinical pane — ONE hairline sheet (whisper shadow) with a NoteSectionHead
 // group label (tick + UPPERCASE navy label + hairline), replacing the old elevated
 // tinted-header SectionCard. Matches the result/scribe house style.
-function Pane({ title, children }: { title: string; children: React.ReactNode }) {
+function Pane({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon?: IconName;
+  children: React.ReactNode;
+}) {
   return (
     <div
       className="bg-white rounded-2xl border p-6 sm:p-8"
       style={{ borderColor: 'var(--color-border)', boxShadow: 'var(--shadow-card)' }}
     >
-      <NoteSectionHead title={title} />
+      <NoteSectionHead title={title} icon={icon ? <Icon name={icon} /> : undefined} />
       {children}
     </div>
   );
