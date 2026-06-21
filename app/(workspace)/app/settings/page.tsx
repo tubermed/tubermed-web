@@ -23,7 +23,7 @@ import { useDoctorContext } from '@/components/DoctorContext';
 import SpecialtyTypeahead from '@/components/SpecialtyTypeahead';
 import PasswordInput from '@/components/PasswordInput';
 import SkeletonInput from '@/components/SkeletonInput';
-import { SectionCard } from '@/components/ui/Card';
+import { NoteSectionHead } from '@/components/ui/NoteSection';
 import { Field, TextInput } from '@/components/ui/Field';
 import { Button } from '@/components/ui/Button';
 
@@ -304,7 +304,7 @@ export default function SettingsPage() {
             </div>
           )}
           {pane === 'profile' && (
-            <SectionCard title="Профил" subtitle="Лични данни" icon={<ProfileIcon />}>
+            <Pane title="Профил">
               <div className="flex flex-col gap-4">
                 <Field label="Име">
                   <TextInput
@@ -328,12 +328,12 @@ export default function SettingsPage() {
                 </Field>
               </div>
               {saveBar}
-            </SectionCard>
+            </Pane>
           )}
 
           {pane === 'practice' && (
-            <SectionCard title="Практика и документ" subtitle="Данни за документа" icon={<PracticeIcon />}>
-              <p className="text-xs mb-4" style={{ color: 'var(--color-text-hint)' }}>
+            <Pane title="Практика и документ">
+              <p className="text-xs mb-4" style={{ color: 'var(--color-text-muted)' }}>
                 Тези данни се отпечатват в горната част на Амбулаторния лист.
               </p>
               <div className="flex flex-col gap-4">
@@ -400,11 +400,11 @@ export default function SettingsPage() {
                 </div>
               </div>
               {saveBar}
-            </SectionCard>
+            </Pane>
           )}
 
           {pane === 'security' && (
-            <SectionCard title="Сигурност" subtitle="Парола и изход" icon={<SecurityIcon />}>
+            <Pane title="Сигурност">
               <div className="flex flex-col gap-6">
                 <div>
                   <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--color-text-primary)' }}>
@@ -476,11 +476,11 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               </div>
-            </SectionCard>
+            </Pane>
           )}
 
           {pane === 'about' && (
-            <SectionCard title="За приложението" subtitle="Версия и поддръжка" icon={<AboutIcon />}>
+            <Pane title="За приложението">
               <div className="text-sm flex flex-col gap-1" style={{ color: 'var(--color-text-muted)' }}>
                 <div>
                   <span className="font-medium" style={{ color: 'var(--color-text-primary)' }}>
@@ -490,10 +490,25 @@ export default function SettingsPage() {
                 </div>
                 <div>Поддръжка: {SUPPORT_EMAIL}</div>
               </div>
-            </SectionCard>
+            </Pane>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Calm-clinical pane — ONE hairline sheet (whisper shadow) with a NoteSectionHead
+// group label (tick + UPPERCASE navy label + hairline), replacing the old elevated
+// tinted-header SectionCard. Matches the result/scribe house style.
+function Pane({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div
+      className="bg-white rounded-2xl border p-6 sm:p-8"
+      style={{ borderColor: 'var(--color-border)', boxShadow: 'var(--shadow-card)' }}
+    >
+      <NoteSectionHead title={title} />
+      {children}
     </div>
   );
 }
@@ -523,7 +538,7 @@ function SubNavItem({
       type="button"
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
-      className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-left transition-colors sm:w-full"
+      className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-left transition-colors sm:w-full focus-ring"
       style={
         active
           ? { background: 'var(--color-accent-soft)', color: 'var(--color-ink)', fontWeight: 500 }
