@@ -50,18 +50,36 @@ type Phase = {
   cursor: string | null;
   dy?: number;
   click?: boolean;
+  /** camera move duration (ms) — short = snappy cut, long = glide */
+  camDur?: number;
+  /** camera move easing — overshoot eases give a punch-in "slam" */
+  ease?: string;
 };
 
+const GLIDE = 'cubic-bezier(.65,0,.2,1)';
+const SNAP = 'cubic-bezier(.5,0,.15,1)';
+const PUNCH = 'cubic-bezier(.34,1.18,.4,1)'; // slight overshoot — the "slam"
+
+// Premium-film choreography. Rhythm comes from alternating quick beats
+// (camDur ~400-600) with held beats (longer dur), 3 purposeful punch-ins
+// (listening, note-snap, the climax), and a slam ease on the safety catch.
+// The 0-2s hook + payoff sign-off bookend this in U3; source-grounding +
+// the export-unlock handoff slot in at U4.
 const PHASES: Phase[] = [
-  { id: 'newvisit',       dur: 2000, screen: 'newvisit', zoom: 1.0,  focus: 'center',  cursor: 'rest' },
-  { id: 'newvisit_cta',   dur: 1300, screen: 'newvisit', zoom: 1.28, focus: 'cta', dy: -70, cursor: 'cta', click: true },
-  { id: 'mode',           dur: 1900, screen: 'mode',     zoom: 1.30, focus: 'pc',      cursor: 'pc',      click: true },
-  { id: 'record_press',   dur: 1500, screen: 'rec',      zoom: 1.20, focus: 'rec',     cursor: 'rec',     click: true },
-  { id: 'recording',      dur: 2700, screen: 'rec',      zoom: 1.16, focus: 'rec',     cursor: null },
-  { id: 'processing',     dur: 1500, screen: 'proc',     zoom: 1.1,  focus: 'center',  cursor: null },
-  { id: 'result_reveal',  dur: 2600, screen: 'result',   zoom: 1.06, focus: 'diag',    cursor: null },
-  { id: 'result_alert',   dur: 2000, screen: 'result',   zoom: 1.26, focus: 'alert',   cursor: null },
-  { id: 'result_confirm', dur: 1900, screen: 'result',   zoom: 1.12, focus: 'confirm', dy: -90, cursor: 'confirm', click: true },
+  // beat 1 — patient (chronic warfarin line planted)
+  { id: 'patient',     dur: 1900, screen: 'newvisit', zoom: 1.0,  focus: 'center',  cursor: 'rest', camDur: 800, ease: GLIDE },
+  { id: 'patient_cta', dur: 1100, screen: 'newvisit', zoom: 1.30, focus: 'cta', dy: -64, cursor: 'cta', click: true, camDur: 600, ease: SNAP },
+  // beat 2 — listening (energetic, punch-in on the record cluster)
+  { id: 'rec_press',   dur: 1150, screen: 'rec', zoom: 1.16, focus: 'rec', cursor: 'rec', click: true, camDur: 500, ease: SNAP },
+  { id: 'listening',   dur: 2900, screen: 'rec', zoom: 1.36, focus: 'rec', cursor: null, camDur: 680, ease: PUNCH },
+  // beat 3 — processing (snappy, short)
+  { id: 'processing',  dur: 1150, screen: 'proc', zoom: 1.05, focus: 'center', cursor: null, camDur: 420, ease: SNAP },
+  // beat 4 — the note snaps together (confident move onto the doc)
+  { id: 'note_snap',   dur: 2900, screen: 'result', zoom: 1.04, focus: 'diag', cursor: null, camDur: 560, ease: SNAP },
+  // beat 6 — CLIMAX: the catch (pan to the safety rail, the alert SLAMS in)
+  { id: 'climax',      dur: 2800, screen: 'result', zoom: 1.34, focus: 'alert', cursor: null, camDur: 600, ease: PUNCH },
+  // beat 7 — doctor approves
+  { id: 'approve',     dur: 2200, screen: 'result', zoom: 1.18, focus: 'confirm', dy: -6, cursor: 'confirm', click: true, camDur: 620, ease: SNAP },
 ];
 
 type Pt = { fx: number; fy: number };
@@ -80,7 +98,6 @@ export default function TuberMedHeroDesktop() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<HTMLDivElement>(null);
   const ctaRef = useRef<HTMLButtonElement>(null);
-  const pcRef = useRef<HTMLDivElement>(null);
   const recRef = useRef<HTMLButtonElement>(null);
   const alertRef = useRef<HTMLDivElement>(null);
   const diagRef = useRef<HTMLDivElement>(null);
@@ -88,7 +105,7 @@ export default function TuberMedHeroDesktop() {
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const [targets, setTargets] = useState<Record<string, Pt>>({
-    cta: { fx: 565, fy: 548 }, pc: { fx: 600, fy: 360 },
+    cta: { fx: 565, fy: 548 },
     rec: { fx: 510, fy: 300 }, alert: { fx: 720, fy: 250 },
     diag: { fx: 430, fy: 150 }, confirm: { fx: 360, fy: 110 },
   });
@@ -110,7 +127,6 @@ export default function TuberMedHeroDesktop() {
     setTargets((prev) => {
       const next = { ...prev };
       const c = appCoords(ctaRef.current); if (c) next.cta = c;
-      const p = appCoords(pcRef.current); if (p) next.pc = p;
       const r = appCoords(recRef.current); if (r) next.rec = r;
       const a = appCoords(alertRef.current); if (a) next.alert = a;
       const d = appCoords(diagRef.current); if (d) next.diag = d;
@@ -123,6 +139,8 @@ export default function TuberMedHeroDesktop() {
   let focusT: Pt | null = phase.focus === 'center' ? { fx: CX, fy: CY } : targets[phase.focus];
   if (focusT && phase.dy) focusT = { fx: focusT.fx, fy: focusT.fy + phase.dy };
   const camStr = focusT ? cam(phase.zoom, focusT.fx, focusT.fy) : cam(phase.zoom);
+  const camDur = phase.camDur ?? 900;
+  const camEase = phase.ease ?? GLIDE;
   let curPos: Pt | null = null;
   if (phase.cursor === 'rest') curPos = { fx: 360, fy: 430 };
   else if (phase.cursor) curPos = targets[phase.cursor];
@@ -195,8 +213,8 @@ export default function TuberMedHeroDesktop() {
   // flip the confirm button to confirmed shortly after the click lands.
   // (reset back to false happens at loop restart in the timeline effect.)
   useEffect(() => {
-    if (phase.id !== 'result_confirm') return;
-    const t = setTimeout(() => setConfirmed(true), 850);
+    if (phase.id !== 'approve') return;
+    const t = setTimeout(() => setConfirmed(true), 900);
     return () => clearTimeout(t);
   }, [phase.id]);
 
@@ -204,8 +222,8 @@ export default function TuberMedHeroDesktop() {
     s === 'newvisit' ? 0 : s === 'proc' ? 2 : s === 'result' ? 3 : 1;
 
   // semantic flags derived from the phase (decouples screens from exact ids)
-  const recLive = phase.id === 'recording';
-  const alertShown = phase.screen === 'result' && (phase.id === 'result_alert' || phase.id === 'result_confirm');
+  const recLive = phase.id === 'listening';
+  const alertShown = phase.screen === 'result' && (phase.id === 'climax' || phase.id === 'approve');
 
   if (stat) {
     return (
@@ -232,8 +250,8 @@ export default function TuberMedHeroDesktop() {
               <div className="tmd-eu">EU · криптирано</div>
             </div>
 
-            {/* camera surface */}
-            <div className="tmd-cam" style={{ transform: camStr }}>
+            {/* camera surface — per-phase duration/easing drives the editing rhythm */}
+            <div className="tmd-cam" style={{ transform: camStr, transitionDuration: `${camDur}ms`, transitionTimingFunction: camEase }}>
               <div className="tmd-app" ref={appRef}>
                 {/* sidebar */}
                 <aside className="tmd-side">
@@ -299,24 +317,6 @@ export default function TuberMedHeroDesktop() {
                               </span>
                             </div>
                           ))}
-                        </div>
-                      </div>
-                    </Screen>
-
-                    {/* mode picker */}
-                    <Screen show={phase.screen === 'mode'}>
-                      <HeaderStrip />
-                      <div className="tmd-mode-q">Откъде да запиша прегледа?</div>
-                      <div className="tmd-modes">
-                        <div className={`tmd-modecard ${phase.id === 'mode' ? 'sel' : ''}`} ref={pcRef}>
-                          <div className="tmd-modeico"><Ico n="mic" size={22} /></div>
-                          <div className="tmd-modet">Този компютър</div>
-                          <div className="tmd-moded">Запиши директно от микрофона</div>
-                        </div>
-                        <div className="tmd-modecard">
-                          <div className="tmd-modeico"><Ico n="smartphone" size={22} /></div>
-                          <div className="tmd-modet">Телефон (QR)</div>
-                          <div className="tmd-moded">Сканирай QR и запиши от джоба</div>
                         </div>
                       </div>
                     </Screen>
@@ -405,7 +405,7 @@ export default function TuberMedHeroDesktop() {
                                 { l: 'Терапия' }, { l: 'Медикаменти' },
                                 { l: 'Издадени документи' }, { l: 'Направления', ind: true },
                               ].map((n, i) => {
-                                const on = (phase.id === 'result_reveal' ? 'Диагнози МКБ-10' : 'Медикаменти') === n.l;
+                                const on = (phase.id === 'note_snap' ? 'Диагнози МКБ-10' : 'Медикаменти') === n.l;
                                 return <div key={i} className={`tmd-rnavi ${n.ind ? 'ind' : ''} ${on ? 'on' : ''}`}>{n.l}</div>;
                               })}
                             </div>
@@ -592,7 +592,7 @@ function Stepper({ current }: { current: number }) {
 const Sec = React.forwardRef<HTMLDivElement, { i: number; title: string; icon: string; children: ReactNode }>(
   function Sec({ i, title, icon, children }, ref) {
     return (
-      <div ref={ref} className="tmd-sec" style={{ animationDelay: `${160 + i * 240}ms` }}>
+      <div ref={ref} className="tmd-sec" style={{ animationDelay: `${120 + i * 190}ms` }}>
         <div className="tmd-sechead">
           <span className="tmd-sectick" />
           <span className="tmd-secico"><Ico n={icon} size={15} /></span>
@@ -824,18 +824,6 @@ const CSS = `
 .tmd-ctxv{ font-size:12px;color:var(--muted);margin-right:8px; }
 .tmd-ctxv.warn{ color:var(--gold); }
 
-/* mode picker */
-.tmd-mode-q{ text-align:center;font-size:16px;font-weight:600;color:var(--ink);margin:18px 0 22px; }
-.tmd-modes{ display:flex;gap:18px;justify-content:center; }
-.tmd-modecard{ width:215px;background:var(--surface);border:1.5px solid var(--line);border-radius:14px;
-  padding:22px 18px;text-align:center;transition:all .3s ease; }
-.tmd-modecard.sel{ border-color:var(--steel);background:var(--tint);box-shadow:0 10px 24px -12px rgba(39,76,119,.4); transform:translateY(-3px); }
-.tmd-modeico{ width:46px;height:46px;border-radius:12px;background:var(--steel-soft);color:var(--steel);
-  display:flex;align-items:center;justify-content:center;margin:0 auto 12px; }
-.tmd-modecard.sel .tmd-modeico{ background:var(--steel);color:#fff; }
-.tmd-modet{ font-size:14.5px;font-weight:600;color:var(--ink); }
-.tmd-moded{ font-size:12px;color:var(--muted);margin-top:4px; }
-
 /* record sheet */
 .tmd-reccard{ max-width:520px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:16px;
   padding:20px 24px; box-shadow:var(--shadow-card); }
@@ -901,7 +889,7 @@ const CSS = `
 .tmd-doch{ display:flex;align-items:baseline;justify-content:space-between;margin-bottom:18px; }
 .tmd-doctitle{ font-size:21px;font-weight:600;color:var(--ink);letter-spacing:-.01em; }
 .tmd-docdate{ font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums; }
-.tmd-sec{ margin-bottom:18px; opacity:0; animation:tmd-rf .55s cubic-bezier(.2,.7,.3,1) forwards; }
+.tmd-sec{ margin-bottom:18px; opacity:0; animation:tmd-rf .42s cubic-bezier(.2,.85,.25,1) forwards; }
 .tmd-sec:last-child{ margin-bottom:0; }
 .tmd-sechead{ display:flex;align-items:center;gap:8px;min-height:22px; }
 .tmd-sectick{ width:3px;height:16px;border-radius:99px;background:var(--steel);flex:none; }
@@ -914,7 +902,8 @@ const CSS = `
 .tmd-diagrow{ display:flex;align-items:center;justify-content:space-between;padding:4px 0;font-size:13.5px;color:var(--ink2); }
 .tmd-mkb{ display:inline-block;font-size:11px;font-weight:600;font-family:var(--font-jetbrains),ui-monospace,monospace;
   font-variant-numeric:tabular-nums;letter-spacing:.5px;color:var(--steel);background:var(--steel-soft);
-  padding:2px 8px;border-radius:5px;min-width:58px;text-align:center; }
+  padding:2px 8px;border-radius:5px;min-width:58px;text-align:center;
+  animation:tmd-pop .42s cubic-bezier(.2,1.4,.35,1) .34s backwards; }
 
 /* result — right meds/safety rail */
 .tmd-rrail{ display:flex;flex-direction:column;gap:12px; }
@@ -923,8 +912,8 @@ const CSS = `
   margin-bottom:10px;display:flex;align-items:center;gap:6px; }
 .tmd-medcard-h svg{ color:var(--steel); }
 .tmd-crit{ display:flex;gap:8px;padding:9px 10px;border-radius:8px;background:var(--crit-soft);color:var(--crit);
-  margin-bottom:10px; opacity:0; animation:tmd-al .5s cubic-bezier(.2,.8,.2,1) forwards; }
-.tmd-crit-ico{ flex:none;display:inline-flex;animation:tmd-ap 1.1s ease-in-out 3; }
+  margin-bottom:10px; opacity:0; animation:tmd-slam .5s cubic-bezier(.3,1.3,.4,1) forwards; }
+.tmd-crit-ico{ flex:none;display:inline-flex;animation:tmd-ap 1s ease-in-out .35s 3; }
 .tmd-crit-badge{ font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em; }
 .tmd-crit-msg{ font-size:11.5px;margin-top:2px;line-height:1.4; }
 .tmd-crit-act{ font-size:10.5px;margin-top:5px;padding-top:4px;border-top:1px solid rgba(192,57,43,.3);opacity:.92; }
@@ -947,7 +936,8 @@ const CSS = `
 
 @keyframes tmd-spin{ to{transform:rotate(360deg)} }
 @keyframes tmd-rf{ from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-@keyframes tmd-al{ from{opacity:0;transform:translateY(12px) scale(.96)} to{opacity:1;transform:translateY(0) scale(1)} }
+@keyframes tmd-slam{ 0%{opacity:0;transform:translateY(16px) scale(.92)} 62%{opacity:1;transform:translateY(0) scale(1.03)} 100%{opacity:1;transform:translateY(0) scale(1)} }
+@keyframes tmd-pop{ 0%{transform:scale(.62)} 60%{transform:scale(1.1)} 100%{transform:scale(1)} }
 @keyframes tmd-ap{ 0%,100%{transform:scale(1)} 50%{transform:scale(1.16)} }
 @keyframes tmd-tap{ 0%,100%{transform:scale(1)} 45%{transform:scale(.8)} }
 @keyframes tmd-press{ 0%,100%{transform:scale(1)} 45%{transform:scale(.86)} }
@@ -957,6 +947,6 @@ const CSS = `
 
 @media (prefers-reduced-motion: reduce) {
   .tmd-cam, .tmd-cursor { transition: none !important; }
-  .tmd-sec, .tmd-crit, .tmd-ring, .tmd-recdot { animation: none !important; opacity: 1 !important; }
+  .tmd-sec, .tmd-crit, .tmd-crit-ico, .tmd-mkb, .tmd-ring, .tmd-recdot { animation: none !important; opacity: 1 !important; }
 }
 `;
