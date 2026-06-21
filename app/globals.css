@@ -390,6 +390,15 @@ html, body {
   to   { opacity: 1; transform: none; }
 }
 
+/* Shared keyboard focus ring for workspace buttons (calm-clinical a11y).
+   focus-visible only → mouse clicks stay ring-free; the navy outline + offset
+   reads on white sheets and on the navy/red record control. Unlayered so it
+   wins over Tailwind utilities. */
+.focus-ring:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 /* ── Result page 3-column grid ─────────────────────────────── */
 
 .result-grid {

@@ -169,7 +169,7 @@ export default function EditableField({
         title="Кликни за редакция"
         className="px-3 py-2 rounded-md cursor-text leading-relaxed text-base hover:bg-[var(--color-brand-light)] transition-colors whitespace-pre-wrap"
         style={{
-          color: hasContent ? 'var(--color-text)' : 'var(--color-text-hint)',
+          color: hasContent ? 'var(--color-text)' : 'var(--color-text-muted)',
           minHeight: '38px',
         }}
       >

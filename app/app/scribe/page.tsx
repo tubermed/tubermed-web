@@ -392,7 +392,7 @@ function ErrorBanner({
       <div className="text-sm">{message}</div>
       <button
         onClick={onClose}
-        className="text-lg font-bold leading-none"
+        className="text-lg font-bold leading-none focus-ring rounded"
         aria-label="Затвори"
       >
         ×

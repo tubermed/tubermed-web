@@ -1249,7 +1249,7 @@ function ResultPageInner() {
           <div className="sticky top-[88px]">
             <div
               className="text-xs uppercase tracking-wider mb-3 font-medium"
-              style={{ color: 'var(--color-text-hint)' }}
+              style={{ color: 'var(--color-text-muted)' }}
             >
               Раздели
             </div>
@@ -1289,7 +1289,7 @@ function ResultPageInner() {
             >
               <div
                 className="text-xs uppercase tracking-wider mb-2 font-medium"
-                style={{ color: 'var(--color-text-hint)' }}
+                style={{ color: 'var(--color-text-muted)' }}
               >
                 Шаблон
               </div>
@@ -1561,7 +1561,7 @@ function ResultPageInner() {
               <div
                 className="text-xs px-3 py-2 rounded no-print"
                 style={{
-                  color: 'var(--color-text-hint)',
+                  color: 'var(--color-text-muted)',
                   background: 'var(--color-bg-card)',
                   borderColor: 'var(--color-border)',
                   borderWidth: 1,
@@ -1624,7 +1624,7 @@ function ResultPageInner() {
             >
               <div
                 className="text-xs uppercase tracking-wider mb-3 font-medium"
-                style={{ color: 'var(--color-text-hint)' }}
+                style={{ color: 'var(--color-text-muted)' }}
               >
                 Действия
               </div>
@@ -1908,7 +1908,7 @@ function SourceButton({
           : 'Покажи мястото в транскрипта, от което идва това поле'
       }
       className="no-print flex-shrink-0 text-xs underline decoration-dotted underline-offset-2 transition hover:opacity-80 disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
-      style={{ color: 'var(--color-text-hint)', background: 'transparent' }}
+      style={{ color: 'var(--color-text-muted)', background: 'transparent' }}
     >
       виж източника
     </button>
@@ -1931,7 +1931,7 @@ function TranscriptBody({
 }) {
   if (!transcript) {
     return (
-      <em style={{ color: 'var(--color-text-hint)' }}>Транскриптът е празен.</em>
+      <em style={{ color: 'var(--color-text-muted)' }}>Транскриптът е празен.</em>
     );
   }
   if (!span || span.tokens.length === 0) return <>{transcript}</>;
@@ -1949,7 +1949,7 @@ function TranscriptBody({
   ranges.forEach((r, i) => {
     if (r.start > cursor) {
       out.push(
-        <span key={`g${cursor}`} style={{ color: 'var(--color-text-hint)' }}>
+        <span key={`g${cursor}`} style={{ color: 'var(--color-text-muted)' }}>
           {transcript.slice(cursor, r.start)}
         </span>
       );
@@ -1975,7 +1975,7 @@ function TranscriptBody({
   });
   if (cursor < transcript.length) {
     out.push(
-      <span key={`g${cursor}`} style={{ color: 'var(--color-text-hint)' }}>
+      <span key={`g${cursor}`} style={{ color: 'var(--color-text-muted)' }}>
         {transcript.slice(cursor)}
       </span>
     );
@@ -2105,7 +2105,7 @@ function DiagnosesSection({
         <div className="flex items-center justify-between gap-2 mb-2">
           <div
             className="text-xs uppercase tracking-wider font-medium"
-            style={{ color: 'var(--color-text-hint)' }}
+            style={{ color: 'var(--color-text-muted)' }}
           >
             Основна диагноза
           </div>
@@ -2130,12 +2130,12 @@ function DiagnosesSection({
           )}
         </div>
         {showCue && (
-          <div className="mt-1.5 text-xs px-1" style={{ color: 'var(--color-text-hint)' }}>
+          <div className="mt-1.5 text-xs px-1" style={{ color: 'var(--color-text-muted)' }}>
             доктор каза: {originalSpoken}
           </div>
         )}
         {!needsReview && termSource === 'parent' && osnovnaMkbTerm && (
-          <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--color-text-hint)' }}>
+          <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--color-text-muted)' }}>
             категория по МКБ-10 (3-знача рубрика)
           </div>
         )}
@@ -2157,7 +2157,7 @@ function DiagnosesSection({
 
       <div
         className="text-xs uppercase tracking-wider mb-3 font-medium flex items-center justify-between"
-        style={{ color: 'var(--color-text-hint)' }}
+        style={{ color: 'var(--color-text-muted)' }}
       >
         <span>Придружаващи заболявания{atMaxComorbidities ? ' · макс 4' : ''}</span>
         <button
@@ -2183,7 +2183,7 @@ function DiagnosesSection({
           />
         ))}
         {pridruzhavashti.length === 0 && (
-          <div className="text-sm px-3 py-1" style={{ color: 'var(--color-text-hint)' }}>
+          <div className="text-sm px-3 py-1" style={{ color: 'var(--color-text-muted)' }}>
             Няма придружаващи заболявания.
           </div>
         )}

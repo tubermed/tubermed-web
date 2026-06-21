@@ -42,7 +42,7 @@ export function Button({
   return (
     <button
       type={type ?? 'button'}
-      className={`${VARIANT_CLASS[variant]} ${className}`.trim()}
+      className={`${VARIANT_CLASS[variant]} focus-ring ${className}`.trim()}
       style={{ ...VARIANT_STYLE[variant], ...style }}
       {...rest}
     >
