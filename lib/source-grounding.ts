@@ -360,11 +360,25 @@ export function findSourceSpan(
   if (isVitalsField(fieldKey)) {
     const vitalRanges = groundVitalRanges(value, tt);
     if (vitalRanges.length > 0) {
-      return {
-        start: vitalRanges[0].start,
-        end: vitalRanges[vitalRanges.length - 1].end,
-        tokens: vitalRanges,
-      };
+      // Partial-match honesty: also light the grounded PROSE — any ≥2-needle text
+      // phrase like "очистено дишането" — so every word that grounded is shown and
+      // the rest is greyed, instead of only the numbers. Unsourced field clauses
+      // (the injected "не е измерено", a fabricated "везикуларно") have no
+      // transcript match and stay unlit — the fabrication is never blended into a
+      // confident-looking source.
+      const ranges = [...vitalRanges];
+      for (const c of clusters) {
+        if (distinctOf(c) < 2) continue;
+        for (const i of c) ranges.push({ start: tt[i].start, end: tt[i].end });
+      }
+      ranges.sort((a, b) => a.start - b.start);
+      const tokens: { start: number; end: number }[] = [];
+      for (const r of ranges) {
+        const last = tokens[tokens.length - 1];
+        if (last && r.start <= last.end) last.end = Math.max(last.end, r.end);
+        else tokens.push({ ...r });
+      }
+      return { start: tokens[0].start, end: tokens[tokens.length - 1].end, tokens };
     }
   }
 

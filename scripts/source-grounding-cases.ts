@@ -206,5 +206,24 @@ assert(rejects('terapia', 'RR: 130/89', 'Кръвно налягане 130 на 
   assert(s !== null && s.includes('78'), 'vitals: pulse 78 grounds near "пулс/удара" cue');
 }
 
+console.log('\n— PART 7: partial-match honesty (highlight grounded words, grey the rest) —');
+// A partially-grounded vitals section must light EVERY word that grounded — the
+// vital numbers AND any grounded prose ("очистено дишането") — not just the
+// numbers, and never the unsourced clauses. The injected "не е измерено" and the
+// fabricated "везикуларно" have no transcript source, so they can never appear as
+// a highlighted token (they stay greyed in the field; the model's fabrication is
+// not blended into a confident-looking source).
+{
+  const r = findSourceSpan('obektivno', VITALS_FIELD, VITALS_TRANSCRIPT);
+  const toks = r ? r.tokens.map((x) => VITALS_TRANSCRIPT.slice(x.start, x.end)) : [];
+  const joined = toks.join(' | ');
+  assert(toks.some((x) => x.includes('130') && x.includes('89')), 'U3: BP pair 130/89 is a highlighted token');
+  assert(toks.some((x) => x.includes('16')), 'U3: ДЧ 16 is a highlighted token');
+  assert(toks.some((x) => x.includes('очистено')) && toks.some((x) => x.includes('дишането')),
+    'U3: grounded prose (очистено дишането) ALSO highlighted, not just the numbers');
+  assert(!joined.includes('везикуларно') && !joined.includes('измерено'),
+    'U3: unsourced clauses (везикуларно / не е измерено) never appear as a highlighted source');
+}
+
 console.log(`\n${passed + failed} assertions: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
