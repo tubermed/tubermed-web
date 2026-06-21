@@ -106,12 +106,14 @@ export default function TuberMedHeroDesktop() {
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<HTMLDivElement>(null);
-  const ctaRef = useRef<HTMLButtonElement>(null);
-  const recRef = useRef<HTMLButtonElement>(null);
+  // these refs sit on non-interactive (div/span) elements — the mock is a
+  // decorative film, so nothing inside is a real focusable control (a11y)
+  const ctaRef = useRef<HTMLDivElement>(null);
+  const recRef = useRef<HTMLDivElement>(null);
   const alertRef = useRef<HTMLDivElement>(null);
   const diagRef = useRef<HTMLDivElement>(null);
-  const groundRef = useRef<HTMLButtonElement>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
+  const groundRef = useRef<HTMLSpanElement>(null);
+  const confirmRef = useRef<HTMLDivElement>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const [targets, setTargets] = useState<Record<string, Pt>>({
@@ -251,10 +253,14 @@ export default function TuberMedHeroDesktop() {
   }
 
   return (
-    <div className={`tmd-stage ${golosText.variable} ${interTight.variable}`}>
+    <div
+      className={`tmd-stage ${golosText.variable} ${interTight.variable}`}
+      role="img"
+      aria-label="Демонстрация на TuberMed: записан преглед се превръща в готов амбулаторен лист — диагноза по МКБ-10 (Лумбаго M54.5), критично предупреждение за взаимодействие варфарин × НСПВС, одобрено от лекаря и готово за експорт."
+    >
       <style>{CSS}</style>
 
-      <div className="tmd-wrap" ref={wrapRef}>
+      <div className="tmd-wrap" ref={wrapRef} aria-hidden="true">
         <div className="tmd-fit" style={{ transform: `scale(${fit})`, height: APP_H * fit }}>
           <div className="tmd-frame">
             {/* browser chrome */}
@@ -313,7 +319,7 @@ export default function TuberMedHeroDesktop() {
                           <FormBlock label="Главна жалба">
                             <div className="tmd-cc">Болки в кръста от 3 дни, без травма.</div>
                           </FormBlock>
-                          <button className="tmd-cta" ref={ctaRef}>Започни запис <span>→</span></button>
+                          <div className="tmd-cta" ref={ctaRef}>Започни запис <span>→</span></div>
                         </div>
                         <div className="tmd-rail">
                           <div className="tmd-rail-h">Днешен ден</div>
@@ -352,10 +358,9 @@ export default function TuberMedHeroDesktop() {
                         <div className="tmd-rec">
                           <div className="tmd-recstage">
                             {recLive && <><span className="tmd-ring r1" /><span className="tmd-ring r2" /></>}
-                            <button
+                            <div
                               ref={recRef}
-                              aria-label={recLive ? 'Стоп запис' : 'Започни запис'}
-                              className={`tmd-recbtn ${recLive ? 'live' : ''} ${phase.id === 'record_press' ? 'press' : ''}`}
+                              className={`tmd-recbtn ${recLive ? 'live' : ''} ${phase.id === 'rec_press' ? 'press' : ''}`}
                             >
                               {recLive ? (
                                 <svg viewBox="0 0 24 24" width="28" height="28" fill="#fff" aria-hidden="true">
@@ -366,7 +371,7 @@ export default function TuberMedHeroDesktop() {
                                   <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm6-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
                                 </svg>
                               )}
-                            </button>
+                            </div>
                           </div>
                           <div className={`tmd-timer ${recLive ? 'on' : ''}`}>
                             {recLive ? '00:03' : '00:00'}
@@ -400,10 +405,10 @@ export default function TuberMedHeroDesktop() {
                         <div className="tmd-result">
                           {/* top action bar — StatusBadge (locked → confirmed) + exports */}
                           <div className="tmd-actionbar">
-                            <button ref={confirmRef} className={`tmd-statusbadge ${confirmed ? 'ok' : ''}`}>
+                            <div ref={confirmRef} className={`tmd-statusbadge ${confirmed ? 'ok' : ''}`}>
                               <Ico n={confirmed ? 'check' : 'lock'} size={13} />
                               {confirmed ? 'Потвърдено от лекар' : 'Вярно! Потвърждавам прегледа'}
-                            </button>
+                            </div>
                             {confirmed && <span className="tmd-handoff">→ НЗИС · в практиката</span>}
                             <div className={`tmd-exports ${confirmed ? 'on' : ''}`}>
                               <span className="tmd-expbtn"><Ico n={confirmed ? 'download' : 'lock'} size={12} /> PDF</span>
@@ -445,9 +450,9 @@ export default function TuberMedHeroDesktop() {
                                 title="Анамнеза"
                                 icon="file-text"
                                 action={
-                                  <button ref={groundRef} className={`tmd-srcbtn ${groundingShown ? 'on' : ''}`}>
+                                  <span ref={groundRef} className={`tmd-srcbtn ${groundingShown ? 'on' : ''}`}>
                                     <Ico n="search" size={11} /> виж източника
-                                  </button>
+                                  </span>
                                 }
                               >
                                 <div>Болки в лумбалната област от 3 дни, без травма. Хронична антикоагулантна терапия с варфарин.</div>
@@ -542,38 +547,58 @@ export default function TuberMedHeroDesktop() {
   );
 }
 
-/* ---------- static end-frame (mobile + reduced-motion) ---------- */
+/* ---------- static end-frame (mobile + reduced-motion) ----------
+   The annotated final frame: a confirmed Амбулаторен лист in the calm-clinical
+   house style (NoteSection-style heads, blue mono МКБ chip) + the critical
+   warfarin × NSAID catch — the two things the film must land, held still. */
+const MKB_CHIP: React.CSSProperties = {
+  fontFamily: 'var(--font-jetbrains),ui-monospace,monospace', fontVariantNumeric: 'tabular-nums',
+  fontSize: 11, fontWeight: 600, color: '#274C77', background: '#E1E9F3',
+  padding: '2px 8px', borderRadius: 5, minWidth: 58, textAlign: 'center', flex: 'none',
+};
+function SecStatic({ icon, title, children }: { icon: string; title: string; children: ReactNode }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2" style={{ minHeight: 20 }}>
+        <span style={{ width: 3, height: 15, borderRadius: 99, background: '#274C77', flex: 'none' }} />
+        <span style={{ color: '#274C77', display: 'inline-flex' }}><Ico n={icon} size={14} /></span>
+        <span className="text-[13px] font-semibold uppercase tracking-wider" style={{ color: '#274C77' }}>{title}</span>
+      </div>
+      <div style={{ borderBottom: '1px solid #E7ECF2', margin: '7px 0 8px' }} />
+      <div className="text-sm" style={{ color: '#1C2733', lineHeight: 1.5 }}>{children}</div>
+    </div>
+  );
+}
 function HeroStaticNote() {
-  const rows: [string, string][] = [
-    ['Диагноза · МКБ-10', 'Лумбаго · M54.5'],
-    ['Обективно състояние', 'RR: 138/88 mmHg · ЧСС: 76 уд/мин'],
-    ['Медикаменти', 'Диклофенак гел · Парацетамол 500 mg'],
-  ];
   return (
     <div
       role="img"
-      aria-label="Готов амбулаторен лист с критично предупреждение за взаимодействие варфарин × НСПВС."
-      className="mx-auto w-full max-w-md rounded-2xl bg-white p-5"
-      style={{ border: '1px solid var(--lp-border)', boxShadow: '0 24px 50px -28px rgba(20,39,64,.35)' }}
+      aria-label="Готов и потвърден амбулаторен лист: диагноза Лумбаго (М54.5), обективен статус и медикаменти, с критично предупреждение за взаимодействие варфарин × НСПВС — повишен риск от кървене."
+      className="mx-auto w-full max-w-md rounded-2xl bg-white p-6"
+      style={{ border: '1px solid #DCE1E8', boxShadow: '0 24px 50px -28px rgba(20,39,64,.35)' }}
     >
-      <div className="flex items-center justify-between" aria-hidden="true">
-        <span className="text-xs font-bold uppercase tracking-wide" style={{ color: '#274C77' }}>
+      <div className="flex items-center justify-between mb-5" aria-hidden="true">
+        <span style={{ fontSize: 20, fontWeight: 600, color: '#142740', letterSpacing: '-0.01em' }}>
           Амбулаторен лист
         </span>
-        <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold" style={{ background: '#E3F0EA', color: '#1B6B46' }}>
+        <span className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold" style={{ background: '#E3F0EA', color: '#1B6B46' }}>
           <Ico n="check" size={12} /> Потвърдено
         </span>
       </div>
-      <dl className="mt-4 space-y-3" aria-hidden="true">
-        {rows.map(([k, v]) => (
-          <div key={k}>
-            <dt className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#274C77' }}>{k}</dt>
-            <dd className="mt-0.5 text-sm" style={{ color: '#1C2733' }}>{v}</dd>
-          </div>
-        ))}
-      </dl>
-      <div className="mt-4 flex gap-3 rounded-[var(--lp-radius)] p-3.5" style={{ background: '#F6E4E1', border: '1px solid #C0392B' }} aria-hidden="true">
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center" style={{ color: '#C0392B' }}><Ico n="alert-octagon" size={18} /></span>
+      <div className="space-y-5" aria-hidden="true">
+        <SecStatic icon="clipboard" title="Диагнози · МКБ-10">
+          <div className="flex items-center justify-between"><span>Лумбаго</span><span style={MKB_CHIP}>M54.5</span></div>
+          <div className="flex items-center justify-between" style={{ marginTop: 6 }}><span>Предсърдно мъждене</span><span style={MKB_CHIP}>I48.9</span></div>
+        </SecStatic>
+        <SecStatic icon="stethoscope" title="Обективно състояние">
+          <span style={{ fontVariantNumeric: 'tabular-nums' }}>RR: 138/88 mmHg · ЧСС: 76 уд/мин · t°: 36.6°C</span>
+        </SecStatic>
+        <SecStatic icon="pill" title="Медикаменти">
+          Диклофенак гел · Парацетамол 500 mg
+        </SecStatic>
+      </div>
+      <div className="mt-5 flex gap-3 rounded-lg p-3.5" style={{ background: '#F6E4E1', border: '1px solid #C0392B' }} aria-hidden="true">
+        <span className="shrink-0" style={{ color: '#C0392B' }}><Ico n="alert-octagon" size={18} /></span>
         <div>
           <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: '#C0392B' }}>Внимание · лекарствено взаимодействие</div>
           <div className="mt-1 text-sm" style={{ color: '#1C2733' }}>
