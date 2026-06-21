@@ -10,7 +10,7 @@ import ChipInput from './ChipInput';
 import MkbPicker from './MkbPicker';
 import PatientResultRow from './PatientResultRow';
 import PatientLoadConfirmModal from './PatientLoadConfirmModal';
-import { SectionCard } from './ui/Card';
+import { NoteSectionHead } from './ui/NoteSection';
 import { FieldLabel } from './ui/Field';
 import { Button } from './ui/Button';
 import DateInputBg from './ui/DateInputBg';
@@ -242,12 +242,11 @@ export default function PatientForm({
       <DocumentationSection state={state} set={set} />
 
       <div
-        className="nv-card-enter flex items-center justify-between gap-3 px-5 py-4"
+        className="nv-card-enter flex items-center justify-between gap-3 px-5 py-4 rounded-2xl border"
         style={{
           background: 'var(--color-bg-surface)',
-          border: '1px solid var(--color-border-soft)',
-          borderRadius: 'var(--radius-lg)',
-          boxShadow: 'var(--shadow-raised)',
+          borderColor: 'var(--color-border)',
+          boxShadow: 'var(--shadow-card)',
         }}
       >
         <Button
@@ -277,21 +276,33 @@ export default function PatientForm({
 // ── Section: Идентификация ──────────────────────────────────────────────────
 type SetFn = <K extends keyof PatientFormState>(key: K, value: PatientFormState[K]) => void;
 
-// Section icons — small Tabler-style glyphs shown white inside the 32px navy
-// header tile. Inline SVG (no new deps); presentational only.
-function SvgIcon({ children }: { children: React.ReactNode }) {
+// Calm-clinical form group — replaces the elevated tinted-header SectionCard
+// (no navy icon tile, no #8893A1 subtitle). One hairline sheet (whisper shadow)
+// headed by NoteSectionHead (tick + UPPERCASE navy label + hairline), matching
+// the result/scribe house style. KEEPS the .nv-card-enter entrance + per-card
+// stacking context the in-card name dropdown / DOB popover depend on, and passes
+// `data-tour` straight through (the SpotlightTour "egn" anchor). overflow stays
+// visible (default) so an absolutely-positioned dropdown inside is never clipped.
+function FormSection({
+  title,
+  children,
+  dataTour,
+}: {
+  title: string;
+  children: React.ReactNode;
+  dataTour?: string;
+}) {
   return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-         strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <section
+      className="nv-card-enter bg-white rounded-2xl border p-6 sm:p-8"
+      data-tour={dataTour}
+      style={{ borderColor: 'var(--color-border)', boxShadow: 'var(--shadow-card)' }}
+    >
+      <NoteSectionHead title={title} />
       {children}
-    </svg>
+    </section>
   );
 }
-function IconIdentity()  { return <SvgIcon><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="8.5" cy="11" r="2" /><path d="M5.5 16.4a3 3 0 016 0" /><path d="M14 10h4M14 13.5h4" /></SvgIcon>; }
-function IconClinical()  { return <SvgIcon><path d="M3 12h3.5l2-5 4 10 2-5H21" /></SvgIcon>; }
-function IconVisit()     { return <SvgIcon><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2.5v3M16 2.5v3" /><path d="M8.5 14.5l2.2 2.2 4.3-4.3" /></SvgIcon>; }
-function IconComplaint() { return <SvgIcon><path d="M20 11.5a7.5 7.5 0 01-10.7 6.8L4 20l1.7-5.2A7.5 7.5 0 1120 11.5z" /></SvgIcon>; }
-function IconDoc()       { return <SvgIcon><path d="M14 3v5h5" /><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V8z" /><path d="M8.5 13h7M8.5 17h5" /></SvgIcon>; }
 
 // Shared field treatment. The visual styling (navy 1.5px outline, --control-h,
 // hover/focus ring, aria-invalid state) lives in `.nv-field` (globals.css) so the
@@ -427,7 +438,7 @@ function IdentificationSection({
 
   return (
     <>
-    <SectionCard title="Идентификация" subtitle="ЕГН, имена и основни данни" icon={<IconIdentity />} dataTour="egn">
+    <FormSection title="Идентификация" dataTour="egn">
       {/* Loaded-patient banner + clear control. The search bar that used to host
           the patient chip is gone; clearing here returns the form to the empty
           NEW-patient state (page resets dirty state in the same pass). */}
@@ -443,7 +454,7 @@ function IdentificationSection({
           <button
             type="button"
             onClick={onClearSelection}
-            className="text-xs px-2 py-1 rounded-md flex-shrink-0 hover:underline underline-offset-2"
+            className="text-xs px-2 py-1 rounded-md flex-shrink-0 hover:underline underline-offset-2 focus-ring"
             style={{ color: 'var(--color-brand)' }}
             aria-label="Изчисти избрания пациент"
           >
@@ -569,7 +580,7 @@ function IdentificationSection({
           )}
         </label>
       </div>
-    </SectionCard>
+    </FormSection>
 
     {/* Confirm-before-load — NAME typeahead pick only. The full-ЕГН auto-match
         (EgnField) loads directly with no confirm. */}
@@ -723,7 +734,7 @@ function EgnField({
 function ClinicalContextSection({ state, set }: { state: PatientFormState; set: SetFn }) {
   const [mkbOpen, setMkbOpen] = useState(false);
   return (
-    <SectionCard title="Клиничен контекст" subtitle="Осигуряване, алергии, хронични състояния" icon={<IconClinical />}>
+    <FormSection title="Клиничен контекст">
       <div className="flex flex-col gap-4">
         <label className="md:max-w-sm">
           <FieldLabel>Здравно осигуряване</FieldLabel>
@@ -755,7 +766,7 @@ function ClinicalContextSection({ state, set }: { state: PatientFormState; set: 
               <button
                 type="button"
                 onClick={() => setMkbOpen(true)}
-                className="text-xs px-2 py-1 rounded-md"
+                className="text-xs px-2 py-1 rounded-md focus-ring"
                 style={{ color: 'var(--color-brand)', border: '1px solid var(--color-brand)' }}
               >
                 + Избери от МКБ-10
@@ -777,7 +788,7 @@ function ClinicalContextSection({ state, set }: { state: PatientFormState; set: 
         }}
         title="Избор на хронично състояние"
       />
-    </SectionCard>
+    </FormSection>
   );
 }
 
@@ -792,7 +803,7 @@ const VISIT_TYPES: Array<{ value: VisitType; label: string }> = [
 
 function VisitTypeSection({ state, set }: { state: PatientFormState; set: SetFn }) {
   return (
-    <SectionCard title="Тип на посещението" subtitle="Характер на прегледа" icon={<IconVisit />}>
+    <FormSection title="Тип на посещението">
       <div className="flex flex-wrap gap-2">
         {VISIT_TYPES.map((t) => {
           const isActive = state.visit_type === t.value;
@@ -801,7 +812,7 @@ function VisitTypeSection({ state, set }: { state: PatientFormState; set: SetFn 
               key={t.value}
               type="button"
               onClick={() => set('visit_type', isActive ? '' : t.value)}
-              className="px-4 py-2 rounded-full text-sm font-medium transition"
+              className="px-4 py-2 rounded-full text-sm font-medium transition focus-ring"
               style={{
                 background:  isActive ? 'var(--color-brand)' : 'transparent',
                 color:       isActive ? 'white' : 'var(--color-text-muted)',
@@ -813,14 +824,14 @@ function VisitTypeSection({ state, set }: { state: PatientFormState; set: SetFn 
           );
         })}
       </div>
-    </SectionCard>
+    </FormSection>
   );
 }
 
 // ── Section: Главна жалба ───────────────────────────────────────────────────
 function ChiefComplaintSection({ state, set }: { state: PatientFormState; set: SetFn }) {
   return (
-    <SectionCard title="Главна жалба" subtitle="Накратко защо идва пациентът" icon={<IconComplaint />}>
+    <FormSection title="Главна жалба">
       <textarea
         className={`${inputClass()} nv-field--area leading-relaxed`}
         value={state.chief_complaint}
@@ -828,17 +839,17 @@ function ChiefComplaintSection({ state, set }: { state: PatientFormState; set: S
         placeholder="напр. Болки в гърдите от 2 дни, задух при усилие…"
         maxLength={1000}
       />
-      <div className="text-[10px] mt-1 text-right" style={{ color: 'var(--color-text-hint)' }}>
+      <div className="text-[10px] mt-1 text-right" style={{ color: 'var(--color-text-muted)' }}>
         {state.chief_complaint.length} / 1000
       </div>
-    </SectionCard>
+    </FormSection>
   );
 }
 
 // ── Section: Документация ───────────────────────────────────────────────────
 function DocumentationSection({ state, set }: { state: PatientFormState; set: SetFn }) {
   return (
-    <SectionCard title="Документация" subtitle="Език на документа" icon={<IconDoc />}>
+    <FormSection title="Документация">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <label>
           <FieldLabel>Език</FieldLabel>
@@ -850,6 +861,6 @@ function DocumentationSection({ state, set }: { state: PatientFormState; set: Se
           </select>
         </label>
       </div>
-    </SectionCard>
+    </FormSection>
   );
 }
