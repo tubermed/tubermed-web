@@ -93,14 +93,14 @@ function ContextField({ label, items, emptyLabel }: { label: string; items: stri
     <div className="flex items-baseline gap-2 min-w-0">
       <span
         className="text-[10px] uppercase tracking-[0.18em] font-semibold flex-shrink-0"
-        style={{ color: 'var(--color-text-hint)' }}
+        style={{ color: 'var(--color-text-muted)' }}
       >
         {label}
       </span>
       <span
         className="truncate"
         style={{
-          color: empty ? 'var(--color-text-hint)' : 'var(--color-text-muted)',
+          color: empty ? 'var(--color-text-muted)' : 'var(--color-text-muted)',
         }}
       >
         {empty ? emptyLabel : items.join(', ')}

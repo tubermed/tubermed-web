@@ -86,7 +86,7 @@ export default function TodayConsultations({ refreshKey, currentConsultationId }
         )}
       </div>
 
-      <div className="px-4 pt-3 text-[10px] uppercase tracking-[0.22em]" style={{ color: 'var(--color-text-hint)' }}>
+      <div className="px-4 pt-3 text-[10px] uppercase tracking-[0.22em]" style={{ color: 'var(--color-text-muted)' }}>
         Днешен ден
       </div>
 

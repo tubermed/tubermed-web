@@ -57,7 +57,7 @@ export default function Stepper({ steps, current }: StepperProps) {
                     ? 'white'
                     : isDone
                     ? 'white'
-                    : 'var(--color-text-hint)',
+                    : 'var(--color-text-muted)',
                 }}
               >
                 {isDone ? (
@@ -88,7 +88,7 @@ export default function Stepper({ steps, current }: StepperProps) {
                     style={{
                       color: isActive
                         ? 'rgba(255,255,255,0.7)'
-                        : 'var(--color-text-hint)',
+                        : 'var(--color-text-muted)',
                     }}
                   >
                     {step.sublabel}

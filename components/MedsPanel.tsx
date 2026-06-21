@@ -129,7 +129,7 @@ export default function MedsPanel({
         <div className="flex items-center justify-between mb-3">
           <div
             className="text-xs uppercase tracking-wider font-medium"
-            style={{ color: 'var(--color-text-hint)' }}
+            style={{ color: 'var(--color-text-muted)' }}
           >
             Медикаменти
           </div>
@@ -181,7 +181,7 @@ export default function MedsPanel({
         {meds.length === 0 && (
           <div
             className="text-xs py-2 mb-2"
-            style={{ color: 'var(--color-text-hint)' }}
+            style={{ color: 'var(--color-text-muted)' }}
           >
             AI не откри медикаменти.
           </div>

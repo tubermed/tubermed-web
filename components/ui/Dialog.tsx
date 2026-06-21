@@ -135,7 +135,7 @@ export function Dialog({
             <RadixDialog.Close
               aria-label="Затвори"
               className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-[var(--color-bg)]"
-              style={{ color: 'var(--color-text-hint)' }}
+              style={{ color: 'var(--color-text-muted)' }}
             >
               <Icon name="x" />
             </RadixDialog.Close>

@@ -173,13 +173,13 @@ export default function MkbTypeahead({
               {code || '—'}
             </span>
             <span className="text-base flex-1 min-w-0" style={{ color: 'var(--color-ink)' }}>
-              {term || <span style={{ color: 'var(--color-text-hint)' }}>Изберете диагноза</span>}
+              {term || <span style={{ color: 'var(--color-text-muted)' }}>Изберете диагноза</span>}
             </span>
           </>
         ) : (
-          <span className="text-base" style={{ color: 'var(--color-text-hint)' }}>{placeholder}</span>
+          <span className="text-base" style={{ color: 'var(--color-text-muted)' }}>{placeholder}</span>
         )}
-        <Icon name="pencil" className="flex-shrink-0" style={{ color: 'var(--color-text-hint)' }} />
+        <Icon name="pencil" className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
       </button>
       {onBrowse && (
         <button
@@ -202,7 +202,7 @@ export default function MkbTypeahead({
           aria-label="Премахни"
           title="Премахни"
           className="w-8 h-8 flex items-center justify-center rounded transition flex-shrink-0 hover:bg-[var(--color-red-soft)] disabled:opacity-40"
-          style={{ color: 'var(--color-text-hint)' }}
+          style={{ color: 'var(--color-text-muted)' }}
         >
           <Icon name="x" />
         </button>

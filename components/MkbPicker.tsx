@@ -143,7 +143,7 @@ export default function MkbPicker({
             {data && !chapterIdx && !query.trim() && (
               <div
                 className="text-xs mt-0.5"
-                style={{ color: 'var(--color-text-hint)' }}
+                style={{ color: 'var(--color-text-muted)' }}
               >
                 {data.length.toLocaleString('bg-BG')} кода · 22 глави
               </div>
@@ -246,7 +246,7 @@ function LoadingView() {
       </div>
       <div
         className="text-xs mt-2"
-        style={{ color: 'var(--color-text-hint)' }}
+        style={{ color: 'var(--color-text-muted)' }}
       >
         ~1 MB, кешира се след първото зареждане
       </div>
@@ -271,7 +271,7 @@ function ErrorView({
         {message && (
           <div
             className="text-xs mt-1 font-[family-name:var(--font-jetbrains)]"
-            style={{ color: 'var(--color-text-hint)' }}
+            style={{ color: 'var(--color-text-muted)' }}
           >
             {message}
           </div>
@@ -311,7 +311,7 @@ function PinnedSection({
         <span className="inline-flex items-center gap-1"><Icon name="star-filled" size={12} /> Закачени</span>
         <span
           className="text-[10px] font-normal"
-          style={{ color: 'var(--color-text-hint)' }}
+          style={{ color: 'var(--color-text-muted)' }}
         >
           ({rows.length})
         </span>
@@ -451,7 +451,7 @@ function RowItem({
         title={pinned ? 'Откачи от любими' : 'Закачи в любими'}
         className="w-7 h-7 flex items-center justify-center rounded transition flex-shrink-0 hover:bg-[var(--color-brand-soft)]"
         style={{
-          color: pinned ? 'var(--color-gold)' : 'var(--color-text-hint)',
+          color: pinned ? 'var(--color-gold)' : 'var(--color-text-muted)',
           opacity: pinned ? 1 : 0,
         }}
         onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}

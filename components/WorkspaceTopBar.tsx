@@ -40,7 +40,7 @@ export default function WorkspaceTopBar({
             return (
               <span key={i} className="flex items-center gap-2 min-w-0">
                 {i > 0 && (
-                  <span style={{ color: 'var(--color-text-hint)' }} aria-hidden>›</span>
+                  <span style={{ color: 'var(--color-text-muted)' }} aria-hidden>›</span>
                 )}
                 <span
                   className={last ? 'font-medium' : ''}
@@ -96,7 +96,7 @@ function PlaceholderIcon({ children, title }: { children: React.ReactNode; title
     <div
       aria-hidden
       className="w-8 h-8 rounded-md flex items-center justify-center"
-      style={{ color: 'var(--color-text-hint)', opacity: 0.6, cursor: 'default' }}
+      style={{ color: 'var(--color-text-muted)', opacity: 0.6, cursor: 'default' }}
       title={title}
     >
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">

@@ -267,7 +267,7 @@ export default function PatientSummaryModal({
             onClick={handleClose}
             aria-label="Затвори"
             className="w-8 h-8 rounded-md flex items-center justify-center text-lg transition hover:bg-[var(--color-bg)]"
-            style={{ color: 'var(--color-text-hint)' }}
+            style={{ color: 'var(--color-text-muted)' }}
           >
             ×
           </button>
@@ -330,7 +330,7 @@ export default function PatientSummaryModal({
               )}
               <label
                 className="text-xs font-medium"
-                style={{ color: 'var(--color-text-hint)' }}
+                style={{ color: 'var(--color-text-muted)' }}
               >
                 Текст за пациента — можете да редактирате преди печат/копиране
               </label>
@@ -348,13 +348,13 @@ export default function PatientSummaryModal({
               />
               {edited && (
                 <>
-                  <p className="text-xs" style={{ color: 'var(--color-text-hint)' }}>
+                  <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                     Редакциите са временни — не се записват на сървъра.
                   </p>
                   <button
                     onClick={() => setDraft(originalBody)}
                     className="self-start text-xs underline"
-                    style={{ color: 'var(--color-text-hint)' }}
+                    style={{ color: 'var(--color-text-muted)' }}
                   >
                     Възстанови генерирания текст
                   </button>

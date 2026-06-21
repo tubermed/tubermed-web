@@ -176,7 +176,7 @@ export default function MedsPicker({
             {data && (
               <div
                 className="text-xs mt-0.5"
-                style={{ color: 'var(--color-text-hint)' }}
+                style={{ color: 'var(--color-text-muted)' }}
               >
                 {data.length.toLocaleString('bg-BG')} INN от ИАЛ ·{' '}
                 {data.filter((d) => !d.r).length} БЛП
@@ -299,7 +299,7 @@ function LoadingView() {
       </div>
       <div
         className="text-xs mt-2"
-        style={{ color: 'var(--color-text-hint)' }}
+        style={{ color: 'var(--color-text-muted)' }}
       >
         ~80 KB, кешира се след първото зареждане
       </div>
@@ -321,7 +321,7 @@ function ErrorView({
         {message && (
           <div
             className="text-xs mt-1 font-[family-name:var(--font-jetbrains)]"
-            style={{ color: 'var(--color-text-hint)' }}
+            style={{ color: 'var(--color-text-muted)' }}
           >
             {message}
           </div>
@@ -353,7 +353,7 @@ function EmptyResultsView({
       Няма резултати за <strong>{query}</strong>
       <div
         className="text-xs mt-2 mb-4"
-        style={{ color: 'var(--color-text-hint)' }}
+        style={{ color: 'var(--color-text-muted)' }}
       >
         Опитайте с друго изписване (латиница ↔ кирилица) или добавете ръчно:
       </div>
@@ -419,7 +419,7 @@ function ManualEditForm({
     <div className="p-4 space-y-3">
       <div
         className="text-xs"
-        style={{ color: 'var(--color-text-hint)' }}
+        style={{ color: 'var(--color-text-muted)' }}
       >
         Лекарството не е в ИАЛ регистъра — редактирай ръчно.
       </div>
@@ -503,7 +503,7 @@ function FieldRow({
     <div>
       <label
         className="block text-[10px] uppercase tracking-wider mb-1 font-semibold"
-        style={{ color: 'var(--color-text-hint)' }}
+        style={{ color: 'var(--color-text-muted)' }}
       >
         {label}
       </label>
@@ -557,7 +557,7 @@ function MedRow({
         <Badge rx={entry.r} />
         <span
           className="text-xs flex-shrink-0"
-          style={{ color: 'var(--color-text-hint)' }}
+          style={{ color: 'var(--color-text-muted)' }}
         >
           {expanded ? '▴' : '▾'}
         </span>
@@ -653,7 +653,7 @@ function ExpandedForm({
       {forms.length === 0 ? (
         <div
           className="text-xs py-2"
-          style={{ color: 'var(--color-text-hint)' }}
+          style={{ color: 'var(--color-text-muted)' }}
         >
           Няма данни за форма/доза от ИАЛ — въведете ръчно по-долу.
         </div>
@@ -662,13 +662,13 @@ function ExpandedForm({
           <div>
             <label
               className="block text-[10px] uppercase tracking-wider mb-1 font-semibold"
-              style={{ color: 'var(--color-text-hint)' }}
+              style={{ color: 'var(--color-text-muted)' }}
             >
               Форма
               {forms.length > 1 && (
                 <span
                   className="ml-1 normal-case font-normal"
-                  style={{ color: 'var(--color-text-hint)' }}
+                  style={{ color: 'var(--color-text-muted)' }}
                 >
                   ({forms.length})
                 </span>
@@ -702,13 +702,13 @@ function ExpandedForm({
           <div>
             <label
               className="block text-[10px] uppercase tracking-wider mb-1 font-semibold"
-              style={{ color: 'var(--color-text-hint)' }}
+              style={{ color: 'var(--color-text-muted)' }}
             >
               Доза
               {doses.length > 1 && (
                 <span
                   className="ml-1 normal-case font-normal"
-                  style={{ color: 'var(--color-text-hint)' }}
+                  style={{ color: 'var(--color-text-muted)' }}
                 >
                   ({doses.length})
                 </span>
@@ -755,7 +755,7 @@ function ExpandedForm({
       <div>
         <label
           className="block text-[10px] uppercase tracking-wider mb-1 font-semibold"
-          style={{ color: 'var(--color-text-hint)' }}
+          style={{ color: 'var(--color-text-muted)' }}
         >
           Прием
         </label>
@@ -775,7 +775,7 @@ function ExpandedForm({
       <div>
         <label
           className="block text-[10px] uppercase tracking-wider mb-1 font-semibold"
-          style={{ color: 'var(--color-text-hint)' }}
+          style={{ color: 'var(--color-text-muted)' }}
         >
           Продължителност
         </label>
