@@ -179,53 +179,65 @@ function BootSplash() {
   );
 }
 
-// Note-shaped loading placeholder — a document-header card then the section
-// cards in the SAME canonical order the loaded note renders (Диагнози → Анамнеза
-// → Обективен статус → Изследвания → Терапия), reusing the real card chrome
-// (bg-white rounded-2xl border / --color-border) so the box edges don't reflow
-// when the note lands. Reuses .nv-skeleton via SkeletonInput (reduced-motion
-// hard-stop honored in globals.css). doctor is still null during this wait, so
-// AppShell can't mount — this is the centered single-column document; the real
-// 3-column grid takes over once doctor + the note resolve.
+// Note-shaped loading placeholder — ONE calm document sheet matching the real
+// de-boxed note (bg-white rounded-2xl border / --color-border, p-6 sm:p-8): a
+// document-header row then sections in the canonical order (Диагнози → Анамнеза
+// → Обективно състояние → Изследвания → Терапия). Each section MIRRORS
+// NoteSectionHead — a tick + a short label line + a hairline divider (same
+// --color-hairline + mb-3/mt-2 spacing) + content rows — so neither box edges
+// NOR section dividers reflow when the note lands. Reuses .nv-skeleton via
+// SkeletonInput (reduced-motion hard-stop honored in globals.css). doctor is
+// still null during this wait, so AppShell can't mount — this is the centered
+// single-column document; the real 3-column grid takes over once doctor + the
+// note resolve.
 function NoteSkeleton() {
   const sections: { label: string; lines: string[]; chips?: boolean }[] = [
-    { label: '34%', lines: ['100%', '92%', '70%'], chips: true }, // Диагнози МКБ-10 (+ comorbidity chips)
-    { label: '22%', lines: ['100%', '96%', '60%'] },              // Анамнеза
-    { label: '40%', lines: ['100%', '84%'] },                     // Обективен статус
-    { label: '26%', lines: ['100%', '72%'] },                     // Изследвания
-    { label: '18%', lines: ['100%', '88%', '64%'] },              // Терапия
+    { label: '88px',  lines: ['100%', '92%', '70%'], chips: true }, // Диагнози (+ comorbidity chips)
+    { label: '76px',  lines: ['100%', '96%', '60%'] },              // Анамнеза
+    { label: '150px', lines: ['100%', '84%'] },                     // Обективно състояние
+    { label: '92px',  lines: ['100%', '72%'] },                     // Изследвания
+    { label: '64px',  lines: ['100%', '88%', '64%'] },              // Терапия
   ];
   return (
-    <div className="space-y-4" aria-hidden>
-      {/* document header card ("Амбулаторен лист") */}
-      <div
-        className="bg-white rounded-2xl border p-8 flex items-baseline justify-between"
-        style={{ borderColor: 'var(--color-border)' }}
-      >
+    <div
+      className="bg-white rounded-2xl border p-6 sm:p-8"
+      style={{ borderColor: 'var(--color-border)' }}
+      aria-hidden
+    >
+      {/* document header — title + date, matching the real note */}
+      <div className="flex items-baseline justify-between flex-wrap gap-4 mb-6">
         <SkeletonInput height="32px" width="240px" />
         <SkeletonInput height="18px" width="90px" />
       </div>
-      {sections.map((s, i) => (
-        <div
-          key={i}
-          className="bg-white rounded-2xl border p-6"
-          style={{ borderColor: 'var(--color-border)' }}
-        >
-          <SkeletonInput height="22px" width={s.label} style={{ marginBottom: '16px' }} />
-          <div className="space-y-2">
-            {s.lines.map((w, j) => (
-              <SkeletonInput key={j} height="14px" width={w} />
-            ))}
-          </div>
-          {s.chips && (
-            <div className="flex flex-wrap gap-2 mt-3">
-              <SkeletonInput height="28px" width="120px" style={{ borderRadius: '9999px' }} />
-              <SkeletonInput height="28px" width="96px" style={{ borderRadius: '9999px' }} />
-              <SkeletonInput height="28px" width="110px" style={{ borderRadius: '9999px' }} />
+      <div className="space-y-6">
+        {sections.map((s, i) => (
+          <div key={i}>
+            {/* NoteSectionHead mirror: tick + label line + hairline divider */}
+            <div className="mb-3">
+              <div className="flex items-center gap-2 min-h-[22px]">
+                <span
+                  className="inline-block flex-shrink-0 rounded-full"
+                  style={{ width: 3, height: 13, background: 'var(--color-hairline)' }}
+                />
+                <SkeletonInput height="12px" width={s.label} />
+              </div>
+              <div className="mt-2" style={{ borderBottom: '1px solid var(--color-hairline)' }} />
             </div>
-          )}
-        </div>
-      ))}
+            <div className="space-y-2">
+              {s.lines.map((w, j) => (
+                <SkeletonInput key={j} height="14px" width={w} />
+              ))}
+            </div>
+            {s.chips && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                <SkeletonInput height="28px" width="120px" style={{ borderRadius: '9999px' }} />
+                <SkeletonInput height="28px" width="96px" style={{ borderRadius: '9999px' }} />
+                <SkeletonInput height="28px" width="110px" style={{ borderRadius: '9999px' }} />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
