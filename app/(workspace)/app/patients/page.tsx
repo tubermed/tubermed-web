@@ -24,6 +24,7 @@ import ChipInput from '@/components/ChipInput';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import SkeletonInput from '@/components/SkeletonInput';
 import { Button } from '@/components/ui/Button';
+import { NoteSectionHead } from '@/components/ui/NoteSection';
 import { api, ApiError } from '@/lib/api';
 import { ageFromBirthDate } from '@/lib/age';
 import { formatDateTimeBg } from '@/lib/date';
@@ -282,7 +283,7 @@ function PatientsPageInner() {
         className="px-6 py-4 border-b"
         style={{ background: 'var(--color-bg-card)', borderColor: 'var(--color-border)' }}
       >
-        <div className="text-xs uppercase tracking-[0.18em] mb-1" style={{ color: 'var(--color-text-hint)' }}>
+        <div className="text-xs uppercase tracking-[0.18em] mb-1" style={{ color: 'var(--color-text-muted)' }}>
           Пациенти
         </div>
         <div className="text-lg font-semibold" style={{ color: 'var(--color-ink)' }}>
@@ -295,7 +296,7 @@ function PatientsPageInner() {
         <section className="flex flex-col gap-4 min-w-0">
           <div
             className="rounded-xl p-4"
-            style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
+            style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-card)' }}
           >
             <div
               className="text-xs uppercase tracking-[0.18em] mb-2 font-medium"
@@ -319,7 +320,7 @@ function PatientsPageInner() {
           {patient && (
             <div
               className="rounded-xl flex flex-col min-h-0"
-              style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
+              style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-card)' }}
             >
               <div
                 className="px-4 py-3 border-b flex items-center justify-between"
@@ -352,7 +353,7 @@ function PatientsPageInner() {
                   ))}
                 </div>
               ) : visits.length === 0 ? (
-                <div className="px-4 py-6 text-sm" style={{ color: 'var(--color-text-hint)' }}>
+                <div className="px-4 py-6 text-sm" style={{ color: 'var(--color-text-muted)' }}>
                   Няма записани посещения за този пациент.
                 </div>
               ) : (
@@ -395,14 +396,14 @@ function PatientsPageInner() {
                   it's separate from the per-visit note below. */}
               <div
                 className="rounded-xl p-5"
-                style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
+                style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-card)' }}
               >
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <div>
                     <div className="text-xs uppercase tracking-[0.18em]" style={{ color: 'var(--color-heading)' }}>
                       Данни за пациента
                     </div>
-                    <div className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-hint)' }}>
+                    <div className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
                       Промените тук не засягат предишни прегледи.
                     </div>
                   </div>
@@ -419,7 +420,7 @@ function PatientsPageInner() {
                   <div>
                     <div
                       className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-1.5"
-                      style={{ color: 'var(--color-text-hint)' }}
+                      style={{ color: 'var(--color-text-muted)' }}
                     >
                       Алергии
                     </div>
@@ -432,7 +433,7 @@ function PatientsPageInner() {
                   <div>
                     <div
                       className="text-[10px] uppercase tracking-[0.18em] font-semibold mb-1.5"
-                      style={{ color: 'var(--color-text-hint)' }}
+                      style={{ color: 'var(--color-text-muted)' }}
                     >
                       Хронични заболявания
                     </div>
@@ -458,25 +459,36 @@ function PatientsPageInner() {
                   // the old EmptyPanel gave screen readers.
                   <>
                   <span className="sr-only" role="status">Зареждане на лист…</span>
-                  <div className="space-y-4" aria-hidden>
-                    <div
-                      className="bg-white rounded-xl p-6"
-                      style={{ border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
-                    >
-                      <SkeletonInput height="28px" width="55%" />
-                      <SkeletonInput height="14px" width="35%" style={{ marginTop: 10 }} />
+                  <div
+                    className="bg-white rounded-2xl border p-6 sm:p-8"
+                    style={{ borderColor: 'var(--color-border)', boxShadow: 'var(--shadow-card)' }}
+                    aria-hidden
+                  >
+                    <div className="flex items-baseline justify-between flex-wrap gap-3 mb-6">
+                      <SkeletonInput height="28px" width="200px" />
+                      <SkeletonInput height="14px" width="90px" />
                     </div>
-                    {[0, 1, 2].map((i) => (
-                      <div
-                        key={i}
-                        className="bg-white rounded-xl p-6"
-                        style={{ border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
-                      >
-                        <SkeletonInput height="22px" width="40%" style={{ marginBottom: 16 }} />
-                        <SkeletonInput height="14px" width="100%" style={{ marginBottom: 8 }} />
-                        <SkeletonInput height="14px" width="85%" />
-                      </div>
-                    ))}
+                    <div className="space-y-6">
+                      {[0, 1, 2].map((i) => (
+                        <div key={i}>
+                          {/* NoteSectionHead mirror: tick + label line + hairline */}
+                          <div className="mb-3">
+                            <div className="flex items-center gap-2 min-h-[22px]">
+                              <span
+                                className="inline-block flex-shrink-0 rounded-full"
+                                style={{ width: 3, height: 13, background: 'var(--color-hairline)' }}
+                              />
+                              <SkeletonInput height="12px" width="90px" />
+                            </div>
+                            <div className="mt-2" style={{ borderBottom: '1px solid var(--color-hairline)' }} />
+                          </div>
+                          <div className="space-y-2">
+                            <SkeletonInput height="14px" width="100%" />
+                            <SkeletonInput height="14px" width="85%" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                   </>
                 ) : !detail ? (
@@ -529,7 +541,7 @@ function VisitRow({
   return (
     <button
       onClick={onClick}
-      className="w-full text-left px-4 py-3 flex flex-col gap-1 transition-colors"
+      className="w-full text-left px-4 py-3 flex flex-col gap-1 transition-colors focus-ring"
       style={{
         background: active ? 'var(--color-brand-soft)' : 'transparent',
         borderLeft: active ? '3px solid var(--color-brand)' : '3px solid transparent',
@@ -553,7 +565,7 @@ function VisitRow({
         {primary}
       </div>
       {vtype && (
-        <div className="text-xs" style={{ color: 'var(--color-text-hint)' }}>
+        <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
           {vtype}
         </div>
       )}
@@ -590,7 +602,7 @@ function PatientIdentityCard({ patient }: { patient: PatientSummary }) {
   return (
     <div
       className="rounded-xl px-5 py-4"
-      style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
+      style={{ background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-card)' }}
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <span className="text-xl font-semibold" style={{ color: 'var(--color-ink)' }}>
@@ -661,9 +673,14 @@ function ReadOnlyNote({ detail }: { detail: ConsultationDetail }) {
   // Render a clear empty state instead of crashing on field access.
   if (!note) {
     return (
-      <div className="space-y-4">
+      <div
+        className="bg-white rounded-2xl border p-6 sm:p-8"
+        style={{ borderColor: 'var(--color-border)', boxShadow: 'var(--shadow-card)' }}
+      >
         <NoteHeader detail={detail} dateLabel={headerDate} />
-        <EmptyPanel message="Няма попълнен лист за това посещение." />
+        <div className="text-sm italic" style={{ color: 'var(--color-text-muted)' }}>
+          Няма попълнен лист за това посещение.
+        </div>
       </div>
     );
   }
@@ -676,9 +693,13 @@ function ReadOnlyNote({ detail }: { detail: ConsultationDetail }) {
     : null;
 
   return (
-    <div className="space-y-4">
+    <div
+      className="bg-white rounded-2xl border p-6 sm:p-8"
+      style={{ borderColor: 'var(--color-border)', boxShadow: 'var(--shadow-card)' }}
+    >
       <NoteHeader detail={detail} dateLabel={headerDate} />
 
+      <div className="space-y-6">
       {/* Diagnoses */}
       <ReadOnlySection title="Диагнози МКБ-10">
         <DiagnosisDisplay
@@ -715,7 +736,7 @@ function ReadOnlyNote({ detail }: { detail: ConsultationDetail }) {
           </div>
         )}
         {!note.izsledvania?.trim() && !note.naznacheni?.trim() && (
-          <div className="text-sm italic" style={{ color: 'var(--color-text-hint)' }}>
+          <div className="text-sm italic" style={{ color: 'var(--color-text-muted)' }}>
             Не е попълнено.
           </div>
         )}
@@ -752,6 +773,7 @@ function ReadOnlyNote({ detail }: { detail: ConsultationDetail }) {
           </div>
         </ReadOnlySection>
       )}
+      </div>
     </div>
   );
 }
@@ -759,10 +781,7 @@ function ReadOnlyNote({ detail }: { detail: ConsultationDetail }) {
 function NoteHeader({ detail, dateLabel }: { detail: ConsultationDetail; dateLabel: string }) {
   const vtype = detail.visit_type ? VISIT_TYPE_LABEL[detail.visit_type] : null;
   return (
-    <div
-      className="bg-white rounded-xl p-6 flex items-baseline justify-between flex-wrap gap-3"
-      style={{ border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
-    >
+    <div className="flex items-baseline justify-between flex-wrap gap-3 mb-6">
       <div>
         <h2 className="text-2xl font-semibold" style={{ color: 'var(--color-ink)' }}>
           Амбулаторен лист
@@ -795,13 +814,8 @@ function NoteHeader({ detail, dateLabel }: { detail: ConsultationDetail; dateLab
 
 function ReadOnlySection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div
-      className="bg-white rounded-xl p-6"
-      style={{ border: '1px solid var(--color-border-soft)', boxShadow: 'var(--shadow-raised)' }}
-    >
-      <h3 className="text-xl font-semibold mb-4" style={{ color: 'var(--color-ink)' }}>
-        {title}
-      </h3>
+    <div>
+      <NoteSectionHead title={title} />
       {children}
     </div>
   );
@@ -814,7 +828,7 @@ function ReadOnlyTextSection({ title, value }: { title: string; value: string | 
       {text ? (
         <ReadOnlyText value={text} />
       ) : (
-        <div className="text-sm italic" style={{ color: 'var(--color-text-hint)' }}>
+        <div className="text-sm italic" style={{ color: 'var(--color-text-muted)' }}>
           Не е попълнено.
         </div>
       )}
@@ -859,7 +873,7 @@ function DiagnosisDisplay({
       {diagnoza.trim() || mkb.trim() ? (
         <DiagnosisRow diagnoza={diagnoza} mkb={mkb} />
       ) : (
-        <div className="text-sm italic" style={{ color: 'var(--color-text-hint)' }}>
+        <div className="text-sm italic" style={{ color: 'var(--color-text-muted)' }}>
           Не е попълнена.
         </div>
       )}
