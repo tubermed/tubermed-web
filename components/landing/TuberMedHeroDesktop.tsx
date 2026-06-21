@@ -4,7 +4,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { golosText, interTight } from '@/lib/landing-fonts';
-import { TileMark } from './brand';
+import { TileMark, Logo } from './brand';
 
 /**
  * TuberMed — hero product film (Dimitar's prototype, rebuilt to the shipped
@@ -66,6 +66,9 @@ const PUNCH = 'cubic-bezier(.34,1.18,.4,1)'; // slight overshoot — the "slam"
 // The 0-2s hook + payoff sign-off bookend this in U3; source-grounding +
 // the export-unlock handoff slot in at U4.
 const PHASES: Phase[] = [
+  // beat 0 — HOOK (0-2s scroll-stopper): kinetic value line over a dimmed
+  // glimpse of the app, slow ken-burns push, then dissolves into the flow
+  { id: 'hook',        dur: 2300, screen: 'newvisit', zoom: 1.12, focus: 'center', cursor: null, camDur: 2300, ease: GLIDE },
   // beat 1 — patient (chronic warfarin line planted)
   { id: 'patient',     dur: 1900, screen: 'newvisit', zoom: 1.0,  focus: 'center',  cursor: 'rest', camDur: 800, ease: GLIDE },
   { id: 'patient_cta', dur: 1100, screen: 'newvisit', zoom: 1.30, focus: 'cta', dy: -64, cursor: 'cta', click: true, camDur: 600, ease: SNAP },
@@ -80,6 +83,8 @@ const PHASES: Phase[] = [
   { id: 'climax',      dur: 2800, screen: 'result', zoom: 1.34, focus: 'alert', cursor: null, camDur: 600, ease: PUNCH },
   // beat 7 — doctor approves
   { id: 'approve',     dur: 2200, screen: 'result', zoom: 1.18, focus: 'confirm', dy: -6, cursor: 'confirm', click: true, camDur: 620, ease: SNAP },
+  // beat 8 — PAYOFF sign-off end card (covers the app; seamless fade back to hook)
+  { id: 'payoff',      dur: 3000, screen: 'result', zoom: 1.0,  focus: 'center', cursor: null, camDur: 600, ease: GLIDE },
 ];
 
 type Pt = { fx: number; fy: number };
@@ -224,6 +229,8 @@ export default function TuberMedHeroDesktop() {
   // semantic flags derived from the phase (decouples screens from exact ids)
   const recLive = phase.id === 'listening';
   const alertShown = phase.screen === 'result' && (phase.id === 'climax' || phase.id === 'approve');
+  const overlay: 'hook' | 'payoff' | null =
+    phase.id === 'hook' ? 'hook' : phase.id === 'payoff' ? 'payoff' : null;
 
   if (stat) {
     return (
@@ -480,6 +487,27 @@ export default function TuberMedHeroDesktop() {
                 </div>
               )}
             </div>
+
+            {/* hook + payoff sign-off — outside the camera transform; the
+                container stays shown across payoff→hook so the loop seam is a
+                crossfade, not a cut */}
+            <div className={`tmd-overlay ${overlay ? 'show' : ''}`} aria-hidden="true">
+              <div className={`tmd-hookpanel ${overlay === 'hook' ? 'on' : ''}`}>
+                <div className="tmd-hookbrand kin"><TileMark size={20} /> <span>TuberMed</span></div>
+                <div className="tmd-hooktop kin">15 минути писане</div>
+                <div className="tmd-hookarrow kin"><Ico n="chevron-down" size={26} sw={2.4} /></div>
+                <div className="tmd-hookbig kin">30 секунди преглед</div>
+                <div className="tmd-hooksub kin">Говорите. AI пише амбулаторния лист.</div>
+              </div>
+              <div className={`tmd-payoffpanel ${overlay === 'payoff' ? 'on' : ''}`}>
+                <div className="tmd-pofbrand kin"><Logo variant="dark" size={44} /></div>
+                <div className="tmd-poftag kin">От разговор до амбулаторен лист за секунди.</div>
+                <div className="tmd-pofstat kin">
+                  <span>15 мин писане</span><i className="tmd-pofarrow">→</i><b>30 сек преглед</b>
+                </div>
+                <div className="tmd-poftrust kin">GDPR · Обработка в ЕС · Лекарят остава авторът</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -697,6 +725,7 @@ const ICONS: Record<string, ReactNode> = {
   copy: (<><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></>),
   user: (<><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>),
   plus: (<><path d="M5 12h14" /><path d="M12 5v14" /></>),
+  'chevron-down': <path d="m6 9 6 6 6-6" />,
   search: (<><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></>),
 };
 
@@ -732,6 +761,7 @@ const CSS = `
    section's overflow-hidden. */
 .tmd-fit{ transform-origin:top left; }
 .tmd-frame{
+  position:relative;
   width:${APP_W}px; height:${APP_H}px; background:var(--surface);
   border:1px solid var(--line); border-radius:16px; overflow:hidden;
   box-shadow:0 30px 70px -28px rgba(12,33,56,.4),0 6px 18px -10px rgba(12,33,56,.2);
@@ -925,6 +955,45 @@ const CSS = `
 .tmd-medrow.trig{ background:var(--crit-soft);border-radius:7px;border-bottom-color:transparent;margin:0 -6px;padding:7px 6px; }
 .tmd-medrow.trig .tmd-medname{ color:var(--crit); }
 .tmd-medrow.trig svg{ color:var(--crit); }
+
+/* hook + payoff overlay (kinetic display type — Inter Tight) */
+.tmd-overlay{ position:absolute; top:42px; left:0; right:0; bottom:0; z-index:40;
+  opacity:0; pointer-events:none; transition:opacity .55s ease;
+  font-family:var(--font-inter-tight),var(--font-golos),system-ui,sans-serif; }
+.tmd-overlay.show{ opacity:1; }
+.tmd-hookpanel,.tmd-payoffpanel{ position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; text-align:center; opacity:0; transition:opacity .5s ease; }
+.tmd-hookpanel.on,.tmd-payoffpanel.on{ opacity:1; }
+/* staggered transition-based entrance — replays each loop as .on toggles */
+.tmd-overlay .kin{ opacity:0; transform:translateY(18px);
+  transition:opacity .5s cubic-bezier(.3,1,.4,1), transform .5s cubic-bezier(.3,1.15,.4,1); }
+.tmd-hookpanel.on .kin,.tmd-payoffpanel.on .kin{ opacity:1; transform:none; }
+.tmd-hookpanel.on .kin:nth-child(1),.tmd-payoffpanel.on .kin:nth-child(1){ transition-delay:.04s; }
+.tmd-hookpanel.on .kin:nth-child(2),.tmd-payoffpanel.on .kin:nth-child(2){ transition-delay:.16s; }
+.tmd-hookpanel.on .kin:nth-child(3),.tmd-payoffpanel.on .kin:nth-child(3){ transition-delay:.28s; }
+.tmd-hookpanel.on .kin:nth-child(4),.tmd-payoffpanel.on .kin:nth-child(4){ transition-delay:.40s; }
+.tmd-hookpanel.on .kin:nth-child(5),.tmd-payoffpanel.on .kin:nth-child(5){ transition-delay:.52s; }
+
+/* hook — kinetic value line over a dimmed glimpse of the app */
+.tmd-hookpanel{ gap:6px; padding:24px;
+  background:linear-gradient(180deg,rgba(248,251,253,.9),rgba(236,243,249,.94)); }
+.tmd-hookbrand{ display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:var(--ink);
+  letter-spacing:-.02em;margin-bottom:14px; }
+.tmd-hooktop{ font-size:22px;font-weight:600;color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line2); }
+.tmd-hookarrow{ color:var(--steel);display:inline-flex;margin:2px 0; }
+.tmd-hookbig{ font-size:50px;font-weight:700;line-height:1.04;letter-spacing:-.03em;color:var(--steel); }
+.tmd-hooksub{ font-size:15px;color:var(--muted);margin-top:10px; }
+
+/* payoff — bold sign-off end card on navy */
+.tmd-payoffpanel{ gap:0; padding:24px;
+  background:linear-gradient(155deg,#244063 0%,#16293f 100%); }
+.tmd-pofbrand{ margin-bottom:20px; }
+.tmd-poftag{ font-size:30px;font-weight:700;line-height:1.12;letter-spacing:-.025em;color:#fff;max-width:560px; }
+.tmd-pofstat{ display:inline-flex;align-items:center;gap:12px;margin-top:20px;font-size:17px;font-weight:600; }
+.tmd-pofstat span{ color:var(--lp-on-navy-mut,#A9BBD0);text-decoration:line-through;text-decoration-color:rgba(255,255,255,.3); }
+.tmd-pofarrow{ color:#8FC0E8;font-style:normal;font-weight:700; }
+.tmd-pofstat b{ color:#8FC0E8; }
+.tmd-poftrust{ font-size:12.5px;color:var(--lp-on-navy-mut,#A9BBD0);margin-top:22px;letter-spacing:.01em; }
 
 /* cursor */
 .tmd-cursor{ position:absolute;z-index:30;pointer-events:none;
