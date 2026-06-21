@@ -179,6 +179,140 @@ function matchNeedle(tnorm: string, needles: string[]): number {
 // breaking across a sentence of unrelated prose.
 const CHAR_GAP = 30;
 
+// ── Vital-aware grounding (Обективен статус only) ─────────────────────────────
+// The vitals field is mostly NUMBERS (RR 130/89, пулс 78, ДЧ 16) — exactly the
+// tokens the precision-first matcher drops as needles, so the clearest sourced
+// facts contribute nothing and the section falls below the coverage gate → a
+// confusing "no source" even when the BP/RR was clearly said. Vitals therefore
+// ground through a SEPARATE, tighter rule: a typed field value (parsed cue-then-
+// number, the clinical writing order) must reappear in the transcript sitting with
+// a cue of the SAME vital type. A bare number never grounds on its own, and this
+// runs ONLY for the vitals field — precision everywhere else is untouched. The cue
+// vocabulary mirrors lib/vital-rules.ts VITAL_RULES (the canonical range-classifier);
+// here we need the VALUE regardless of range, so a normal RR 130/89 parses too.
+function isVitalsField(fieldKey: string): boolean {
+  return fieldKey === 'obektivno';
+}
+
+type VitalType = 'bp' | 'hr' | 'rr' | 'temp' | 'spo2';
+
+// FIELD-side patterns: cue label THEN value ("RR: 130/89", "ДЧ: 16/мин"); an
+// unmeasured "ЧСС: не е измерено" yields no number. Cue alternations mirror
+// vital-rules.ts.
+const FIELD_VITAL_PATTERNS: { type: VitalType; re: RegExp }[] = [
+  { type: 'bp', re: /(?:кръвно(?:\s+налягане)?|артериално\s+налягане|АН|RR)\s*[:\s]*(\d{2,3})\s*(?:[/\-–]|на)\s*(\d{2,3})/giu },
+  { type: 'hr', re: /(?:пулс|сърдечна\s+честота|ЧСС|HR)\s*[:\s]*(\d{2,3})/giu },
+  { type: 'rr', re: /(?:ДЧ|ЧД|дихателна\s+честота|честота\s+на\s+дишане(?:то)?)\s*[:\s]*(\d{1,2})/giu },
+  { type: 'temp', re: /(?:температур\p{L}*|темп\.?|t-ра|t°)\s*[:\s]*(\d{2}(?:[.,]\d{1,2})?)/giu },
+  { type: 'spo2', re: /(?:кислородна\s+сатурация|сатурация|SpO2|SatO2)\s*[:\s]*(\d{2,3})/giu },
+];
+
+// TRANSCRIPT-side cue stems (startsWith on a lowercased token) — broader than the
+// field labels to catch the spoken forms ("дихателни движения", "удара в минута").
+const VITAL_CUE_STEMS: Record<VitalType, string[]> = {
+  bp: ['кръвн', 'наляган', 'артериал'],
+  hr: ['пулс', 'сърдечн', 'удар', 'чсс'],
+  rr: ['дихател', 'дишан', 'дч'],
+  temp: ['температур', 'градус'],
+  spo2: ['сатураци', 'кислород'],
+};
+
+const VITAL_CUE_WINDOW = 24; // max chars between a vital number and its cue
+const BP_PAIR_GAP = 6;       // max chars between the two BP numbers ("130 на 89")
+
+interface FieldVital {
+  type: VitalType;
+  nums: number[];
+}
+
+function parseFieldVitals(value: string): FieldVital[] {
+  const out: FieldVital[] = [];
+  for (const { type, re } of FIELD_VITAL_PATTERNS) {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(value))) {
+      const nums = [m[1], m[2]]
+        .filter((x): x is string => Boolean(x))
+        .map((x) => parseInt(x, 10))
+        .filter((n) => !Number.isNaN(n));
+      if (nums.length) out.push({ type, nums });
+    }
+  }
+  return out;
+}
+
+// Char gap between a token and a [lo, hi] range (0 when they overlap).
+function gapTo(t: TToken, lo: number, hi: number): number {
+  if (t.start >= hi) return t.start - hi;
+  if (t.end <= lo) return lo - t.end;
+  return 0;
+}
+
+// The closest SAME-TYPE cue token within the window of [lo, hi], or null.
+function nearestCue(tt: TToken[], stems: string[], lo: number, hi: number): TToken | null {
+  let best: TToken | null = null;
+  let bestGap = Infinity;
+  for (const t of tt) {
+    if (!stems.some((s) => t.norm.startsWith(s))) continue;
+    const g = gapTo(t, lo, hi);
+    if (g <= VITAL_CUE_WINDOW && g < bestGap) {
+      best = t;
+      bestGap = g;
+    }
+  }
+  return best;
+}
+
+// Transcript char-ranges that ground a typed field vital. Precision-first: a BP
+// grounds only as an ADJACENT pair (sys→dia) near a BP cue; a single-number vital
+// grounds only when the SAME number sits within VITAL_CUE_WINDOW of a SAME-TYPE
+// cue. Returns ascending, non-overlapping ranges.
+function groundVitalRanges(value: string, tt: TToken[]): { start: number; end: number }[] {
+  const fieldVitals = parseFieldVitals(value);
+  if (fieldVitals.length === 0) return [];
+
+  const numTokens = tt.filter((t) => /^\d+$/.test(t.norm));
+  const ranges: { start: number; end: number }[] = [];
+
+  for (const fv of fieldVitals) {
+    const stems = VITAL_CUE_STEMS[fv.type];
+    if (fv.type === 'bp' && fv.nums.length >= 2) {
+      const [sys, dia] = fv.nums;
+      for (let i = 0; i < numTokens.length - 1; i++) {
+        const a = numTokens[i];
+        const b = numTokens[i + 1];
+        if (parseInt(a.norm, 10) !== sys || parseInt(b.norm, 10) !== dia) continue;
+        if (b.start - a.end > BP_PAIR_GAP) continue;
+        if (!nearestCue(tt, stems, a.start, b.end)) continue;
+        ranges.push({ start: a.start, end: b.end });
+        break;
+      }
+    } else {
+      for (const num of fv.nums) {
+        let grounded = false;
+        for (const t of numTokens) {
+          if (parseInt(t.norm, 10) !== num) continue;
+          const cue = nearestCue(tt, stems, t.start, t.end);
+          if (!cue) continue;
+          ranges.push({ start: Math.min(t.start, cue.start), end: Math.max(t.end, cue.end) });
+          grounded = true;
+          break;
+        }
+        if (grounded) break; // one ground per field vital is enough
+      }
+    }
+  }
+
+  ranges.sort((a, b) => a.start - b.start);
+  const merged: { start: number; end: number }[] = [];
+  for (const r of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && r.start <= last.end) last.end = Math.max(last.end, r.end);
+    else merged.push({ ...r });
+  }
+  return merged;
+}
+
 export function findSourceSpan(
   fieldKey: string,
   fieldValue: string,
@@ -188,34 +322,53 @@ export function findSourceSpan(
 
   const value = isDiagnosisField(fieldKey) ? stripTrailingMkbCode(fieldValue) : fieldValue;
 
-  const needles = contentTokens(value);
-  if (needles.length === 0) return null;
-
   const tt = tokenizeWithOffsets(transcript);
   if (tt.length === 0) return null;
 
+  // Text needles (numbers excluded by design — see isContentToken). May be empty
+  // for a numbers-only vitals field; the vital pass below handles that.
+  const needles = contentTokens(value);
+
   // For each transcript token, the index of the needle it grounds (or -1). Hits
   // are the grounded tokens.
-  const matched: number[] = new Array(tt.length);
+  const matched: number[] = new Array(tt.length).fill(-1);
   const hitIdx: number[] = [];
   for (let i = 0; i < tt.length; i++) {
-    const ni = matchNeedle(tt[i].norm, needles);
+    const ni = needles.length ? matchNeedle(tt[i].norm, needles) : -1;
     matched[i] = ni;
     if (ni >= 0) hitIdx.push(i);
   }
-  if (hitIdx.length === 0) return null;
 
-  // Group hits into clusters separated by more than CHAR_GAP characters.
+  // Group text hits into clusters separated by more than CHAR_GAP characters
+  // (empty when there are no text hits).
   const clusters: number[][] = [];
-  let cur: number[] = [hitIdx[0]];
-  for (let k = 1; k < hitIdx.length; k++) {
-    const gapChars = tt[hitIdx[k]].start - tt[hitIdx[k - 1]].end;
-    if (gapChars <= CHAR_GAP) cur.push(hitIdx[k]);
-    else { clusters.push(cur); cur = [hitIdx[k]]; }
+  if (hitIdx.length > 0) {
+    let cur: number[] = [hitIdx[0]];
+    for (let k = 1; k < hitIdx.length; k++) {
+      const gapChars = tt[hitIdx[k]].start - tt[hitIdx[k - 1]].end;
+      if (gapChars <= CHAR_GAP) cur.push(hitIdx[k]);
+      else { clusters.push(cur); cur = [hitIdx[k]]; }
+    }
+    clusters.push(cur);
   }
-  clusters.push(cur);
 
   const distinctOf = (c: number[]) => new Set(c.map((i) => matched[i])).size;
+
+  // Vital-aware pass (Обективен статус only): when a typed field vital actually
+  // grounds in the transcript, return those ranges — numbers ARE the signal here,
+  // and the precision-first text gate below would otherwise reject the section.
+  if (isVitalsField(fieldKey)) {
+    const vitalRanges = groundVitalRanges(value, tt);
+    if (vitalRanges.length > 0) {
+      return {
+        start: vitalRanges[0].start,
+        end: vitalRanges[vitalRanges.length - 1].end,
+        tokens: vitalRanges,
+      };
+    }
+  }
+
+  if (hitIdx.length === 0) return null;
 
   // Score each cluster: coverage of the field's content tokens dominates, with a
   // bonus for adjacent (phrase) hits and tightness.

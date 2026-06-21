@@ -188,5 +188,23 @@ const VITALS_TRANSCRIPT =
     'P6: RR 130/89 + ДЧ 16 ground to the transcript (was a blanket "no source")');
 }
 
+console.log('\n— PART 6: vitals PRECISION guards (numbers ground ONLY with a same-type cue) —');
+// The numeric path is deliberately tight: a number grounds only when it equals a
+// typed FIELD vital AND sits with a cue of the SAME type in the transcript. These
+// lock out the false matches that motivated excluding numbers in the first place.
+assert(rejects('obektivno', 'RR: 130/89 mmHg | ЧСС: не е измерено', 'Кръвно налягане 150 на 90, пулс 78.'),
+  'precision: a DIFFERENT BP (150/90) does not ground RR 130/89');
+assert(rejects('obektivno', 'ДЧ: 16/мин', 'Пациентът е на 16 години, без оплаквания.'),
+  'precision: ДЧ 16 does not ground a bare "16 години" (no respiratory cue)');
+assert(rejects('obektivno', 'RR: 130/89 mmHg', 'Изписвам 130 таблетки и 89 капки дневно.'),
+  'precision: BP numbers present but not an adjacent pair near a BP cue → null');
+assert(rejects('terapia', 'RR: 130/89', 'Кръвно налягане 130 на 89.'),
+  'precision: numeric grounding is obektivno-scoped (terapia never number-grounds)');
+// Positive control — a measured pulse near its spoken cue grounds.
+{
+  const s = hit('obektivno', 'ЧСС: 78/мин', 'Пулсът е 78 удара в минута.');
+  assert(s !== null && s.includes('78'), 'vitals: pulse 78 grounds near "пулс/удара" cue');
+}
+
 console.log(`\n${passed + failed} assertions: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
