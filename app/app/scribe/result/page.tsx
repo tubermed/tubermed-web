@@ -209,17 +209,18 @@ function NoteSkeleton() {
         <SkeletonInput height="32px" width="240px" />
         <SkeletonInput height="18px" width="90px" />
       </div>
-      <div className="space-y-6">
+      <div className="space-y-8">
         {sections.map((s, i) => (
           <div key={i}>
-            {/* NoteSectionHead mirror: tick + label line + hairline divider */}
-            <div className="mb-3">
-              <div className="flex items-center gap-2 min-h-[22px]">
+            {/* NoteSectionHead mirror: tick + icon + label line + hairline divider */}
+            <div className="mb-4">
+              <div className="flex items-center gap-2 min-h-[24px]">
                 <span
                   className="inline-block flex-shrink-0 rounded-full"
-                  style={{ width: 3, height: 13, background: 'var(--color-hairline)' }}
+                  style={{ width: 3, height: 16, background: 'var(--color-hairline)' }}
                 />
-                <SkeletonInput height="12px" width={s.label} />
+                <SkeletonInput height="16px" width="16px" />
+                <SkeletonInput height="14px" width={s.label} />
               </div>
               <div className="mt-2" style={{ borderBottom: '1px solid var(--color-hairline)' }} />
             </div>
@@ -1380,7 +1381,7 @@ function ResultPageInner() {
             </div>
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-8">
             <DiagnosesSection
               osnovnaDiagnoza={fields.osnovna_diagnoza || ''}
               osnovnaMkb={fields.osnovna_mkb || ''}

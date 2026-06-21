@@ -468,17 +468,18 @@ function PatientsPageInner() {
                       <SkeletonInput height="28px" width="200px" />
                       <SkeletonInput height="14px" width="90px" />
                     </div>
-                    <div className="space-y-6">
+                    <div className="space-y-8">
                       {[0, 1, 2].map((i) => (
                         <div key={i}>
-                          {/* NoteSectionHead mirror: tick + label line + hairline */}
-                          <div className="mb-3">
-                            <div className="flex items-center gap-2 min-h-[22px]">
+                          {/* NoteSectionHead mirror: tick + icon + label line + hairline */}
+                          <div className="mb-4">
+                            <div className="flex items-center gap-2 min-h-[24px]">
                               <span
                                 className="inline-block flex-shrink-0 rounded-full"
-                                style={{ width: 3, height: 13, background: 'var(--color-hairline)' }}
+                                style={{ width: 3, height: 16, background: 'var(--color-hairline)' }}
                               />
-                              <SkeletonInput height="12px" width="90px" />
+                              <SkeletonInput height="16px" width="16px" />
+                              <SkeletonInput height="14px" width="90px" />
                             </div>
                             <div className="mt-2" style={{ borderBottom: '1px solid var(--color-hairline)' }} />
                           </div>
@@ -699,7 +700,7 @@ function ReadOnlyNote({ detail }: { detail: ConsultationDetail }) {
     >
       <NoteHeader detail={detail} dateLabel={headerDate} />
 
-      <div className="space-y-6">
+      <div className="space-y-8">
       {/* Diagnoses */}
       <ReadOnlySection title="Диагнози МКБ-10">
         <DiagnosisDisplay
