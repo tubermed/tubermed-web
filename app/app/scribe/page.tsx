@@ -564,7 +564,7 @@ function RecordCardShell({
           Запис на консултацията
         </h1>
         <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-          AI слуша и води транскрипт на живо. Нищо не напуска ЕС.
+          AI слуша и записва. Нищо не напуска ЕС.
         </p>
         <div className="mt-4" style={{ borderBottom: '1px solid var(--color-hairline)' }} />
       </div>
