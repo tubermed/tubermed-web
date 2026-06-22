@@ -1257,6 +1257,89 @@ HARD-STOPPED under `prefers-reduced-motion` (globals.css `.dialog-*`).
 - **Out of scope (NOT modals):** `SpotlightTour` (anchored coachmark) and
   `components/ui/DateInputBg` (calendar popover) — do NOT force them into Dialog.
 
+# Calm-clinical overhaul + scribe recording UX (2026-06-22)
+
+A multi-step visual + UX pass (P0–P6) settled the workspace on the approved
+"calm-clinical" house style, followed by recording-screen polish + error/
+empty-speech UX fixes (U1–U5) found by testing the live flow. **P0 (Icon set)
+and P1/P1b (shared Radix `<Dialog/>` + the OnboardingWizard two-step Esc) have
+their own sections above** — the rest is recorded here.
+
+## Shared UI primitives (P2)
+- `components/ui/Segmented.tsx` is the ONE segmented toggle (the new-visit
+  visit-type picker, the scribe Микрофон/Телефон tabs). `components/ui/Button.tsx`
+  gained a **`toolbar`** variant (small bordered ghost — `px-3 py-1.5`, hover bg)
+  that reproduces the old result-page `TopbarBtn` byte-for-byte. **`TabBtn` /
+  `TopbarBtn` are DELETED** — every tab / action-bar button is now
+  `<Button variant="toolbar">` or `<Segmented>`.
+
+## Calm-clinical note + pages (P3 / P3b / P4)
+- `components/ui/NoteSection.tsx` is the note house style: a section reads as a
+  section via an accent TICK + optional small navy ICON + ~14px uppercase navy
+  LABEL (`NoteSectionHead`) + a HAIRLINE divider + breathing room — **NOT a boxed
+  card**. Elevation + saturated red stay RESERVED for the drug-safety rail /
+  critical alert, so the note itself stays calm + scannable.
+- **Scribe + result (P3/P3b):** the result page is the de-boxed "one-sheet"
+  Амбулаторен лист (NoteSection sections on air, not cards) with the safety
+  alerts in a dedicated rail; an a11y/contrast sweep moved clinical body text off
+  `--color-text-hint` (≈3.1:1, fails AA) onto `--color-text` / `--color-text-muted`;
+  waiting surfaces gained skeletons. Scribe record-card subtitle copy fixed to
+  "AI слуша и записва. Нищо не напуска ЕС."
+- **New-visit / Настройки / Пациенти (P4):** moved onto the same calm-clinical
+  system. **`components/ui/Card.tsx` REMOVED.** `--color-text-hint` has NO live
+  usages left (only a do-not-use comment in `NoteSection.tsx`); the token stays
+  DEFINED in globals.css as a legacy alias so nothing breaks.
+
+## Louder section headers + section icons (P5)
+- Section headers were made louder (the title is `text-sm`, not the quieter
+  `text-xs`) and gained per-section glyphs; the `<Icon/>` set was extended for
+  them. Sections no longer blur into one block.
+
+## Vitals source-grounding (P6)
+- `lib/source-grounding.ts` gained vital-aware matching for "Обективен статус":
+  a partial vitals match greys the UNsourced clauses, so RR/ЧСС/… values that ARE
+  supported by the transcript light up while fabricated/unspoken slots stay dark
+  (extends the 2026-06-15 "виж източника" matcher). Covered by
+  `scripts/source-grounding*.ts`.
+
+## Scribe recording UX (P9 — U1–U5)
+- **U1 — no stray scroll.** The recording surface (mic + phone QR) sat in a
+  `flex-1` child whose default `min-height:auto` refused to shrink within `<main>`,
+  pushing the page past 100vh (stray scrollbar / sliver of navy sidebar). Fix is
+  scribe-scoped (AppShell untouched): `flex-1 min-h-0 overflow-y-auto` + an inner
+  `min-h-full flex-col justify-center` so the card centres and reads as a settled
+  page.
+- **U2 — record button navy idle / red live.** The mic button is navy when idle
+  (red is reserved for the safety alert) and red while actively recording; the
+  red-tinted concentric rings now breathe with a calm pulse (`.record-ring`,
+  globals.css; hard-stopped under `prefers-reduced-motion`). The green
+  "На запис · AI слуша" pill + waveform stay as the live cues.
+- **U3 — no-speech is not a failure.** When a recording has no transcribable
+  speech, the backend signals `no_speech` (PC → 422 `{ code }`; phone → WS error
+  `code` + `error_msg` stem) and keeps the visit `'pending'`. The scribe shows a
+  calm `NoSpeechPanel` ("Не разпознахме реч в записа" + re-record) instead of the
+  red failure / retry-extraction panel — there is nothing to resurrect, and
+  re-recording the SAME visit just works. `isNoSpeechApiError` / `isNoSpeechMessage`
+  in `lib/api.ts`; `WsMessage` error gained an optional `code`. **Paired backend
+  change in tubermed-backend** (process-audio `kind:'no_speech'`, transcribe.js
+  422, sessions.js phone path — both revert the row to `'pending'`).
+- **U4 — recovery copy matches actions.** `RecoveryPanel` headline/subtext are now
+  STATE-DRIVEN off `blocked`: the terminal no-transcript state reads "Записът не
+  може да бъде възстановен" / "...започнете нов преглед" instead of falsely
+  promising a retry that is gone.
+- **U5 — staged processing loader.** `ProcessingView` replaced the bare spinner
+  with an INDETERMINATE bar + staged step labels (Транскрибиране… →
+  Структуриране… → Проверка за безопасност…) reflecting the real pipeline, plus a
+  static "Обикновено отнема ~15–30 сек." hint. **NO fake percentage, NO live
+  ETA** (LLM extraction has no reliable %/time; a stalled countdown erodes trust).
+  `.proc-track` / `.proc-dot` in globals.css are reduced-motion safe;
+  `role="status"`/`aria-live` announces stage changes.
+
+**No safety-gate changes anywhere in this pass** — consent + note-approval gates,
+`ai_original_fields` immutability, the transient `'retrying'` status, source-
+grounding precision, org-scoping, and EU-only flows are all untouched. Visual /
+UX / copy + the no-speech handling only.
+
 # Known issues / gotchas
 
 - **Break-it audit (2026-06-13) — `AUDIT-FINDINGS-2026-06-13.md` (repo root, web
