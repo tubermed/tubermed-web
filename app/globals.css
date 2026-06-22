@@ -416,6 +416,50 @@ html, body {
   .record-ring { animation: none; opacity: 0.5; }
 }
 
+/* ── Processing loader — indeterminate bar + staged dots (U5) ────────────────
+   A slim indeterminate sweep (no fake percentage) plus a gently pulsing dot on
+   the active pipeline stage. Reduced-motion freezes both into a calm static
+   state. */
+.proc-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+.proc-track > span {
+  display: block;
+  height: 100%;
+  width: 40%;
+  border-radius: 999px;
+  background: var(--color-accent);
+  animation: proc-sweep 1.4s ease-in-out infinite;
+}
+@keyframes proc-sweep {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+.proc-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.proc-dot:not(.proc-dot--pending) {
+  animation: proc-dot-pulse 1.4s ease-in-out infinite;
+}
+.proc-dot--pending {
+  background: var(--color-border-mid);
+  opacity: 0.6;
+}
+@keyframes proc-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .proc-track > span { animation: none; width: 100%; opacity: 0.5; }
+  .proc-dot { animation: none !important; }
+}
+
 /* ── Result page 3-column grid ─────────────────────────────── */
 
 .result-grid {

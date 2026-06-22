@@ -60,8 +60,6 @@ function ScribePageInner() {
   const [mode, setMode] = useState<Mode>('phone');
   const [view, setView] = useState<View>('record');
   const [error, setError] = useState<string | null>(null);
-  const [procMain, setProcMain] = useState('Обработва се...');
-  const [procSub, setProcSub] = useState('Моля изчакайте');
   const [consultationId, setConsultationId] = useState<string | null>(null);
   const [pendingVisit, setPendingVisit] = useState<PendingVisit | null>(null);
   // Cold-start recovery: set to the ?visit= id when sessionStorage is absent
@@ -255,9 +253,9 @@ function ScribePageInner() {
     [router]
   );
 
-  const goToProcessing = useCallback((main: string, sub: string) => {
-    setProcMain(main);
-    setProcSub(sub);
+  // The processing labels are universal pipeline stages (ProcessingView owns
+  // them), so this no longer carries per-mode text — it just flips the view.
+  const goToProcessing = useCallback(() => {
     setView('processing');
   }, []);
 
@@ -311,9 +309,7 @@ function ScribePageInner() {
             <ErrorBanner message={error} onClose={() => setError(null)} />
           )}
 
-          {view === 'processing' && (
-            <ProcessingView main={procMain} sub={procSub} />
-          )}
+          {view === 'processing' && <ProcessingView />}
 
           {/* PhoneMode owns a long-lived WebSocket and the recovery
               (reconnect + slow-poll) path against /api/sessions/:id/status.
@@ -336,9 +332,7 @@ function ScribePageInner() {
                 mode={mode}
                 onModeChange={setMode}
                 consultationId={consultationId}
-                onProcessing={() =>
-                  goToProcessing('AI анализира...', 'Транскрипция и извличане')
-                }
+                onProcessing={goToProcessing}
                 onResult={onResult}
                 onError={reportProcessingError}
               />
@@ -351,9 +345,7 @@ function ScribePageInner() {
               onModeChange={setMode}
               consultationId={consultationId}
               onRecordingChange={setPcRecording}
-              onProcessing={() =>
-                goToProcessing('Транскрипция...', 'Изпраща се аудиото')
-              }
+              onProcessing={goToProcessing}
               onResult={onResult}
               onError={reportProcessingError}
               onAuthError={() => {
@@ -582,21 +574,75 @@ function RecordCardShell({
   );
 }
 
-function ProcessingView({ main, sub }: { main: string; sub: string }) {
+// U5 — processing loader: an INDETERMINATE indicator paired with staged step
+// labels reflecting the real pipeline (Soniox → extraction → drug-safety).
+// Deliberately NO fake percentage and NO live ETA — LLM extraction has no
+// reliable %/time estimate, and a countdown stalling at "0 сек" erodes trust
+// more than none. The stages advance on a typical-timing schedule and the last
+// one simply stays active until the result lands; a static "~15–30 сек" hint
+// sets expectations without pretending to measure.
+const PROCESSING_STEPS = [
+  'Транскрибиране…',
+  'Структуриране…',
+  'Проверка за безопасност…',
+];
+
+function ProcessingView() {
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    const t1 = setTimeout(() => setActive(1), 7000);
+    const t2 = setTimeout(() => setActive(2), 16000);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, []);
+
   return (
     <div
-      className="bg-white rounded-2xl border p-12 flex flex-col items-center text-center"
+      role="status"
+      aria-live="polite"
+      className="bg-white rounded-2xl border p-10 flex flex-col items-center text-center"
       style={{ borderColor: 'var(--color-border)', boxShadow: 'var(--shadow-card)' }}
     >
-      <Spinner />
+      <div className="proc-track w-48" aria-hidden>
+        <span />
+      </div>
       <div
-        className="text-lg font-semibold mt-6 mb-1"
+        className="text-lg font-semibold mt-6 mb-4"
         style={{ color: 'var(--color-heading)' }}
       >
-        {main}
+        Обработва се…
       </div>
-      <div className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-        {sub}
+      <ul className="space-y-2.5 text-sm w-full max-w-[15rem] mx-auto text-left">
+        {PROCESSING_STEPS.map((label, i) => {
+          const done = i < active;
+          const current = i === active;
+          return (
+            <li key={label} className="flex items-center gap-2.5">
+              <span aria-hidden className="inline-flex w-4 justify-center">
+                {done ? (
+                  <Icon name="check" size={16} style={{ color: 'var(--color-ok-strong)' }} />
+                ) : current ? (
+                  <span className="proc-dot" style={{ background: 'var(--color-accent)' }} />
+                ) : (
+                  <span className="proc-dot proc-dot--pending" />
+                )}
+              </span>
+              <span
+                style={{
+                  color: current ? 'var(--color-heading)' : 'var(--color-text-muted)',
+                  fontWeight: current ? 600 : 400,
+                }}
+              >
+                {label}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mt-5 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+        Обикновено отнема ~15–30 сек.
       </div>
     </div>
   );
