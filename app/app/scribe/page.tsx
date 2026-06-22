@@ -290,8 +290,15 @@ function ScribePageInner() {
     <AppShell doctor={doctor} sidebarLocked={navLocked}>
       <Stepper steps={SCRIBE_FLOW_STEPS} current={stepperCurrent} />
       {pendingVisit && <PatientHeaderStrip pending={pendingVisit} />}
-      <div className="flex-1 px-6 py-8">
-        <div className="max-w-2xl mx-auto">
+      {/* U1 — the recording surface fits the viewport with no stray scroll.
+          flex-1 + min-h-0 lets this region shrink WITHIN <main>: a flex child
+          defaults to min-height:auto, which refuses to shrink below its content
+          and pushed the page past 100vh (the sliver of navy / stray scrollbar).
+          overflow-y-auto keeps short windows graceful; the inner min-h-full
+          column vertically centres the card so it reads as a settled page. */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="min-h-full flex flex-col justify-center px-6 py-6">
+        <div className="max-w-2xl mx-auto w-full">
           {recoverableVisitId ? (
             <RecoveryPanel
               visitId={recoverableVisitId}
@@ -359,6 +366,7 @@ function ScribePageInner() {
           )}
           </>
           )}
+        </div>
         </div>
       </div>
 
