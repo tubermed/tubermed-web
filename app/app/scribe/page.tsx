@@ -467,18 +467,26 @@ function RecoveryPanel({
       className="bg-white rounded-2xl border p-8 sm:p-10 flex flex-col items-center text-center"
       style={{ borderColor: 'var(--color-border)', boxShadow: 'var(--shadow-card)' }}
     >
+      {/* U4 — copy is STATE-DRIVEN so it never contradicts the available
+          actions. In the terminal (no-transcript) state the only action is
+          "Започни нов преглед", so the headline/subtext must NOT promise a
+          retry that is gone. */}
       <div
         className="text-xl font-semibold mb-2"
         style={{ color: 'var(--color-danger)' }}
       >
-        Обработката се провали
+        {blocked ? 'Записът не може да бъде възстановен' : 'Обработката се провали'}
       </div>
       <p className="text-sm max-w-md" style={{ color: 'var(--color-text-muted)' }}>
-        Звукът ви е запазен. Можете да опитате повторно извличане, без да записвате
-        отново.
+        {blocked
+          ? 'Звукът не е наличен за повторно извличане. Моля, започнете нов преглед.'
+          : 'Звукът ви е запазен. Можете да опитате повторно извличане, без да записвате отново.'}
       </p>
 
-      {(phase.kind === 'temporary' || phase.kind === 'no-transcript') && (
+      {/* The extra notice box is only the transient "service is down, audio is
+          safe, try again" message — the no-transcript case is fully covered by
+          the state-driven headline/subtext above (no duplicate line). */}
+      {phase.kind === 'temporary' && (
         <div
           className="mt-4 px-4 py-3 rounded-md text-sm"
           style={{ background: 'var(--color-danger-soft)', color: 'var(--color-danger)' }}
