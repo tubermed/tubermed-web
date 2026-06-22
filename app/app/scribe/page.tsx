@@ -1183,8 +1183,11 @@ function PcMode({
   return (
     <RecordCardShell mode={mode} onModeChange={onModeChange}>
       <div className="flex flex-col items-center text-center">
-        {/* Record control — the focal red action. Pale concentric rings sit
-            behind it while recording (decorative). onClick + aria UNCHANGED. */}
+        {/* Record control — NAVY when idle (calm; red stays reserved for the
+            safety alert) and RED while actively recording (a meaningful "live"
+            signal). While live, the red-tinted concentric rings breathe with a
+            calm pulse (record-ring, hard-stopped under reduced-motion in
+            globals.css). onClick + aria UNCHANGED. */}
         <div
           className="relative flex items-center justify-center"
           style={{ width: 176, height: 152 }}
@@ -1193,13 +1196,13 @@ function PcMode({
             <>
               <span
                 aria-hidden
-                className="absolute rounded-full"
-                style={{ width: 148, height: 148, background: 'var(--color-brand-light)', opacity: 0.55 }}
+                className="record-ring absolute rounded-full"
+                style={{ width: 148, height: 148, background: 'var(--color-red-soft)' }}
               />
               <span
                 aria-hidden
-                className="absolute rounded-full"
-                style={{ width: 116, height: 116, background: 'var(--color-brand-soft)', opacity: 0.7 }}
+                className="record-ring record-ring--delay absolute rounded-full"
+                style={{ width: 116, height: 116, background: 'var(--color-red-soft)' }}
               />
             </>
           )}

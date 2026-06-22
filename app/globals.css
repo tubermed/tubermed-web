@@ -399,6 +399,23 @@ html, body {
   outline-offset: 2px;
 }
 
+/* ── Scribe record control — calm "live" pulse (U2) ──────────────────────────
+   The mic button is NAVY when idle (calm; red is reserved for safety alerts)
+   and RED while actively recording. The red-tinted concentric rings behind the
+   red control breathe gently so "live" reads as a meaningful signal, not
+   decoration. Two rings with a small delay offset for a layered, unhurried
+   feel. HARD-STOPPED under reduced-motion (rings stay, just still) — matching
+   the repo convention. */
+.record-ring { animation: record-pulse 2.4s ease-in-out infinite; }
+.record-ring--delay { animation-delay: 0.8s; }
+@keyframes record-pulse {
+  0%, 100% { transform: scale(0.94); opacity: 0.6; }
+  50%      { transform: scale(1.06); opacity: 0.25; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .record-ring { animation: none; opacity: 0.5; }
+}
+
 /* ── Result page 3-column grid ─────────────────────────────── */
 
 .result-grid {
