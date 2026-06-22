@@ -478,6 +478,31 @@ export function isMissingConsentError(err: unknown): boolean {
 }
 
 /**
+ * no_speech — Soniox produced no transcribable speech (silence / too short /
+ * muted mic / wrong device). This is NOT a system fault and NOT resurrectable,
+ * so the scribe shows a calm "re-record" message rather than the generic
+ * failure / retry-extraction panel. It surfaces three ways and these helpers
+ * unify detection across them:
+ *   • PC direct upload    → ApiError 422 with body.code === 'no_speech'
+ *     (isNoSpeechApiError).
+ *   • phone, live WS      → WsMessage error payload's code === 'no_speech'
+ *     (read directly off the message — no helper needed).
+ *   • phone, /status poll → the recovery fallback only has error_msg, so match
+ *     the backend's stable Bulgarian stem (isNoSpeechMessage). The message
+ *     wording stays single-sourced on the backend.
+ */
+export function isNoSpeechApiError(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return false;
+  if (err.status === 422) return true;
+  const body = err.body;
+  return !!body && typeof body === 'object' && (body as { code?: unknown }).code === 'no_speech';
+}
+
+export function isNoSpeechMessage(msg: string | null | undefined): boolean {
+  return typeof msg === 'string' && msg.toLowerCase().includes('разпознахме реч');
+}
+
+/**
  * B5 — POST /api/consultations/:id/patient-summary grew two server-side
  * cost-control limits, each an HTTP 429 carrying a machine `code` plus a
  * Bulgarian `error` message (the per-org daily cap, and a per-consultation

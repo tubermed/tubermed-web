@@ -81,7 +81,11 @@ export type SessionStatus =
 export type WsMessage =
   | { type: 'processing' }
   | { type: 'result'; consultationId: string; transcript: string; fields: TranscribeFields }
-  | { type: 'error'; message: string };
+  // `code` is an optional machine discriminator on the error payload — today
+  // 'no_speech' (Soniox produced no transcribable speech), so the PC can show a
+  // calm re-record message instead of the generic failure/recovery panel. The
+  // backend also sends statusCode:502 on Anthropic exhaustion (not read here).
+  | { type: 'error'; message: string; code?: string };
 
 // ── Patient / Visit (Phase 2) ────────────────────────────────────────────────
 

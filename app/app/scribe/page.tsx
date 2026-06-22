@@ -13,6 +13,8 @@ import {
   clearSession,
   getSession,
   isMissingConsentError,
+  isNoSpeechApiError,
+  isNoSpeechMessage,
   wsUrl,
   type DoctorInfo,
 } from '@/lib/api';
@@ -72,6 +74,12 @@ function ScribePageInner() {
   // the consultation id here swaps the in-flow UI for the recovery panel. Stays
   // null on the happy path. See RecoveryPanel below.
   const [recoverableVisitId, setRecoverableVisitId] = useState<string | null>(null);
+  // U3 no-speech: when a recording had no transcribable speech (silence / too
+  // short / muted mic), the backend reverts the staged row to 'pending' and
+  // signals no_speech. We show a calm NoSpeechPanel ("re-record") instead of the
+  // failure/recovery panel — there is nothing to resurrect, and the same visit
+  // can simply be recorded again. Stays false on the happy path.
+  const [noSpeech, setNoSpeech] = useState(false);
   // PC-side recording active flag — bubbled up from PcMode so the sidebar
   // can be locked while the doctor is mid-recording. Phone-side "in progress"
   // naturally maps to view === 'processing' (PC isn't recording anything).
@@ -232,7 +240,15 @@ function ScribePageInner() {
   // Errors without a consultation id (nothing staged) fall through to the plain
   // banner, unchanged.
   const reportProcessingError = useCallback(
-    (message: string) => {
+    (message: string, opts?: { kind?: 'no_speech' }) => {
+      // no_speech is NOT a failure to recover from — the backend kept the visit
+      // 'pending'. Show the calm NoSpeechPanel; never the retry-extraction panel.
+      if (opts?.kind === 'no_speech') {
+        setError(null);
+        setRecoverableVisitId(null);
+        setNoSpeech(true);
+        return;
+      }
       if (consultationId) {
         setError(null);
         setRecoverableVisitId(consultationId);
@@ -301,6 +317,16 @@ function ScribePageInner() {
             <RecoveryPanel
               visitId={recoverableVisitId}
               onSuccess={(id) => router.push(`/app/scribe/result?visit=${id}`)}
+              onRestart={() => router.replace('/app/new-visit')}
+            />
+          ) : noSpeech ? (
+            <NoSpeechPanel
+              onRetry={() => {
+                // The backend kept this visit 'pending', so re-recording the
+                // SAME consultation works. Clear the panel + return to record.
+                setNoSpeech(false);
+                setView('record');
+              }}
               onRestart={() => router.replace('/app/new-visit')}
             />
           ) : (
@@ -509,6 +535,57 @@ function RecoveryPanel({
   );
 }
 
+/* ─────────────────────────────────────────────────────────────── */
+/* NO-SPEECH PANEL (U3 — "не разпознахме реч в записа")             */
+/* ─────────────────────────────────────────────────────────────── */
+//
+// Shown when a recording had no transcribable speech (silence / too short /
+// muted mic / wrong device). This is deliberately CALM and accurate — it is NOT
+// a system failure (so no red "Обработката се провали"), and there is nothing
+// to resurrect (so no retry-extraction). The backend reverted the visit to
+// 'pending', so "Запишете отново" simply returns to the record view and the
+// SAME visit (patient + consent intact) is recorded again.
+function NoSpeechPanel({
+  onRetry,
+  onRestart,
+}: {
+  onRetry: () => void;
+  onRestart: () => void;
+}) {
+  return (
+    <div
+      className="bg-white rounded-2xl border p-8 sm:p-10 flex flex-col items-center text-center"
+      style={{ borderColor: 'var(--color-border)', boxShadow: 'var(--shadow-card)' }}
+    >
+      <Icon
+        name="mic"
+        size={40}
+        className="mb-3"
+        style={{ color: 'var(--color-text-muted)' }}
+      />
+      <div
+        className="text-xl font-semibold mb-2"
+        style={{ color: 'var(--color-heading)' }}
+      >
+        Не разпознахме реч в записа
+      </div>
+      <p className="text-sm max-w-md" style={{ color: 'var(--color-text-muted)' }}>
+        Записът изглежда без говор — възможно е микрофонът да е бил изключен или
+        записът да е твърде кратък. Проверете микрофона и опитайте отново.
+      </p>
+
+      <div className="flex flex-wrap gap-3 justify-center mt-6">
+        <Button variant="primary" onClick={onRetry}>
+          Запишете отново
+        </Button>
+        <Button variant="secondary" onClick={onRestart}>
+          Започни нов преглед
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ModeTabs({
   mode,
   onChange,
@@ -687,7 +764,7 @@ function PhoneMode({
   consultationId: string | null;
   onProcessing: () => void;
   onResult: (r: TranscribeResult) => void;
-  onError: (msg: string) => void;
+  onError: (msg: string, opts?: { kind?: 'no_speech' }) => void;
 }) {
   const [session, setSession] = useState<SessionInit | null>(null);
   const [expiresIn, setExpiresIn] = useState<number>(0);
@@ -761,7 +838,14 @@ function PhoneMode({
       }
       if (d.status === 'error') {
         resolvedRef.current = true;
-        onErrorRef.current('Грешка: ' + (d.error_msg || 'неизвестна'));
+        // Recovery fallback only carries error_msg — detect no_speech off the
+        // backend's stable Bulgarian stem so the PC shows the calm re-record
+        // panel rather than the generic failure/recovery panel.
+        if (isNoSpeechMessage(d.error_msg)) {
+          onErrorRef.current(d.error_msg || '', { kind: 'no_speech' });
+        } else {
+          onErrorRef.current('Грешка: ' + (d.error_msg || 'неизвестна'));
+        }
         return true;
       }
     } catch (e) {
@@ -808,7 +892,12 @@ function PhoneMode({
         } else if (msg.type === 'error') {
           if (resolvedRef.current) return;
           resolvedRef.current = true;
-          onErrorRef.current('Грешка при обработка: ' + msg.message);
+          // code:'no_speech' → calm re-record panel, not the failure panel.
+          if (msg.code === 'no_speech') {
+            onErrorRef.current(msg.message, { kind: 'no_speech' });
+          } else {
+            onErrorRef.current('Грешка при обработка: ' + msg.message);
+          }
         }
       } catch {
         /* ignore malformed messages */
@@ -1032,7 +1121,7 @@ function PcMode({
   onRecordingChange: (active: boolean) => void;
   onProcessing: () => void;
   onResult: (r: TranscribeResult) => void;
-  onError: (msg: string) => void;
+  onError: (msg: string, opts?: { kind?: 'no_speech' }) => void;
   onAuthError: () => void;
   onBackToIdle: () => void;
   /** Gate 2: resolves once consent is on file. PcMode awaits this BEFORE
@@ -1186,6 +1275,14 @@ function PcMode({
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         onAuthError();
+        return;
+      }
+      // U3: no transcribable speech (silence / too short / muted mic). NOT a
+      // failure to recover from — the backend kept the visit 'pending'. Show the
+      // calm re-record panel, not the generic error/recovery path.
+      if (isNoSpeechApiError(err)) {
+        onBackToIdle();
+        onError(err instanceof Error ? err.message : '', { kind: 'no_speech' });
         return;
       }
       // Gate 2 (post-403 fallback): the backend refused for missing consent
