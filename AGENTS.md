@@ -1472,3 +1472,52 @@ UX / copy + the no-speech handling only.
   postcss 8.5.x; **(A)** bump `next` to ≥16.3 stable **+ `eslint-config-next` in lockstep**
   (build-touching). **NEVER run `npm audit fix --force`** — it "fixes" by installing `next@9.3.3`,
   a 16→9 major downgrade that destroys the app.
+
+# Content-Security-Policy + security headers (2026-06-23)
+
+Baseline CSP + the standard companion headers, set in **`next.config.ts` `headers()`** (no
+middleware, no nonce). Shipped Report-Only first, then flipped to enforcing.
+
+- **The policy** (one source of truth — `contentSecurityPolicy()` in `next.config.ts`):
+  `default-src 'self'`; `script-src 'self' 'unsafe-inline'`; `style-src 'self' 'unsafe-inline'`;
+  `img-src 'self' data: blob:`; `font-src 'self'`; `connect-src 'self' <backend-https>
+  <backend-wss>`; `media-src 'self' blob:`; `frame-ancestors 'none'`; `base-uri 'self'`;
+  `form-action 'self'`; `object-src 'none'`; `upgrade-insecure-requests`.
+- **Companion headers:** `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+  strict-origin-when-cross-origin`, `X-Frame-Options: DENY`, `Permissions-Policy:
+  microphone=(self), camera=(), geolocation=()` (**microphone is MANDATORY — the scribe
+  records; do NOT drop it**), `Strict-Transport-Security: max-age=63072000; includeSubDomains;
+  preload`.
+- **`connect-src` is DERIVED, never hardcoded** — `backendConnectOrigins()` reads the SAME
+  `process.env.NEXT_PUBLIC_BACKEND_URL` that `lib/api.ts` fetches with, and turns it into its
+  origin + the `wss://`/`ws://` form (mirrors `wsUrl()`). **EU-only invariant:** the backend is
+  the ONLY permitted cross-origin destination — **never add a US/Google origin.** Build-time
+  inlined, so it self-adjusts per env (localhost in dev, Railway EU on Vercel; preview inherits
+  the env value). If the backend ever moves, the CSP follows automatically.
+- **Why `'unsafe-inline'` (script + style) in this baseline:** Next App Router streams hydration
+  via inline `<script>` with no nonce, and `lib/exporters.ts`' PDF print window injects an inline
+  close-`<script>` (the `about:blank` window inherits this CSP). Styles are inline throughout
+  (hero style string, `style=` attributes, export HTML). There are **no external script/style
+  origins** (verified by grep — the app is fully self-contained; `next/font` self-hosts the woff2
+  at build time, so no `fonts.gstatic`/US leak).
+- **Production-gated:** `headers()` returns `[]` unless `NODE_ENV === 'production'`, so `next dev`
+  HMR (ws:/eval) is untouched. Verify a prod build locally: `next build && next start`, then
+  `curl -D - http://localhost:3000/`. Note: Next bakes `headers()` into the build manifest at
+  **build time** — a config change needs a **rebuild** to take effect under `next start`.
+- **Report-Only → enforce:** `const CSP_REPORT_ONLY` (top of `next.config.ts`). `true` →
+  `Content-Security-Policy-Report-Only` (reports, never blocks); `false` → enforcing. Flipping
+  back is a one-line change + rebuild.
+
+**Deferred / follow-ups:**
+- **Tighten `script-src`/`style-src` via a per-request nonce** (Next middleware that injects a
+  nonce into the CSP + lets Next tag its inline scripts) — removes `'unsafe-inline'`. The export
+  print window's inline script is a separate case (it lives in a child `about:blank`), so the
+  nonce alone won't cover it; consider moving that script to a hashed/`'self'` form.
+- **The phone capture page is NOT covered by this CSP.** `/mobile?session=…` (the QR target) is
+  server-rendered HTML by the **BACKEND** (`tubermed-backend/routes/sessions.js`, a different
+  origin) — this web header never reaches it. The backend should send its own CSP for
+  `/mobile-page` (it uses inline `<style>`/`<script>` + getUserMedia, so it needs
+  `script-src/style-src 'unsafe-inline'` + `media-src blob:` + `Permissions-Policy
+  microphone=(self)` of its own). Tracked as a backend follow-up.
+- **HSTS duplicate:** if Vercel is ever configured to also send `Strict-Transport-Security`,
+  remove one of the two to avoid a duplicate header.
