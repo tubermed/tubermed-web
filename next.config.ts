@@ -25,7 +25,7 @@ const APP_PATHS = ["/signup", "/app/:path*"];
 // scribe flow. See AGENTS.md "Content-Security-Policy" for the policy + deferred
 // tightenings (script-src/style-src nonce via middleware; the phone /mobile-page
 // is served by the BACKEND and needs its own CSP there — not covered here).
-const CSP_REPORT_ONLY = true; // commit 1: observe. Flip to false to ENFORCE (commit 2).
+const CSP_REPORT_ONLY = false; // ENFORCING. Set true to drop back to Report-Only.
 
 // connect-src origins, derived from the SAME value the app fetches / opens its
 // WebSocket with (lib/api.ts: BACKEND = NEXT_PUBLIC_BACKEND_URL; wsUrl() swaps
