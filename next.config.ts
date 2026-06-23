@@ -18,6 +18,85 @@ const APP_ORIGIN = "https://app.tubermed.com";
 const MARKETING_HOSTS = ["www.tubermed.com", "tubermed.com"];
 const APP_PATHS = ["/signup", "/app/:path*"];
 
+// ── Baseline Content-Security-Policy + companion security headers (2026-06-23) ─
+// Production-only (next dev's HMR uses ws:/eval that a strict CSP would flag).
+// Shipped FIRST in Report-Only so violations are reported, never blocked; flip
+// CSP_REPORT_ONLY=false to enforce once a deploy shows zero violations across the
+// scribe flow. See AGENTS.md "Content-Security-Policy" for the policy + deferred
+// tightenings (script-src/style-src nonce via middleware; the phone /mobile-page
+// is served by the BACKEND and needs its own CSP there — not covered here).
+const CSP_REPORT_ONLY = true; // commit 1: observe. Flip to false to ENFORCE (commit 2).
+
+// connect-src origins, derived from the SAME value the app fetches / opens its
+// WebSocket with (lib/api.ts: BACKEND = NEXT_PUBLIC_BACKEND_URL; wsUrl() swaps
+// https->wss / http->ws). EU-ONLY INVARIANT: the backend origin is the only
+// permitted cross-origin destination — never a US / Google origin. NEXT_PUBLIC_*
+// is build-time inlined, so this self-adjusts per environment (localhost in dev,
+// the Railway EU origin on Vercel prod; preview deployments inherit the same env
+// value). Derived, never hardcoded, so it can't drift from the real fetch origin.
+function backendConnectOrigins(): string[] {
+  const raw = process.env.NEXT_PUBLIC_BACKEND_URL;
+  if (!raw) return [];
+  try {
+    const httpOrigin = new URL(raw).origin; // strips any path → scheme://host[:port]
+    const wsOrigin = httpOrigin
+      .replace(/^https:\/\//, "wss://")
+      .replace(/^http:\/\//, "ws://"); // mirrors lib/api.ts wsUrl()
+    return [httpOrigin, wsOrigin];
+  } catch {
+    return [];
+  }
+}
+
+function contentSecurityPolicy(): string {
+  const connectSrc = ["'self'", ...backendConnectOrigins()].join(" ");
+  return [
+    "default-src 'self'",
+    // 'unsafe-inline': Next App Router streams hydration via inline <script> with
+    // NO nonce, and lib/exporters.ts' PDF print window injects an inline
+    // close-script (the about:blank window inherits this CSP). There are NO
+    // external script origins (verified). Tightening to a nonce needs middleware
+    // wiring — deferred (AGENTS.md "Content-Security-Policy").
+    "script-src 'self' 'unsafe-inline'",
+    // Inline styles throughout: the hero's large inline style string, style=
+    // attributes across components, and the export print/Word HTML.
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self'", // next/font self-hosts the woff2 at build time — no runtime Google Fonts
+    `connect-src ${connectSrc}`, // EU backend (https + wss) + same-origin only
+    "media-src 'self' blob:", // MediaRecorder audio capture
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
+    "upgrade-insecure-requests",
+  ].join("; ");
+}
+
+const securityHeaders = [
+  {
+    key: CSP_REPORT_ONLY
+      ? "Content-Security-Policy-Report-Only"
+      : "Content-Security-Policy",
+    value: contentSecurityPolicy(),
+  },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  // Belt-and-suspenders with frame-ancestors 'none' for legacy UAs.
+  { key: "X-Frame-Options", value: "DENY" },
+  // microphone=(self) is MANDATORY — the scribe records audio. camera/geo off.
+  {
+    key: "Permissions-Policy",
+    value: "microphone=(self), camera=(), geolocation=()",
+  },
+  // HSTS: 2 years + preload. If Vercel is ever configured to also send HSTS,
+  // remove one to avoid a duplicate header (see AGENTS.md).
+  {
+    key: "Strict-Transport-Security",
+    value: "max-age=63072000; includeSubDomains; preload",
+  },
+];
+
 const nextConfig: NextConfig = {
   async redirects() {
     // One entry per host × path — Next host matchers take a single value
@@ -31,6 +110,13 @@ const nextConfig: NextConfig = {
         has: [{ type: "host" as const, value: host }],
       }))
     );
+  },
+  async headers() {
+    // Gate to production: next dev's HMR (websocket + eval) would trip a strict
+    // policy and flood the console. Applies under `next start` and on Vercel
+    // (NODE_ENV=production). Verify a prod build locally: next build && next start.
+    if (process.env.NODE_ENV !== "production") return [];
+    return [{ source: "/:path*", headers: securityHeaders }];
   },
 };
 
