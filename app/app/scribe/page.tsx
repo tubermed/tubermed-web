@@ -311,7 +311,7 @@ function ScribePageInner() {
           overflow-y-auto keeps short windows graceful; the inner min-h-full
           column vertically centres the card so it reads as a settled page. */}
       <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="min-h-full flex flex-col justify-center px-6 py-6">
+        <div className="min-h-full flex flex-col justify-center px-6 py-4">
         <div className="max-w-2xl mx-auto w-full">
           {recoverableVisitId ? (
             <RecoveryPanel
@@ -638,10 +638,10 @@ function RecordCardShell({
 }) {
   return (
     <div
-      className="bg-white rounded-2xl border p-6 sm:p-8"
+      className="bg-white rounded-2xl border px-6 py-5 sm:px-8"
       style={{ borderColor: 'var(--color-border)', boxShadow: 'var(--shadow-card)' }}
     >
-      <div className="mb-5">
+      <div className="mb-4">
         <h1
           className="text-xl font-semibold"
           style={{ color: 'var(--color-heading)', letterSpacing: '-0.01em' }}
@@ -651,9 +651,9 @@ function RecordCardShell({
         <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
           AI слуша и записва. Нищо не напуска ЕС.
         </p>
-        <div className="mt-4" style={{ borderBottom: '1px solid var(--color-hairline)' }} />
+        <div className="mt-3" style={{ borderBottom: '1px solid var(--color-hairline)' }} />
       </div>
-      <ModeTabs mode={mode} onChange={onModeChange} className="max-w-md mx-auto mb-8" />
+      <ModeTabs mode={mode} onChange={onModeChange} className="max-w-md mx-auto mb-6" />
       {children}
     </div>
   );
@@ -1050,7 +1050,7 @@ function PhoneMode({
     <RecordCardShell mode={mode} onModeChange={onModeChange}>
       <div className="flex flex-col items-center text-center">
         <div
-          className="text-sm mb-4"
+          className="text-sm mb-3"
           style={{ color: 'var(--color-text-muted)' }}
         >
           Сканирайте с телефона
@@ -1065,10 +1065,10 @@ function PhoneMode({
                 background: 'white',
               }}
             >
-              <QRCodeSVG value={session.mobileUrl} size={188} fgColor="#1C2B44" />
+              <QRCodeSVG value={session.mobileUrl} size={180} fgColor="#1C2B44" />
             </div>
             <div
-              className="text-xs mt-4"
+              className="text-xs mt-3"
               style={{ color: 'var(--color-text-muted)' }}
             >
               Насочете камерата на телефона към QR кода.
