@@ -1,4 +1,6 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
+import { sentryConnectOrigins } from "./lib/sentry-csp";
 
 // ── Canonical app domain (2026-06-11) ────────────────────────────────────────
 // The Vercel project answers on www.tubermed.com / tubermed.com AND
@@ -49,7 +51,12 @@ function backendConnectOrigins(): string[] {
 }
 
 function contentSecurityPolicy(): string {
-  const connectSrc = ["'self'", ...backendConnectOrigins()].join(" ");
+  // connect-src = same-origin + the EU backend (https + wss) + (when configured) the EU Sentry
+  // ingest origin. sentryConnectOrigins() (lib/sentry-csp.ts) is DSN-derived + EU-GUARDED — it
+  // returns nothing unless NEXT_PUBLIC_SENTRY_DSN points at *.ingest.de.sentry.io, so an unset or
+  // non-EU DSN adds NO origin. Same "derived, never hardcoded, never a non-EU origin" rule as the
+  // backend. See AGENTS.md "Content-Security-Policy" — EU-invariant note.
+  const connectSrc = ["'self'", ...backendConnectOrigins(), ...sentryConnectOrigins()].join(" ");
   return [
     "default-src 'self'",
     // 'unsafe-inline': Next App Router streams hydration via inline <script> with
@@ -63,7 +70,7 @@ function contentSecurityPolicy(): string {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self'", // next/font self-hosts the woff2 at build time — no runtime Google Fonts
-    `connect-src ${connectSrc}`, // EU backend (https + wss) + same-origin only
+    `connect-src ${connectSrc}`, // same-origin + EU backend (https + wss) + EU Sentry ingest (when set)
     "media-src 'self' blob:", // MediaRecorder audio capture
     "frame-ancestors 'none'",
     "base-uri 'self'",
@@ -120,4 +127,13 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Sentry (browser + server + edge) — EU region, Replay OFF, tracing OFF, PII-scrubbed
+// (instrumentation-client.ts + sentry.{server,edge}.config.ts + instrumentation.ts). withSentryConfig
+// wraps the config and PRESERVES redirects() / headers() / the CSP unchanged. Source-map upload is
+// DISABLED this pass, so the production build NEVER requires SENTRY_AUTH_TOKEN; telemetry off; silent
+// build. No tunnelRoute (no Sentry tunnel this pass). Readable stack traces are a deferred follow-up.
+export default withSentryConfig(nextConfig, {
+  silent: true,
+  telemetry: false,
+  sourcemaps: { disable: true },
+});

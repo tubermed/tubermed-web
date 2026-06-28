@@ -1473,6 +1473,45 @@ UX / copy + the no-speech handling only.
   (build-touching). **NEVER run `npm audit fix --force`** — it "fixes" by installing `next@9.3.3`,
   a 16→9 major downgrade that destroys the app.
 
+# Browser error monitoring — Sentry (EU, Replay OFF, PII-scrubbed) (2026-06-28)
+
+Client / server / edge error monitoring via `@sentry/nextjs` (v10), mirroring the backend
+(`tubermed-backend/instrument.js`). **No-op until `NEXT_PUBLIC_SENTRY_DSN` is set** (Vercel) — safe
+to ship/build before the DSN exists. Backend Sentry is a separate, already-done piece; this is the
+browser/Next half.
+
+- **Init sites — MANUAL setup, NOT `@sentry/wizard` (the wizard enables Replay + tracing we
+  forbid):** `instrumentation-client.ts` (browser, Next-16-native, runs pre-hydration),
+  `sentry.server.config.ts` + `sentry.edge.config.ts` (loaded by `instrumentation.ts` `register()`
+  per `process.env.NEXT_RUNTIME`), and `export const onRequestError = Sentry.captureRequestError`
+  in `instrumentation.ts`. Each `Sentry.init` is env-guarded: `NEXT_PUBLIC_SENTRY_DSN` (client),
+  `SENTRY_DSN || NEXT_PUBLIC_SENTRY_DSN` (server/edge).
+- **HARD CONSTRAINTS (medical product), all by construction:**
+  - **NO Session Replay** — no `replayIntegration` (it is opt-in, NOT a default integration in
+    @sentry/browser v10); `replaysSessionSampleRate` / `replaysOnErrorSampleRate` = 0. Replay
+    records the DOM = patient data.
+  - **NO performance tracing / profiling** — `tracesSampleRate: 0`; and because @sentry/nextjs v10
+    AUTO-adds `browserTracingIntegration` to the CLIENT default integrations (the `__SENTRY_TRACING__`
+    tree-shake that would suppress it is a webpack-only flag → no-ops under Next 16's Turbopack),
+    `instrumentation-client.ts` STRIPS it via an `integrations` filter at the init site (runtime,
+    bundler-agnostic). Net: no `browserTracingIntegration`, no webVitals, no history/fetch/performance
+    patching, no spans.
+  - **`sendDefaultPii: false`** + a **shared PII scrub** `lib/sentry-scrub.ts` `scrubEvent` used as
+    `beforeSend` at ALL three init sites — deletes `event.request.{data,cookies,headers,
+    query_string}` + `event.user` + `event.breadcrumbs` (mirrors the backend EXACTLY; the
+    breadcrumb drop stops a stray future `console.log(patient)` from riding into Sentry).
+  - **EU region only** — DSN must be a `*.ingest.de.sentry.io` host; the CSP `connect-src` addition
+    is EU-guarded (see the CSP section below).
+- **Build — `withSentryConfig(nextConfig, { silent: true, telemetry: false, sourcemaps: { disable:
+  true } })`** in `next.config.ts`. Wraps the config and PRESERVES `redirects()` / `headers()` /
+  the CSP unchanged. **Source-map upload is DISABLED, so the prod build NEVER needs
+  `SENTRY_AUTH_TOKEN`** (`org`/`project`/`authToken` are all optional and unset). Readable stack
+  traces (source maps) and a Sentry tunnel route are deferred follow-ups.
+- **Tests (no runner in this repo — `npx tsx`):** `scripts/sentry-scrub.ts` (scrub strips every PII
+  channel, keeps `exception`); `scripts/sentry-csp.ts` (EU DSN → ingest origin; unset / non-EU →
+  none). Verified with `npx tsc --noEmit` + `npm run build` both with the DSN unset (dormant; no
+  sentry origin in the built CSP) and set to an EU DSN (sentry origin present; no replay bundle).
+
 # Content-Security-Policy + security headers (2026-06-23)
 
 Baseline CSP + the standard companion headers, set in **`next.config.ts` `headers()`** (no
@@ -1481,7 +1520,7 @@ middleware, no nonce). Shipped Report-Only first, then flipped to enforcing.
 - **The policy** (one source of truth — `contentSecurityPolicy()` in `next.config.ts`):
   `default-src 'self'`; `script-src 'self' 'unsafe-inline'`; `style-src 'self' 'unsafe-inline'`;
   `img-src 'self' data: blob:`; `font-src 'self'`; `connect-src 'self' <backend-https>
-  <backend-wss>`; `media-src 'self' blob:`; `frame-ancestors 'none'`; `base-uri 'self'`;
+  <backend-wss> [<sentry-eu-ingest>]`; `media-src 'self' blob:`; `frame-ancestors 'none'`; `base-uri 'self'`;
   `form-action 'self'`; `object-src 'none'`; `upgrade-insecure-requests`.
 - **Companion headers:** `X-Content-Type-Options: nosniff`, `Referrer-Policy:
   strict-origin-when-cross-origin`, `X-Frame-Options: DENY`, `Permissions-Policy:
@@ -1490,10 +1529,20 @@ middleware, no nonce). Shipped Report-Only first, then flipped to enforcing.
   preload`.
 - **`connect-src` is DERIVED, never hardcoded** — `backendConnectOrigins()` reads the SAME
   `process.env.NEXT_PUBLIC_BACKEND_URL` that `lib/api.ts` fetches with, and turns it into its
-  origin + the `wss://`/`ws://` form (mirrors `wsUrl()`). **EU-only invariant:** the backend is
-  the ONLY permitted cross-origin destination — **never add a US/Google origin.** Build-time
-  inlined, so it self-adjusts per env (localhost in dev, Railway EU on Vercel; preview inherits
-  the env value). If the backend ever moves, the CSP follows automatically.
+  origin + the `wss://`/`ws://` form (mirrors `wsUrl()`). Build-time inlined, so it self-adjusts
+  per env (localhost in dev, Railway EU on Vercel; preview inherits the env value). If the backend
+  ever moves, the CSP follows automatically.
+- **Sentry EU ingest is the SECOND (and only other) cross-origin `connect-src` destination
+  (2026-06-28).** `sentryConnectOrigins()` (`lib/sentry-csp.ts`) derives the origin from
+  `process.env.NEXT_PUBLIC_SENTRY_DSN` the same DSN-derived / never-hardcoded way, and is
+  **EU-GUARDED** — it returns an origin ONLY when the DSN host matches `*.ingest.de.sentry.io` (the
+  German/EU ingest), so an unset DSN or a non-EU / other-region / self-hosted / malformed DSN adds
+  NOTHING. The browser Sentry SDK POSTs error events to this origin, so the enforcing CSP would
+  block it otherwise. **EU-only invariant (UPDATED):** the permitted cross-origin destinations are
+  the EU backend AND the EU Sentry ingest — **both EU, both DSN/URL-derived; never add a US /
+  Google / non-EU origin.** (Browser Sentry setup is in the "Browser error monitoring — Sentry"
+  section above: Replay OFF, tracing OFF, PII scrubbed via `lib/sentry-scrub.ts`; source-map upload
+  deferred.)
 - **Why `'unsafe-inline'` (script + style) in this baseline:** Next App Router streams hydration
   via inline `<script>` with no nonce, and `lib/exporters.ts`' PDF print window injects an inline
   close-`<script>` (the `about:blank` window inherits this CSP). Styles are inline throughout
