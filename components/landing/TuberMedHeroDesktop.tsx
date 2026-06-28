@@ -124,17 +124,42 @@ export default function TuberMedHeroDesktop() {
     return () => mq.removeEventListener('change', on);
   }, []);
 
-  // responsive: scale the fixed 920×600 frame to container width
+  // responsive: scale the fixed 920×600 frame so its rendered HEIGHT tracks the left
+  // copy column (which is taller than the loop). The fit is the largest scale that:
+  //  • at minimum fills its own grid track (fitFill — never narrower than the column), and
+  //  • at most reaches the copy column's height (fitToCopy), the viewport edge (fitToRoom,
+  //    so the section's overflow-hidden never clips the mock), or MAX_FIT.
+  // Growing past the track bleeds into the empty right page-margin only — no layout
+  // overflow (transform doesn't affect layout) and no scrollbar. The cursor-target
+  // measure() derives its own scale from the live frame width, so it stays correct at any fit.
   useEffect(() => {
     if (stat) return;
+    const MAX_FIT = 1.15; // crisp upscale ceiling (real DOM/SVG, not a bitmap)
+    const EDGE_GUTTER = 40; // px kept clear of the viewport's right edge (room for the shadow)
     const applyFit = () => {
-      const w = wrapRef.current?.clientWidth ?? APP_W;
-      setFit(Math.min(1, w / (APP_W + 8)));
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const wrapW = wrap.clientWidth || APP_W;
+      const fitFill = wrapW / (APP_W + 8); // fills the track exactly — never bleeds
+      const copyEl = document.querySelector('[data-hero-copy]');
+      const copyH = copyEl ? copyEl.getBoundingClientRect().height : 0;
+      const fitToCopy = copyH > 0 ? copyH / APP_H : fitFill; // match the copy column height
+      const room = window.innerWidth - EDGE_GUTTER - wrap.getBoundingClientRect().left;
+      const fitToRoom = room / APP_W; // ceiling that keeps the frame off the viewport edge
+      setFit(Math.max(fitFill, Math.min(fitToCopy, fitToRoom, MAX_FIT)));
     };
     applyFit();
     const ro = new ResizeObserver(applyFit);
     if (wrapRef.current) ro.observe(wrapRef.current);
-    return () => ro.disconnect();
+    const copyEl = document.querySelector('[data-hero-copy]');
+    if (copyEl) ro.observe(copyEl); // copy height (the target) changes with width/content
+    // innerWidth + the wrap's left shift even when the track width is capped (≥1152px),
+    // so the room ceiling must re-evaluate on viewport resize too.
+    window.addEventListener('resize', applyFit);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', applyFit);
+    };
   }, [stat]);
 
   // measure interaction targets after layout settles

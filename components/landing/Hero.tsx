@@ -9,32 +9,37 @@ export function Hero() {
   return (
     <section className="relative overflow-hidden" style={{ background: 'var(--lp-bg)' }}>
       <AmbientOrbs />
-      <Container className="relative z-10 grid items-center gap-12 py-16 md:py-24 lg:grid-cols-2 lg:gap-12">
+      {/* Asymmetric split: copy sits left in a narrower track, the product loop gets
+          the wider track + room to grow into the right margin (see TuberMedHeroDesktop's
+          height-aware fit, which reads [data-hero-copy] to match the copy column height). */}
+      <Container className="relative z-10 grid items-center gap-12 py-16 md:py-24 lg:grid-cols-[minmax(0,44fr)_minmax(0,56fr)] lg:gap-8">
         <Reveal className="min-w-0">
-          <h1
-            className="font-[family-name:var(--font-inter-tight)] text-4xl font-bold leading-[1.08] tracking-[-0.025em] sm:text-5xl md:text-6xl"
-            style={{ color: 'var(--lp-ink)' }}
-          >
-            От разговор до амбулаторен лист{' '}
-            <span style={{ color: 'var(--lp-accent)' }}>за секунди.</span>
-          </h1>
-          <p
-            className="mt-6 max-w-xl text-lg leading-relaxed"
-            style={{ color: 'var(--lp-text-muted)' }}
-          >
-            TuberMed записва консултацията и я превръща в готов, структуриран
-            амбулаторен лист на български. Вие преглеждате, поправяте и
-            одобрявате за минута след прегледа.
-          </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <MagneticCta href="#access">Заявка за достъп</MagneticCta>
-            <Cta href="#how" variant="secondary">
-              Вижте как работи
-            </Cta>
+          <div data-hero-copy>
+            <h1
+              className="font-[family-name:var(--font-inter-tight)] text-4xl font-bold leading-[1.08] tracking-[-0.025em] sm:text-5xl md:text-6xl"
+              style={{ color: 'var(--lp-ink)' }}
+            >
+              От разговор до амбулаторен лист{' '}
+              <span style={{ color: 'var(--lp-accent)' }}>за секунди.</span>
+            </h1>
+            <p
+              className="mt-6 max-w-xl text-lg leading-relaxed"
+              style={{ color: 'var(--lp-text-muted)' }}
+            >
+              TuberMed записва консултацията и я превръща в готов, структуриран
+              амбулаторен лист на български. Вие преглеждате, поправяте и
+              одобрявате за минута след прегледа.
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <MagneticCta href="#access">Заявка за достъп</MagneticCta>
+              <Cta href="#how" variant="secondary">
+                Вижте как работи
+              </Cta>
+            </div>
+            <p className="mt-7 text-sm font-medium" style={{ color: 'var(--lp-text-muted)' }}>
+              GDPR-съвместим · Обработка в ЕС · Лекарят остава авторът
+            </p>
           </div>
-          <p className="mt-7 text-sm font-medium" style={{ color: 'var(--lp-text-muted)' }}>
-            GDPR-съвместим · Обработка в ЕС · Лекарят остава авторът
-          </p>
         </Reveal>
 
         <Reveal delay={120} className="min-w-0">
