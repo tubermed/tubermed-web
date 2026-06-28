@@ -19,7 +19,7 @@ export function Hero() {
               className="font-[family-name:var(--font-inter-tight)] text-4xl font-bold leading-[1.08] tracking-[-0.025em] sm:text-5xl md:text-6xl"
               style={{ color: 'var(--lp-ink)' }}
             >
-              От разговор до амбулаторен лист{' '}
+              От консултация до амбулаторен лист{' '}
               <span style={{ color: 'var(--lp-accent)' }}>за секунди.</span>
             </h1>
             <p
@@ -27,8 +27,8 @@ export function Hero() {
               style={{ color: 'var(--lp-text-muted)' }}
             >
               TuberMed записва консултацията и я превръща в готов, структуриран
-              амбулаторен лист на български. Вие преглеждате, поправяте и
-              одобрявате за минута след прегледа.
+              амбулаторен лист на български. Преглеждате, поправяте и одобрявате
+              за минута. Останалото време е за пациента.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <MagneticCta href="#access">Заявка за достъп</MagneticCta>

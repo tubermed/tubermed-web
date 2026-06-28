@@ -1,7 +1,7 @@
 import { Container } from './ui';
 import { Reveal } from './Reveal';
 
-const BADGES = ['Данните не напускат ЕС', 'Български медицински език', 'Одобрение преди всеки експорт'];
+const BADGES = ['Данните не напускат ЕС', 'Български медицински език', 'Одобрявате преди всеки експорт'];
 
 function CheckIcon() {
   return (
@@ -17,7 +17,7 @@ export function TrustStrip() {
       <Container className="py-8">
         <Reveal className="flex flex-col items-center gap-6 text-center">
           <p className="text-sm font-semibold" style={{ color: 'var(--lp-text-muted)' }}>
-            В пилотна фаза с избрани кабинети в частната практика.
+            В пилотна фаза с избрани кабинети.
           </p>
           <ul className="flex flex-wrap items-center justify-center gap-3">
             {BADGES.map((b) => (

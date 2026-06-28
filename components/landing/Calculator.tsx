@@ -50,8 +50,8 @@ export function Calculator() {
       <Container className="py-20 md:py-28">
         <Reveal>
           <SectionHeading
-            title="Калкулатор: колко време ще си върнете"
-            intro="Нагласете стойностите спрямо вашата практика и вижте приблизителната оценка."
+            title="Колко време ще си върнете?"
+            intro="Нагласете стойностите спрямо Вашата практика и вижте приблизителна оценка."
           />
         </Reveal>
 
@@ -68,7 +68,7 @@ export function Calculator() {
                 onChange={setVisits} suffix=""
               />
               <Slider
-                id="calc-minutes" label="Минути писане на лист" value={minutes} min={2} max={20} step={1}
+                id="calc-minutes" label="Минути за амбулаторен лист" value={minutes} min={2} max={20} step={1}
                 onChange={setMinutes} suffix=" мин"
               />
               <Slider
