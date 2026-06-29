@@ -289,7 +289,8 @@ truth: `app/page.tsx`.
   `Security` → `Pricing` → `Faq` → `FinalCta` → `Footer`. Motion primitives:
   `Reveal` (framer-motion `whileInView`, once), `AmbientOrbs`, `MagneticCta`,
   `Parallax`, `ScrollProgress`, `LenisProvider`; the hero is
-  `TuberMedHeroDesktop`; shared bits in `brand.tsx` / `ui.tsx`. Second landing
+  `TuberMedHeroLoop` (native v2.1 — replaced `TuberMedHeroDesktop` on 2026-06-29,
+  see "Hero fidelity" below); shared bits in `brand.tsx` / `ui.tsx`. Second landing
   route: `app/privacy/page.tsx`.
 - **Deps (landing-only).** `framer-motion` + `lenis` — used ONLY in landing
   client islands. Deliberate, scoped exception to the earlier "CSS-first, no
@@ -324,13 +325,35 @@ truth: `app/page.tsx`.
   `setState` re-rendered the whole hero mock and caused top-of-page jank; do NOT
   reintroduce it). `AmbientOrbs` use a baked radial-gradient on their own
   composited layer — NO animated `filter:blur()` (it re-rasterizes every frame).
-- **Hero fidelity.** `TuberMedHeroDesktop` mirrors the real product: the
-  recording screen matches `/app/scribe` PcMode (label → waveform → 80px mic
-  button → mono timer → status), and the result screen + the section-7
-  `AuthorTrust` note follow the real `/app/scribe/result` order (its `NAV_ITEMS`)
-  — **diagnosis first**. Loops continuously; mobile / reduced-motion render a
-  static readable end-frame. There is a marked swap-in point for a real
-  anonymized `<video>`.
+- **Hero fidelity (hero loop, 2026-06-29, commit `59c29f8`).** The hero is now the
+  native `TuberMedHeroLoop` (`components/landing/TuberMedHeroLoop.tsx`, v2.1) — it
+  REPLACED `TuberMedHeroDesktop` in `Hero.tsx`. A self-contained `'use client'`
+  component: pure DOM/SVG + GPU transforms over a **fixed 920×648 stage that
+  self-scales to its container width** (it fills the 56fr visual track), with its
+  own `HERO_LOOP_CSS` and only `import React`. **Zero external / network requests**
+  — no Google/gstatic, no unpkg/CDN, no `<video>`, no `<iframe>` — verified under
+  the enforcing prod CSP. `prefers-reduced-motion` renders a static final frame
+  (mobile too). **Fonts:** it uses the literal family names `'Inter Tight'` /
+  `'Inter'` / `'JetBrains Mono'` mapped to the repo's existing self-hosted
+  `next/font` vars (`--font-inter-tight` / `--font-inter` / `--font-jetbrains`) — no
+  new woff2 / `@font-face`. The old `TuberMedHeroDesktop.tsx` is **parked in place
+  but unused** (kept as a fallback). Two earlier approaches were tried and
+  abandoned — a real `<video>`/MP4 (quality) and an `<iframe>` embed (EU-CSP /
+  external requests) — so do NOT re-tread them. The section-7 `AuthorTrust` note
+  still follows the real `/app/scribe/result` order (`NAV_ITEMS`) — **diagnosis
+  first**.
+- **Hero grid (2026-06-28, commit `83e8ccd`).** The hero is an asymmetric two-column
+  split — `Container` is `lg:grid-cols-[minmax(0,44fr)_minmax(0,56fr)]` (copy 44 /
+  visual 56) with `lg:gap-8`. The copy track carries a `data-hero-copy` hook; it
+  once drove `TuberMedHeroDesktop`'s height-aware fit and is now kept only for that
+  parked component (`TuberMedHeroLoop` self-sizes, so the hook is currently inert).
+- **Landing copy & voice (revised 2026-06-28, commit `4a222bc`).** The visible
+  landing copy was reworked to the current voice — direct, formal "Вие/Ви", active,
+  plainer, and **no em-dashes** in visible copy (the stray "—" in the Comparison
+  table → plain "-"). Copy-only: no layout / markup / props / logic changed. **Copy
+  & voice source of truth: `Fundamentals/Brand-Voice-and-Language.md` +
+  `Cowork/TuberMed-Landing-Copy-Map.md`** — do NOT inline the copy here; edit it
+  there and mirror.
 - **Lead form.** `AccessForm` POSTs to the backend directly —
   `fetch(`${NEXT_PUBLIC_BACKEND_URL}/api/pilot-leads`)`, a plain fetch, NOT the
   authed `lib/api.ts` wrapper (the endpoint is public). Honeypot field + required
