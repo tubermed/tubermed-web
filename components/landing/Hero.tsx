@@ -2,16 +2,15 @@ import { Container, Cta } from './ui';
 import { Reveal } from './Reveal';
 import { AmbientOrbs } from './AmbientOrbs';
 import { MagneticCta } from './MagneticCta';
-import { Parallax } from './Parallax';
-import TuberMedHeroDesktop from './TuberMedHeroDesktop';
+import TuberMedHeroLoop from './TuberMedHeroLoop';
 
 export function Hero() {
   return (
     <section className="relative overflow-hidden" style={{ background: 'var(--lp-bg)' }}>
       <AmbientOrbs />
-      {/* Asymmetric split: copy sits left in a narrower track, the product loop gets
-          the wider track + room to grow into the right margin (see TuberMedHeroDesktop's
-          height-aware fit, which reads [data-hero-copy] to match the copy column height). */}
+      {/* Asymmetric split: copy sits left in a narrower track, the hero loop gets the
+          wider track and self-scales its fixed stage to fill it. data-hero-copy is kept
+          for the parked TuberMedHeroDesktop (unused now that TuberMedHeroLoop self-sizes). */}
       <Container className="relative z-10 grid items-center gap-12 py-16 md:py-24 lg:grid-cols-[minmax(0,44fr)_minmax(0,56fr)] lg:gap-8">
         <Reveal className="min-w-0">
           <div data-hero-copy>
@@ -43,12 +42,11 @@ export function Hero() {
         </Reveal>
 
         <Reveal delay={120} className="min-w-0">
-          {/* Dimitar's product walkthrough; loops continuously, static end-frame
-              on mobile / reduced-motion. Swap-in point for a real <video>.
-              min-w-0 stops the fixed-width mock from starving the copy column. */}
-          <Parallax from={24} to={-24} className="min-w-0">
-            <TuberMedHeroDesktop />
-          </Parallax>
+          {/* Native v2.1 product loop: smooth GPU-animated DOM/SVG that scales its fixed
+              920×648 stage to fill this column. Self-contained — zero external requests,
+              no Google/CDN, no video/iframe; the three font families resolve to the repo's
+              self-hosted next/font faces. prefers-reduced-motion shows the static frame. */}
+          <TuberMedHeroLoop className="block w-full rounded-2xl" />
         </Reveal>
       </Container>
     </section>
