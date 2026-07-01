@@ -130,7 +130,7 @@ export function AccessForm() {
       <div className="grid gap-5 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="lp-name" className="lp-label">
-            Име <span style={{ color: '#C0392B' }}>*</span>
+            Име <span style={{ color: 'var(--lp-danger)' }}>*</span>
           </label>
           <input
             id="lp-name"
@@ -149,7 +149,7 @@ export function AccessForm() {
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="lp-email" className="lp-label">
-            Имейл <span style={{ color: '#C0392B' }}>*</span>
+            Имейл <span style={{ color: 'var(--lp-danger)' }}>*</span>
           </label>
           <input
             id="lp-email"
@@ -169,7 +169,7 @@ export function AccessForm() {
 
       <div className="mt-5 flex flex-col gap-1.5">
         <label htmlFor="lp-specialty" className="lp-label">
-          Специалност <span style={{ color: '#C0392B' }}>*</span>
+          Специалност <span style={{ color: 'var(--lp-danger)' }}>*</span>
         </label>
         <select
           id="lp-specialty"
@@ -195,7 +195,7 @@ export function AccessForm() {
         {specialty === 'Друго' ? (
           <div className="mt-2 flex flex-col gap-1.5">
             <label htmlFor="lp-specialty-other" className="lp-label">
-              Въведете специалност <span style={{ color: '#C0392B' }}>*</span>
+              Въведете специалност <span style={{ color: 'var(--lp-danger)' }}>*</span>
             </label>
             <input
               id="lp-specialty-other"
@@ -251,7 +251,7 @@ export function AccessForm() {
       {show('consent') ? <span className="lp-form-error mt-1 block">{errors.consent}</span> : null}
 
       {status === 'error' ? (
-        <p role="alert" className="mt-5 rounded-[var(--lp-radius-sm)] px-4 py-3 text-sm" style={{ background: '#F6E4E1', color: '#9B2C20' }}>
+        <p role="alert" className="mt-5 rounded-[var(--lp-radius-sm)] px-4 py-3 text-sm" style={{ background: 'var(--lp-danger-soft)', color: '#9B2C20' }}>
           Нещо се обърка. Опитайте отново или ни пишете на{' '}
           <a href="mailto:contact@tubermed.com" className="font-semibold underline">
             contact@tubermed.com

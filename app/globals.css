@@ -147,10 +147,12 @@
   --lp-border:       #E2E8F0;             /* hairline on light */
   --lp-border-navy:  rgba(255,255,255,0.14); /* hairline on navy */
 
-  /* Feedback — notice / warning (landing surface, NOT the clinical red rule) */
+  /* Feedback — notice / warning / error (landing surface, NOT the clinical red rule) */
   --lp-warn-soft:    #F7EDDA;  /* notice background */
   --lp-warn-border:  #E6CF9B;  /* notice hairline */
   --lp-warn-ink:     #7A5A18;  /* notice text */
+  --lp-danger:       #C0392B;  /* landing form-error red (validation) */
+  --lp-danger-soft:  #F6E4E1;  /* landing form-error soft background */
 
   /* Shape */
   --lp-radius:       14px;
@@ -281,9 +283,9 @@
 }
 .lp-input::placeholder { color: #9aa7b4; }
 .lp-input:focus { outline: none; border-color: var(--lp-accent); box-shadow: 0 0 0 3px rgba(79,143,191,.18); }
-.lp-input[aria-invalid="true"] { border-color: #C0392B; }
+.lp-input[aria-invalid="true"] { border-color: var(--lp-danger); }
 .lp-input[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px rgba(192,57,43,.16); }
-.lp-form-error { font-size: .8rem; color: #C0392B; }
+.lp-form-error { font-size: .8rem; color: var(--lp-danger); }
 
 @media (prefers-reduced-motion: reduce) {
   .lp-faq-chev { transition: none; }
