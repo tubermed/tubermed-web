@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import Link from 'next/link';
 import { Logo } from './brand';
 
@@ -15,6 +16,7 @@ const NAV = [
 export function Header({ anchorBase = '' }: { anchorBase?: string }) {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
+  const reduce = useReducedMotion();
 
   // On sub-pages (e.g. /privacy) anchors must point back to the landing.
   const anchor = (href: string) => (href.startsWith('#') ? `${anchorBase}${href}` : href);
@@ -108,13 +110,26 @@ export function Header({ anchorBase = '' }: { anchorBase?: string }) {
         </button>
       </div>
 
-      {/* Mobile menu panel */}
-      {open ? (
-        <div
-          id="lp-mobile-menu"
-          className="lg:hidden"
-          style={{ background: '#fff', borderTop: '1px solid var(--lp-border)' }}
-        >
+      {/* Mobile menu panel — an absolute OVERLAY (top-full) so opening it never
+          shifts the page content (also why the nav anchor scroll lands right).
+          Subtle slide-down + fade via framer-motion (the landing's motion lib);
+          reduced motion collapses it to an instant fade with no transform. */}
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            id="lp-mobile-menu"
+            key="lp-mobile-menu"
+            className="lg:hidden absolute inset-x-0 top-full"
+            style={{
+              background: '#fff',
+              borderTop: '1px solid var(--lp-border)',
+              boxShadow: '0 12px 24px rgba(20,39,64,0.08)',
+            }}
+            initial={reduce ? { opacity: 0 } : { opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduce ? { opacity: 0 } : { opacity: 0, y: -8 }}
+            transition={{ duration: reduce ? 0 : 0.2, ease: 'easeOut' }}
+          >
           <nav aria-label="Мобилна навигация" className="mx-auto flex w-full max-w-6xl flex-col gap-1 px-6 py-4">
             {NAV.map((item) => (
               <a
@@ -144,8 +159,9 @@ export function Header({ anchorBase = '' }: { anchorBase?: string }) {
               </a>
             </div>
           </nav>
-        </div>
-      ) : null}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </header>
   );
 }
