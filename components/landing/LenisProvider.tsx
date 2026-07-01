@@ -40,8 +40,13 @@ export function LenisProvider({ children }: { children?: React.ReactNode }) {
     };
     document.addEventListener('visibilitychange', onVisibility);
 
-    // Smooth in-page anchor jumps with a sticky-header offset. Anchors that
-    // point elsewhere (e.g. '/#how' from /privacy) fall through to native nav.
+    // Smooth in-page anchor jumps. Lenis reads the target's CSS
+    // scroll-margin-top (.lp section[id], globals.css) for the sticky-header
+    // gap — do NOT also pass a manual offset: Lenis subtracts BOTH the
+    // scroll-margin-top AND the offset, so the two stack and land the section
+    // far below the header. Letting scroll-margin-top own it keeps the smooth
+    // and native/reduced-motion paths identical. Anchors that point elsewhere
+    // (e.g. '/#how' from /privacy) fall through to native nav.
     const onClick = (e: MouseEvent) => {
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey) return;
       const target = e.target as HTMLElement | null;
@@ -52,7 +57,7 @@ export function LenisProvider({ children }: { children?: React.ReactNode }) {
       const el = document.querySelector(hash);
       if (!el) return;
       e.preventDefault();
-      lenis.scrollTo(el as HTMLElement, { offset: -80 });
+      lenis.scrollTo(el as HTMLElement);
     };
     document.addEventListener('click', onClick);
 

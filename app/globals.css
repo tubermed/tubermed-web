@@ -167,7 +167,13 @@
    gated behind prefers-reduced-motion (block at the bottom).
    ───────────────────────────────────────────────────────────── */
 .lp { scroll-behavior: smooth; }
-.lp section[id] { scroll-margin-top: 84px; } /* clear the sticky header on anchor jumps */
+/* Anchor jumps clear the sticky header with a small gap below it. Measured
+   header height is ~73px (mobile, hamburger) / ~71px (desktop, nav) at rest,
+   shrinking to ~58–60px once scrolled. Lenis reads this same scroll-margin-top
+   (see LenisProvider) so the smooth and native/reduced-motion paths land
+   identically. */
+.lp section[id] { scroll-margin-top: 84px; }
+@media (min-width: 1024px) { .lp section[id] { scroll-margin-top: 80px; } }
 
 /* Scroll reveals are handled by framer-motion (components/landing/Reveal.tsx),
    which tags each element with data-reveal; a <noscript> rule in the landing
