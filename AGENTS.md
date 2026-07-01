@@ -305,6 +305,16 @@ truth: `app/page.tsx`.
   `--lp-*` is landing-only, `--color-*` is the app's. **Do NOT "unify" the two
   sets / merge the variable names** — aligning their VALUES to the brand is
   intentional; collapsing `--lp-*` and `--color-*` into one set is not.
+- **Landing feedback tokens (F2, 2026-07-01, `bb1b61d` / `87b2006`).** The `.lp`
+  set gained a small feedback family (landing surface only, NOT the clinical-red
+  reservation): `--lp-warn-soft #F7EDDA` / `--lp-warn-border #E6CF9B` /
+  `--lp-warn-ink #7A5A18` (the `/privacy` "Чернова" draft notice) and
+  `--lp-danger #C0392B` / `--lp-danger-soft #F6E4E1` (form validation:
+  `.lp-input[aria-invalid]` border, `.lp-form-error`, `AccessForm` required-`*`
+  asterisks, and the error-box BACKGROUND). `--lp-danger` reuses the red hex but
+  is a **landing** token — it does NOT relax the workspace clinical-red rule. The
+  dead `var(--lp-warn-soft, #F7EDDA)` fallback on the privacy notice was dropped;
+  the error-box TEXT stays a literal `#9B2C20` (darker than `--lp-danger`).
 - **Fonts (landing-only).** Inter Tight (display/wordmark) + self-hosted Golos
   Text (hero in-mock body) via `next/font` (`lib/landing-fonts.ts`), applied only
   on the landing — the workspace font payload is unchanged. A Google-Fonts
@@ -360,6 +370,36 @@ truth: `app/page.tsx`.
   consent checkbox; field values are kept on error.
 - **`/privacy`.** Placeholder structure only, `robots: { index: false }`; flagged
   TODO for the real legal copy — do NOT auto-generate legal text.
+- **Mobile primary CTA (2026-07-01, `dffa8dd`).** `MagneticCta` gained a
+  `wrapperClassName` prop (default `inline-block`, so the `Calculator`/`Pricing`
+  call-sites stay byte-identical). `Hero` passes `inline-block w-full sm:w-auto`
+  on the wrapper + `w-full` on the inner `<a>`, so the primary CTA is full-width
+  below `sm` and auto/content-width at `sm+`, matching the secondary button.
+  Desktop unchanged; copy / link (`#access`) / magnetic behaviour untouched.
+- **In-page nav scroll offset (2026-07-01, `ce9db0d`).** `Lenis.scrollTo` ALREADY
+  subtracts the target's CSS `scroll-margin-top`; the click handler ALSO passed
+  `offset: -80`, so the two STACKED (84 + 80 = 164px) and every anchor jump landed
+  ~150px too low. Removed the manual offset — `scroll-margin-top` solely owns the
+  sticky-header gap, keeping the smooth (Lenis) and native/reduced-motion paths
+  identical. Tuned to the measured header heights (responsive: `84px`, `80px` at
+  `≥1024px`) → the section top lands ~18–20px below the header, never under it.
+  (It never "tucked under" — the real bug was the double-counted offset.)
+- **Header logo → scroll to top (2026-07-01, `9f674da`).** On the landing the logo
+  is now `<a href="#top">` (was `<Link href="/">`), driven by the Lenis click
+  handler's new `#top` case (`lenis.scrollTo(0)`); `#top` is also a native
+  scroll-to-top fragment, so it still works under reduced motion. Native anchor →
+  keyboard-accessible (Enter) with an aria-label; no visual change. Sub-pages
+  (`/privacy`, `anchorBase !== ''`) keep the client-side `<Link href="/">` home
+  nav via the `anchorBase === ''` branch.
+- **Mobile nav menu — overlay + animation (2026-07-01, `272780b`).** The mobile
+  menu panel is now an absolute OVERLAY (`lg:hidden absolute inset-x-0 top-full`)
+  instead of an in-flow block, so opening it no longer pushes page content down
+  (no layout shift) — and because the sections keep their position, the mobile
+  nav links land correctly instead of overshooting by the old ~330px panel height
+  (the in-flow panel used to shift every section on close). Open/close is a subtle
+  slide-down + fade (`framer-motion` `AnimatePresence`, `y: -8`/opacity, ~200ms
+  ease-out); under `prefers-reduced-motion` (`useReducedMotion`) it collapses to
+  an instant, transform-free fade.
 
 # A4 — self-serve signup + email login (2026-06-11)
 
@@ -555,10 +595,17 @@ fetches (verified: only origin loaded on either page is the app's own).
   `/public/brand` lockup SVGs use `<text>` in Inter Tight, which falls back to
   a generic font via `<img>`); the workspace has no Inter Tight, so the
   wordmark uses `--font-ui`.
-- The pages' local `Field`/`Input`/`Wordmark` helpers and the mobile header
-  are untouched (the panel stays `hidden md:flex` — mobile keeps the compact
-  logo header). Forms/flows byte-identical; verified live: PIN tab
-  click-through, signup render, both pages serve a byte-identical `<aside>`.
+- The pages' local `Field`/`Input`/`Wordmark` helpers are untouched and the panel
+  stays `hidden md:flex` (mobile keeps the compact logo header). Forms/flows
+  byte-identical; verified live: PIN tab click-through, signup render, both pages
+  serve a byte-identical `<aside>`. **Mobile logo (2026-07-01, `0830da5`):** the
+  compact header's old squished `/logo.png` was swapped for the canonical square
+  mark `/brand/tubermed-tile.svg` (32×32) beside the wordmark — the `hidden
+  md:flex` panel and everything else are unchanged.
+- **Panel gradient tokenized (F5, 2026-07-01, `79156e3`).** The quiet navy
+  gradient here (and the onboarding `WelcomeBand`'s) now read from the
+  `--brand-panel-*` `@theme` tokens instead of literal hexes — no colour shift.
+  See the "Colour-token cleanup" section (2026-07-01) below.
 
 # Caret fix on password reveal + wizard no-show diagnosis (2026-06-12)
 
@@ -1593,3 +1640,38 @@ middleware, no nonce). Shipped Report-Only first, then flipped to enforcing.
   microphone=(self)` of its own). Tracked as a backend follow-up.
 - **HSTS duplicate:** if Vercel is ever configured to also send `Strict-Transport-Security`,
   remove one of the two to avoid a duplicate header.
+
+# Colour-token cleanup — `--brand-panel-*` + workspace surface tokens (2026-07-01)
+
+Token hygiene from the 2026-07-01 landing + auth polish batch; no behaviour
+change and no colour shift. (The landing `--lp-warn-*` / `--lp-danger-*` feedback
+tokens are documented under "Public marketing landing".)
+
+- **`--brand-panel-*` (F5, `79156e3`).** The decorative navy gradient shared by
+  `AuthBrandPanel` (the `/app/login` + `/signup` panel) and the `OnboardingWizard`
+  `WelcomeBand` was tokenized in the `@theme` block — FOUR navy stops (there were
+  four distinct hexes across the two gradients, not three; `#1D3B5C` is a stop in
+  both), ordered darkest→lightest: `--brand-panel-deep #16263D` ·
+  `--brand-panel-base #1C2B44` · `--brand-panel-mid #1D3B5C` ·
+  `--brand-panel-accent #2E5A8F`. `AuthBrandPanel` uses `170deg` deep→base→mid;
+  the `WelcomeBand` uses `135deg` deep→mid→accent. Byte-identical to the old
+  literals (verified: the resolved gradient is `rgb(22,38,61)/rgb(28,43,68)/
+  rgb(29,59,92)`) — a visual no-op. (Tailwind v4 emits these non-namespaced
+  `@theme` vars to `:root`; confirmed present in the production CSS even though
+  they are only referenced from JSX inline styles.)
+- **The scribe QR keeps a LITERAL `#1C2B44`, not `var(--brand-panel-base)`.** The
+  phone-pairing `QRCodeSVG` `fgColor` stays literal (with a "mirror
+  `--brand-panel-base` — keep in sync" comment): `fgColor` becomes an SVG `fill`
+  and a CSS var may not resolve on an export/print path — a broken/low-contrast QR
+  would break the pairing capture flow. Keep it literal; keep it in sync.
+- **"No gradients" rule scoped (`79156e3`).** The `globals.css` comment went from
+  "No gradients in clinical UI" to "No gradients on clinical work surfaces;
+  decorative auth/brand panels may use the navy brand gradient (`--brand-panel-*`)".
+  `--gradient-brand` still stays a flat `var(--color-accent)` fallback. Clinical
+  work surfaces stay flat; the only sanctioned gradient is the decorative
+  auth/brand navy panel.
+- **Surface literals → `--color-bg-surface` (F7, `9c56de0`).** Two workspace `#fff`
+  literals were repointed to `var(--color-bg-surface)`: the accent-tile icon
+  foreground in `components/TodayConsultations.tsx` and the active-segment
+  background in `components/ui/Segmented.tsx`. Token hygiene only; no visual
+  change.
