@@ -30,7 +30,13 @@ export function Hero() {
               за минута. Останалото време е за пациента.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <MagneticCta href="#access">Заявка за достъп</MagneticCta>
+              <MagneticCta
+                href="#access"
+                wrapperClassName="inline-block w-full sm:w-auto"
+                className="w-full"
+              >
+                Заявка за достъп
+              </MagneticCta>
               <Cta href="#how" variant="secondary">
                 Вижте как работи
               </Cta>

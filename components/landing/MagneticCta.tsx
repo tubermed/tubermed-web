@@ -13,11 +13,16 @@ export function MagneticCta({
   href,
   children,
   className = '',
+  wrapperClassName = 'inline-block',
   ariaLabel,
 }: {
   href: string;
   children: ReactNode;
   className?: string;
+  // Wrapper (motion.div) classes. Defaults to inline-block (shrink-to-fit);
+  // callers can widen it, e.g. the hero passes `w-full sm:w-auto` so the
+  // primary CTA matches the full-width secondary button on mobile.
+  wrapperClassName?: string;
   ariaLabel?: string;
 }) {
   const reduce = useReducedMotion();
@@ -42,7 +47,7 @@ export function MagneticCta({
 
   return (
     <motion.div
-      className="inline-block"
+      className={wrapperClassName}
       style={reduce ? undefined : { x: sx, y: sy }}
       onMouseMove={onMove}
       onMouseLeave={reset}
