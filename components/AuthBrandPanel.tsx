@@ -85,7 +85,8 @@ export default function AuthBrandPanel() {
         // Quiet navy gradient anchored on the workspace nav palette
         // (--color-nav-bg #1C2B44), shading toward the wizard band's family
         // navies — restrained, not the landing hero.
-        background: "linear-gradient(170deg, #16263D 0%, #1C2B44 48%, #1D3B5C 100%)",
+        background:
+          "linear-gradient(170deg, var(--brand-panel-deep) 0%, var(--brand-panel-base) 48%, var(--brand-panel-mid) 100%)",
         color: "var(--color-nav-text)",
         width: "clamp(420px, 42vw, 560px)",
         flexShrink: 0,

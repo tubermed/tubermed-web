@@ -245,7 +245,7 @@ function WelcomeBand() {
       className="relative"
       style={{
         height: 152,
-        background: 'linear-gradient(135deg, #16263D 0%, #1D3B5C 55%, #2E5A8F 100%)',
+        background: 'linear-gradient(135deg, var(--brand-panel-deep) 0%, var(--brand-panel-mid) 55%, var(--brand-panel-accent) 100%)',
       }}
     >
       <Image

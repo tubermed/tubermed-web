@@ -1065,6 +1065,10 @@ function PhoneMode({
                 background: 'white',
               }}
             >
+              {/* Literal, not var(--brand-panel-base): fgColor becomes an SVG
+                  fill; a CSS var may not resolve on an export/print path and a
+                  broken QR breaks phone pairing. Mirror of --brand-panel-base —
+                  keep in sync. */}
               <QRCodeSVG value={session.mobileUrl} size={180} fgColor="#1C2B44" />
             </div>
             <div

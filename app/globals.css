@@ -85,8 +85,18 @@
   --color-nav-active:     #274C77;
   --color-nav-text-active:#FFFFFF;
 
-  /* No gradients in clinical UI — keep var defined as flat accent fallback
-     so any straggling consumer doesn't break, but the value is flat. */
+  /* Auth / brand-panel navies (F6) — the one sanctioned gradient family: the
+     decorative navy panels behind /app/login + /signup (AuthBrandPanel) and the
+     onboarding WelcomeBand. Tokenized from the existing literals (no colour
+     shift), ordered darkest -> lightest. NOT for clinical work surfaces. */
+  --brand-panel-deep:   #16263D; /* darkest navy — gradient start (both panels) */
+  --brand-panel-base:   #1C2B44; /* nav-bg base navy — AuthBrandPanel mid stop */
+  --brand-panel-mid:    #1D3B5C; /* mid navy (matches --lp-navy-deep) — mid/end stop */
+  --brand-panel-accent: #2E5A8F; /* brightest steel — WelcomeBand end stop */
+
+  /* No gradients on clinical work surfaces; decorative auth/brand panels may use
+     the navy brand gradient (--brand-panel-*). --gradient-brand stays a flat
+     accent fallback so any straggling consumer doesn't break. */
   --gradient-brand: var(--color-accent);
 
   /* Radii */
