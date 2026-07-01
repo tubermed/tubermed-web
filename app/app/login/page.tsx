@@ -119,7 +119,7 @@ export default function LoginPage() {
           className="md:hidden flex items-center gap-3 px-6 py-5 border-b"
           style={{ borderColor: "var(--color-border-soft)" }}
         >
-          <Image src="/logo.png" alt="" width={28} height={28} priority />
+          <Image src="/brand/tubermed-tile.svg" alt="" width={32} height={32} priority />
           <Wordmark size="sm" />
         </div>
 
