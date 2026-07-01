@@ -37,7 +37,7 @@ export function Segmented<T extends string>({
             onClick={() => onChange(opt.value)}
             className="flex-1 px-4 py-2 rounded-md text-sm font-medium transition focus-ring"
             style={{
-              background: active ? '#fff' : 'transparent',
+              background: active ? 'var(--color-bg-surface)' : 'transparent',
               color: active ? 'var(--color-heading)' : 'var(--color-text-muted)',
               boxShadow: active ? 'var(--shadow-card)' : 'none',
             }}

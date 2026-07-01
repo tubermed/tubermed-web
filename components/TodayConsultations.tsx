@@ -60,7 +60,7 @@ export default function TodayConsultations({ refreshKey, currentConsultationId }
         <span
           aria-hidden
           className="flex items-center justify-center flex-shrink-0"
-          style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--color-accent)', color: '#fff' }}
+          style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--color-accent)', color: 'var(--color-bg-surface)' }}
         >
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
