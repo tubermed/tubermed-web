@@ -43,7 +43,7 @@ export default function PrivacyPage() {
           <div
             role="note"
             className="mb-10 rounded-[var(--lp-radius)] px-5 py-4 text-sm"
-            style={{ background: 'var(--lp-warn-soft, #F7EDDA)', border: '1px solid #E6CF9B', color: '#7A5A18' }}
+            style={{ background: 'var(--lp-warn-soft)', border: '1px solid var(--lp-warn-border)', color: 'var(--lp-warn-ink)' }}
           >
             <strong>Чернова.</strong> Този документ е примерна структура и предстои да бъде
             заменен с финалния правен текст. Все още не е обвързваща политика.
