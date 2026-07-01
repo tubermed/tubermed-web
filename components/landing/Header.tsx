@@ -41,9 +41,19 @@ export function Header({ anchorBase = '' }: { anchorBase?: string }) {
         className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 transition-[padding] duration-200"
         style={{ paddingTop: scrolled ? '0.6rem' : '1rem', paddingBottom: scrolled ? '0.6rem' : '1rem' }}
       >
-        <Link href="/" aria-label="TuberMed - начало" className="shrink-0">
-          <Logo variant="light" size={32} />
-        </Link>
+        {/* On the landing the logo smooth-scrolls to the top (reuses the nav
+            links' Lenis anchor handler via #top; #top is also a native
+            scroll-to-top fragment under reduced motion). On sub-pages it keeps
+            client-side navigation back home. */}
+        {anchorBase === '' ? (
+          <a href="#top" aria-label="TuberMed - начало на страницата" className="shrink-0">
+            <Logo variant="light" size={32} />
+          </a>
+        ) : (
+          <Link href="/" aria-label="TuberMed - начало" className="shrink-0">
+            <Logo variant="light" size={32} />
+          </Link>
+        )}
 
         {/* Desktop nav */}
         <nav aria-label="Основна навигация" className="hidden items-center gap-1 lg:flex">

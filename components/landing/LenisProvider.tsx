@@ -54,6 +54,12 @@ export function LenisProvider({ children }: { children?: React.ReactNode }) {
       if (!a) return;
       const hash = a.getAttribute('href');
       if (!hash || hash === '#') return;
+      // Logo (and any #top link): smooth-scroll to the very top, same handler.
+      if (hash === '#top') {
+        e.preventDefault();
+        lenis.scrollTo(0);
+        return;
+      }
       const el = document.querySelector(hash);
       if (!el) return;
       e.preventDefault();
