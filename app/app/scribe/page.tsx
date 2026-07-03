@@ -775,6 +775,9 @@ function PhoneMode({
   const [session, setSession] = useState<SessionInit | null>(null);
   const [expiresIn, setExpiresIn] = useState<number>(0);
   const [phoneConnected, setPhoneConnected] = useState(false);
+  // B3 — set when the phone scans (WS 'scanned'), BEFORE it uploads. Suppresses
+  // the QR countdown / re-mint so a long recording isn't interrupted.
+  const [phoneScanned, setPhoneScanned] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -804,6 +807,10 @@ function PhoneMode({
   // teardown — a timer that fires after init() has reset cancelledRef
   // back to false would otherwise resurrect the dead session's socket.
   const reconnectTimeoutRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // B3 — scannedRef gates the QR-expiry re-mint (stop once the phone has scanned);
+  // expiresAtRef is the live deadline the countdown tick reads (extended on 'scanned').
+  const scannedRef   = useRef(false);
+  const expiresAtRef = useRef(0);
 
   const teardown = useCallback(() => {
     if (wsRef.current) {
@@ -887,7 +894,13 @@ function PhoneMode({
     ws.onmessage = (evt) => {
       try {
         const msg: WsMessage = JSON.parse(evt.data);
-        if (msg.type === 'processing') {
+        if (msg.type === 'scanned') {
+          // Phone scanned + backend extended the TTL to a record window. Stop
+          // re-minting and honour the new deadline so a long recording survives.
+          scannedRef.current = true;
+          expiresAtRef.current = new Date(msg.expiresAt).getTime();
+          setPhoneScanned(true);
+        } else if (msg.type === 'processing') {
           setPhoneConnected(true);
           onProcessingRef.current();
         } else if (msg.type === 'result') {
@@ -988,19 +1001,23 @@ function PhoneMode({
       cancelledRef.current         = false;
       resolvedRef.current          = false;
       reconnectAttemptsRef.current = 0;
+      scannedRef.current           = false;  // B3: a freshly minted session is unscanned
       try {
         // consultationId is guaranteed non-null inside this branch (gate above).
         const s = await api.createSession({ consultationId: consultationId! });
         if (cancelledRef.current) return;
         setSession(s);
         setPhoneConnected(false);
+        setPhoneScanned(false);
         sessionIdRef.current = s.sessionId;
 
-        const expiresAt = new Date(s.expiresAt).getTime();
+        expiresAtRef.current = new Date(s.expiresAt).getTime();
         const tick = () => {
-          const left = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
+          const left = Math.max(0, Math.round((expiresAtRef.current - Date.now()) / 1000));
           setExpiresIn(left);
-          if (left === 0) {
+          // B3 — never re-mint once the phone has scanned: it's recording on THIS
+          // session, and re-minting would orphan the in-progress recording.
+          if (left === 0 && !scannedRef.current) {
             if (expiryRef.current) clearInterval(expiryRef.current);
             setTimeout(() => {
               if (!cancelledRef.current) init();
@@ -1088,7 +1105,14 @@ function PhoneMode({
             >
               Насочете камерата на телефона към QR кода.
             </div>
-            {expiresIn > 0 && (
+            {phoneScanned ? (
+              <div
+                className="text-xs mt-2"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                Телефонът е свързан — записвайте спокойно.
+              </div>
+            ) : expiresIn > 0 && (
               <div
                 className="text-xs mt-2 font-[family-name:var(--font-jetbrains)] tabular-nums"
                 style={{ color: 'var(--color-text-muted)' }}

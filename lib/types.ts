@@ -80,6 +80,9 @@ export type SessionStatus =
 
 export type WsMessage =
   | { type: 'processing' }
+  // B3 — the phone scanned the QR; the backend extended the session TTL to a
+  // record window (up to ~30 min) and the PC stops re-minting, honouring expiresAt.
+  | { type: 'scanned'; expiresAt: string }
   | { type: 'result'; consultationId: string; transcript: string; fields: TranscribeFields }
   // `code` is an optional machine discriminator on the error payload — today
   // 'no_speech' (Soniox produced no transcribable speech), so the PC can show a
