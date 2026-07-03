@@ -74,6 +74,11 @@ export function setSession(s: Session, remember: boolean = true): void {
 export function clearSession(): void {
   localStorage.removeItem(STORAGE_KEY);
   sessionStorage.removeItem(STORAGE_KEY);
+  // PHI hygiene on shared clinic machines — drop the transcript/note and patient
+  // identifiers so the next user can't read them. Keys mirror RESULT_STORAGE_KEY /
+  // PENDING_VISIT_KEY in app/app/scribe/page.tsx (both sessionStorage-only).
+  sessionStorage.removeItem('tuber_last_result');
+  sessionStorage.removeItem('tuber_pending_visit');
 }
 
 // Pure merge — shallow-overlay `partial` onto `session.doctor`, preserving the
