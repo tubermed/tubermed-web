@@ -281,6 +281,53 @@ function ScribePageInner() {
     setView('processing');
   }, []);
 
+  // ── B4: PC upload-retry (retain the blob, retry the SAME audio) ────────────
+  // pcBlobRef holds the recording (set by PcMode before it posts). It lives in
+  // the PARENT because PcMode unmounts while view==='processing', so a retry
+  // must outlive it. In memory only — nothing is persisted, so it clears on
+  // navigate / reload / logout by construction (no storage to wipe).
+  const pcBlobRef = useRef<Blob | null>(null);
+  const [pcRetryMsg, setPcRetryMsg] = useState<string | null>(null);
+  const retryPcUploadRef = useRef<() => void>(() => {});
+
+  const retryPcUpload = useCallback(async () => {
+    const blob = pcBlobRef.current;
+    if (!blob) return;
+    setPcRetryMsg(null);
+    goToProcessing();
+    try {
+      const result = await api.transcribe(
+        blob, 'audio.webm', consultationId ? { consultationId } : undefined,
+      );
+      onResult(result);
+    } catch (err) {
+      setView('record');
+      if (err instanceof ApiError && err.status === 401) {
+        clearSession();
+        router.replace('/app/login');
+        return;
+      }
+      if (err instanceof ApiError) {
+        // Reached the server this time — classify normally (5xx → recovery panel,
+        // 4xx → plain banner). The retained blob is no longer the recovery path.
+        reportProcessingError('Грешка: ' + err.message, { reachedServer: err.status >= 500 });
+      } else {
+        // Still no server — keep the blob and keep offering the same-audio retry.
+        setPcRetryMsg('Все още не се изпраща. Опитайте пак.');
+      }
+    }
+  }, [consultationId, onResult, reportProcessingError, goToProcessing, router]);
+  useEffect(() => { retryPcUploadRef.current = retryPcUpload; }, [retryPcUpload]);
+
+  // Warn before leaving while recording, uploading, or with a retry pending — the
+  // in-memory recording would be lost. Native prompt text is browser-controlled.
+  useEffect(() => {
+    if (!navLocked && !pcRetryMsg) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [navLocked, pcRetryMsg]);
+
   if (!doctor) {
     return (
       <main
@@ -335,6 +382,12 @@ function ScribePageInner() {
               }}
               onRestart={() => router.replace('/app/new-visit')}
             />
+          ) : pcRetryMsg ? (
+            <UploadRetryPanel
+              message={pcRetryMsg}
+              onRetry={() => retryPcUploadRef.current()}
+              onRestart={() => router.replace('/app/new-visit')}
+            />
           ) : (
           <>
           {error && (
@@ -386,6 +439,8 @@ function ScribePageInner() {
               }}
               onBackToIdle={() => setView('record')}
               requestConsent={requestConsent}
+              blobRef={pcBlobRef}
+              onRetainableFailure={setPcRetryMsg}
             />
           )}
           </>
@@ -583,6 +638,56 @@ function NoSpeechPanel({
       <div className="flex flex-wrap gap-3 justify-center mt-6">
         <Button variant="primary" onClick={onRetry}>
           Запишете отново
+        </Button>
+        <Button variant="secondary" onClick={onRestart}>
+          Започни нов преглед
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────── */
+/* UPLOAD-RETRY PANEL (B4 — "връзката прекъсна; записът е запазен")  */
+/* ─────────────────────────────────────────────────────────────── */
+//
+// Shown when the PC upload failed BEFORE reaching the server (a network drop at
+// "stop"). The recording is retained IN MEMORY, so the primary action re-sends
+// the SAME audio — no re-recording. Distinct from RecoveryPanel (server-side
+// retry-extraction, for when the audio DID reach the server).
+function UploadRetryPanel({
+  message,
+  onRetry,
+  onRestart,
+}: {
+  message: string;
+  onRetry: () => void;
+  onRestart: () => void;
+}) {
+  return (
+    <div
+      className="bg-white rounded-2xl border p-8 sm:p-10 flex flex-col items-center text-center"
+      style={{ borderColor: 'var(--color-border)', boxShadow: 'var(--shadow-card)' }}
+    >
+      <Icon
+        name="mic"
+        size={40}
+        className="mb-3"
+        style={{ color: 'var(--color-text-muted)' }}
+      />
+      <div
+        className="text-xl font-semibold mb-2"
+        style={{ color: 'var(--color-heading)' }}
+      >
+        Изпращането не бе успешно
+      </div>
+      <p className="text-sm max-w-md" style={{ color: 'var(--color-text-muted)' }}>
+        {message}
+      </p>
+
+      <div className="flex flex-wrap gap-3 justify-center mt-6">
+        <Button variant="primary" onClick={onRetry}>
+          Опитайте отново
         </Button>
         <Button variant="secondary" onClick={onRestart}>
           Започни нов преглед
@@ -1110,7 +1215,7 @@ function PhoneMode({
                 className="text-xs mt-2"
                 style={{ color: 'var(--color-text-muted)' }}
               >
-                Телефонът е свързан — записвайте спокойно.
+                Телефонът е свързан - записвайте спокойно.
               </div>
             ) : expiresIn > 0 && (
               <div
@@ -1152,6 +1257,8 @@ function PcMode({
   onAuthError,
   onBackToIdle,
   requestConsent,
+  blobRef,
+  onRetainableFailure,
 }: {
   mode: Mode;
   onModeChange: (m: Mode) => void;
@@ -1168,6 +1275,12 @@ function PcMode({
    *  re-invokes it inside the catch block when the backend itself responds
    *  with the missing-consent 403 (defense in depth). */
   requestConsent: () => Promise<void>;
+  /** B4: parent-owned ref that retains the recorded blob for retry (it survives
+   *  PcMode's unmount while view==='processing'). */
+  blobRef: { current: Blob | null };
+  /** B4: a network drop before the audio reached the server — the parent shows
+   *  the retry panel (retry the SAME blob) instead of the plain banner. */
+  onRetainableFailure: (msg: string) => void;
 }) {
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -1294,6 +1407,10 @@ function PcMode({
       mr.stream.getTracks().forEach((t) => t.stop());
     });
     mrRef.current = null;
+    // B4: retain the recording (in memory) so a failed upload can retry the SAME
+    // audio without re-recording. The PARENT owns the ref because PcMode unmounts
+    // while view==='processing'.
+    blobRef.current = blob;
 
     // Gate 2 (pre-submit): await consent BEFORE the audio leaves the browser.
     // If consent is already on file this resolves immediately; otherwise it
@@ -1360,15 +1477,13 @@ function PcMode({
         // processing (bad audio, wrong status) → its own message, never "saved".
         onError('Грешка: ' + err.message, { reachedServer: err.status >= 500 });
       } else {
-        // fetch rejected before any response — the recording never reached the
-        // server and is not saved. Say so plainly (wording: Dimitar to approve).
-        onError(
-          'Връзката прекъсна и записът не беше запазен. Моля, опитайте пак.',
-          { reachedServer: false },
-        );
+        // B4: fetch rejected before any response — the recording never reached the
+        // server, but it's retained in memory. Route to the retry panel (retry the
+        // SAME audio), not the plain "not saved" banner. (Wording: Dimitar.)
+        onRetainableFailure('Връзката прекъсна. Не е нужно да записвате отново - натиснете, за да изпратите пак.');
       }
     }
-  }, [stopWaveform, consultationId, onProcessing, onResult, onAuthError, onBackToIdle, onError, onRecordingChange, requestConsent]);
+  }, [stopWaveform, consultationId, onProcessing, onResult, onAuthError, onBackToIdle, onError, onRetainableFailure, blobRef, onRecordingChange, requestConsent]);
 
   useEffect(() => {
     return () => {
