@@ -240,7 +240,7 @@ function ScribePageInner() {
   // Errors without a consultation id (nothing staged) fall through to the plain
   // banner, unchanged.
   const reportProcessingError = useCallback(
-    (message: string, opts?: { kind?: 'no_speech' }) => {
+    (message: string, opts?: { kind?: 'no_speech'; reachedServer?: boolean }) => {
       // no_speech is NOT a failure to recover from — the backend kept the visit
       // 'pending'. Show the calm NoSpeechPanel; never the retry-extraction panel.
       if (opts?.kind === 'no_speech') {
@@ -249,7 +249,13 @@ function ScribePageInner() {
         setNoSpeech(true);
         return;
       }
-      if (consultationId) {
+      // B5: the RecoveryPanel tells the doctor „звукът ви е запазен", so only
+      // route here when the audio actually reached the server and processing
+      // failed AFTER upload (reachedServer). A network drop or a 4xx-on-pending
+      // leaves an in-memory-only blob — nothing was persisted — so it must fall
+      // through to the plain banner, never the "saved" panel. consultationId
+      // alone is not proof: it is staged at visit-start, before any recording.
+      if (consultationId && opts?.reachedServer) {
         setError(null);
         setRecoverableVisitId(consultationId);
       } else {
@@ -764,7 +770,7 @@ function PhoneMode({
   consultationId: string | null;
   onProcessing: () => void;
   onResult: (r: TranscribeResult) => void;
-  onError: (msg: string, opts?: { kind?: 'no_speech' }) => void;
+  onError: (msg: string, opts?: { kind?: 'no_speech'; reachedServer?: boolean }) => void;
 }) {
   const [session, setSession] = useState<SessionInit | null>(null);
   const [expiresIn, setExpiresIn] = useState<number>(0);
@@ -844,7 +850,10 @@ function PhoneMode({
         if (isNoSpeechMessage(d.error_msg)) {
           onErrorRef.current(d.error_msg || '', { kind: 'no_speech' });
         } else {
-          onErrorRef.current('Грешка: ' + (d.error_msg || 'неизвестна'));
+          // Backend persisted status='error' — the phone's audio reached the
+          // server and processing failed post-upload, so retry-extraction is
+          // genuinely possible → the "saved" recovery panel is truthful here.
+          onErrorRef.current('Грешка: ' + (d.error_msg || 'неизвестна'), { reachedServer: true });
         }
         return true;
       }
@@ -896,7 +905,9 @@ function PhoneMode({
           if (msg.code === 'no_speech') {
             onErrorRef.current(msg.message, { kind: 'no_speech' });
           } else {
-            onErrorRef.current('Грешка при обработка: ' + msg.message);
+            // Backend emitted a processing error over WS — the phone's audio
+            // reached the server and failed post-upload → recoverable/"saved".
+            onErrorRef.current('Грешка при обработка: ' + msg.message, { reachedServer: true });
           }
         }
       } catch {
@@ -1125,7 +1136,7 @@ function PcMode({
   onRecordingChange: (active: boolean) => void;
   onProcessing: () => void;
   onResult: (r: TranscribeResult) => void;
-  onError: (msg: string, opts?: { kind?: 'no_speech' }) => void;
+  onError: (msg: string, opts?: { kind?: 'no_speech'; reachedServer?: boolean }) => void;
   onAuthError: () => void;
   onBackToIdle: () => void;
   /** Gate 2: resolves once consent is on file. PcMode awaits this BEFORE
@@ -1307,16 +1318,31 @@ function PcMode({
             return;
           }
           onBackToIdle();
+          // Same reachedServer rule as the main catch below: a 5xx here means
+          // the re-consented retry uploaded and failed post-upload (recoverable);
+          // a 4xx / network drop did not reach the server (plain banner).
           onError(
-            'Грешка: ' + (retryErr instanceof Error ? retryErr.message : 'неизвестна')
+            'Грешка: ' + (retryErr instanceof Error ? retryErr.message : 'неизвестна'),
+            { reachedServer: retryErr instanceof ApiError && retryErr.status >= 500 },
           );
           return;
         }
       }
       onBackToIdle();
-      onError(
-        'Грешка: ' + (err instanceof Error ? err.message : 'неизвестна')
-      );
+      if (err instanceof ApiError) {
+        // Server responded. 5xx = the audio landed and processing failed AFTER
+        // upload → the transcript is on the row, retry-extraction can resurrect
+        // it, so the "saved" recovery panel is truthful. 4xx = rejected before
+        // processing (bad audio, wrong status) → its own message, never "saved".
+        onError('Грешка: ' + err.message, { reachedServer: err.status >= 500 });
+      } else {
+        // fetch rejected before any response — the recording never reached the
+        // server and is not saved. Say so plainly (wording: Dimitar to approve).
+        onError(
+          'Връзката прекъсна и записът не беше запазен. Моля, опитайте пак.',
+          { reachedServer: false },
+        );
+      }
     }
   }, [stopWaveform, consultationId, onProcessing, onResult, onAuthError, onBackToIdle, onError, onRecordingChange, requestConsent]);
 
