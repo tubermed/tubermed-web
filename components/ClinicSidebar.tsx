@@ -58,7 +58,7 @@ export default function ClinicSidebar({ doctor, clinicName, items, locked = fals
           className="text-base font-medium leading-snug"
           style={{ color: 'var(--color-nav-text-active)' }}
         >
-          {clinicName ?? doctor?.organizationName ?? 'МЦ „Св. Анна"'}
+          {clinicName?.trim() || doctor?.organizationName?.trim() || 'Вашата практика'}
         </div>
         <div
           className="text-xs mt-1"
