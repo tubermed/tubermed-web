@@ -2,14 +2,24 @@ import type { ValueStats } from '@/lib/api';
 import SkeletonInput from './SkeletonInput';
 import { Icon } from '@/components/ui/Icon';
 
-// B2 — the "% of notes TuberMed wrote" value card shown at the top of
-// /app/new-visit. The headline is a MEASURED number (the share of generated
-// note text the doctor filed unchanged), NOT a minutes/time-saved estimate.
+// B2 → minutes-saved. The value card at the top of /app/new-visit. HEADLINE is
+// an honest time-saved number (per-visit + this-week roll-up); %-authored is the
+// demoted secondary stat. Time saved = baseline manual-doc minutes − measured
+// review/approve time, clamped ≥ 0 server-side (never fabricated, never negative).
 //
-// Honesty guardrail: below MIN_NOTES this week — or before any note has a
-// measured fraction — show a neutral encouraging line, never a percentage. One
-// heavily-edited first note must never render a discouraging "40%".
+// Honesty guardrails (never a discouraging / invented number):
+//  - below MIN_NOTES this week → neutral encouraging line, no figure.
+//  - notes ≥ MIN_NOTES but weekly saved < 1 min → fall back to the MEASURED
+//    %-authored headline (an honest measured stat), never "спестихте 0 мин".
+//  - estimate baseline is explicitly labeled „оценка"; a captured per-doctor
+//    baseline drops the label.
 const MIN_NOTES = 3;
+
+// Whole-minute saved value → "≈ N ч" at/above an hour, else "≈ N мин".
+function fmtSaved(min: number): string {
+  if (min >= 60) return `≈ ${Math.round(min / 60)} ч`;
+  return `≈ ${Math.round(min)} мин`;
+}
 
 export default function ValueStatsCard({
   stats,
@@ -34,8 +44,6 @@ export default function ValueStatsCard({
         aria-busy="true"
         aria-label="Зареждане…"
       >
-        {/* Mirrors the measured state's footprint (a headline line + a two-line
-            subtext) so the real text lands with minimal reflow. */}
         <SkeletonInput height="16px" width="78%" />
         <SkeletonInput height="11px" width="92%" style={{ marginTop: 10 }} />
         <SkeletonInput height="11px" width="64%" style={{ marginTop: 6 }} />
@@ -43,8 +51,16 @@ export default function ValueStatsCard({
     );
   }
 
-  const { notes, avgAuthoredPct } = stats.thisWeek;
-  const building = notes < MIN_NOTES || avgAuthoredPct == null;
+  const { thisWeek, today, lastNote, baselineMinutes, baselineSource } = stats;
+  const building = thisWeek.notes < MIN_NOTES;
+  const showSaved = !building && thisWeek.savedMinutes >= 1;
+  // Fallback when they have notes but no meaningful saved figure yet.
+  const showAuthoredOnly = !building && !showSaved && thisWeek.avgAuthoredPct != null;
+
+  const baselineNote =
+    baselineSource === 'doctor'
+      ? `Спрямо Вашите ${baselineMinutes} мин ръчна документация на лист.`
+      : `Оценка спрямо ≈${baselineMinutes} мин/лист ръчна документация.`;
 
   return (
     <div
@@ -57,19 +73,39 @@ export default function ValueStatsCard({
     >
       {building ? (
         <p className="text-sm flex items-start gap-1.5" style={{ color: 'var(--color-ink)' }}>
-          <Icon name="pencil" className="flex-shrink-0 mt-0.5" /> Одобрете няколко прегледа и тук ще видите колко от документацията поема TuberMed.
+          <Icon name="pencil" className="flex-shrink-0 mt-0.5" /> Одобрете няколко прегледа и тук ще видите колко време Ви спестява TuberMed.
         </p>
-      ) : (
+      ) : showSaved ? (
         <>
           <p className="text-sm font-semibold" style={{ color: 'var(--color-heading)' }}>
-            TuberMed написа ~{avgAuthoredPct}% от документацията за {notes}{' '}
-            {notes === 1 ? 'преглед' : 'прегледа'} тази седмица.
+            TuberMed Ви спести {fmtSaved(thisWeek.savedMinutes)} тази седмица ({thisWeek.notes}{' '}
+            {thisWeek.notes === 1 ? 'преглед' : 'прегледа'}).
+          </p>
+          <p className="text-xs mt-1" style={{ color: 'var(--color-ink)' }}>
+            {lastNote ? `Последен лист: спестени ${fmtSaved(lastNote.savedMinutes)}. ` : ''}
+            {today.savedMinutes >= 1 ? `Днес: ${fmtSaved(today.savedMinutes)}. ` : ''}
+            {thisWeek.avgAuthoredPct != null
+              ? `TuberMed написа ~${thisWeek.avgAuthoredPct}% от текста.`
+              : ''}
           </p>
           <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-            Измерено от Вашите редакции — частта от генерирания текст, която запазихте
-            непроменена. Не е оценка за спестено време.
+            {baselineNote}
           </p>
         </>
+      ) : showAuthoredOnly ? (
+        <>
+          <p className="text-sm font-semibold" style={{ color: 'var(--color-heading)' }}>
+            TuberMed написа ~{thisWeek.avgAuthoredPct}% от документацията за {thisWeek.notes}{' '}
+            {thisWeek.notes === 1 ? 'преглед' : 'прегледа'} тази седмица.
+          </p>
+          <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+            Измерено от Вашите редакции — частта от генерирания текст, която запазихте непроменена.
+          </p>
+        </>
+      ) : (
+        <p className="text-sm flex items-start gap-1.5" style={{ color: 'var(--color-ink)' }}>
+          <Icon name="pencil" className="flex-shrink-0 mt-0.5" /> Одобрете няколко прегледа и тук ще видите колко време Ви спестява TuberMed.
+        </p>
       )}
     </div>
   );
