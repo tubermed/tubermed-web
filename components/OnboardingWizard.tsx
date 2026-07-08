@@ -48,6 +48,7 @@ export default function OnboardingWizard({ me, onClose, onStartTour, welcomeMedi
   const [specialty, setSpecialty] = useState('');
   const [orgName, setOrgName] = useState(me.organizationName ?? '');
   const [band, setBand] = useState<ConsultationsBand | null>(null);
+  const [baselineMin, setBaselineMin] = useState('');
   const [saving, setSaving] = useState(false);
   // Step-2 profile-PATCH failure — surfaced inline (was silently swallowed:
   // the deployed pre-016 backend dropped consultations_band as an unknown
@@ -77,6 +78,10 @@ export default function OnboardingWizard({ me, onClose, onStartTour, welcomeMedi
       payload.org_name = trimmedOrg;
     }
     if (band) payload.consultations_band = band;
+    const bMin = Number(baselineMin);
+    if (baselineMin.trim() && Number.isInteger(bMin) && bMin >= 1 && bMin <= 60) {
+      payload.baseline_doc_minutes = bMin;
+    }
     if (Object.keys(payload).length > 0) {
       setSaving(true);
       setSaveError(null);
@@ -187,6 +192,20 @@ export default function OnboardingWizard({ me, onClose, onStartTour, welcomeMedi
                       );
                     })}
                   </div>
+                </WizardField>
+                <WizardField label="Колко минути Ви отнемаше документацията на един преглед досега?">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={60}
+                    value={baselineMin}
+                    onChange={(e) => setBaselineMin(e.target.value)}
+                    disabled={saving}
+                    placeholder="напр. 8"
+                    className="w-full px-3 outline-none rounded-md"
+                    style={fieldStyle}
+                  />
                 </WizardField>
               </div>
               {saveError && (
