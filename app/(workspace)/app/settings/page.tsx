@@ -44,6 +44,10 @@ interface ProfileForm {
   nzok_contract: string;
   practice_phone: string;
   uin: string;
+  // Manual documentation minutes/visit baseline (before TuberMed), set during
+  // onboarding or here for already-onboarded doctors. Stored as a string for
+  // the number input; converted to an int on save (see saveProfile).
+  baseline_doc_minutes: string;
 }
 
 const EMPTY_FORM: ProfileForm = {
@@ -55,6 +59,7 @@ const EMPTY_FORM: ProfileForm = {
   nzok_contract: '',
   practice_phone: '',
   uin: '',
+  baseline_doc_minutes: '',
 };
 
 function formFromMe(m: MeResponse): ProfileForm {
@@ -67,6 +72,7 @@ function formFromMe(m: MeResponse): ProfileForm {
     nzok_contract: m.nzok_contract ?? '',
     practice_phone: m.practice_phone ?? '',
     uin: m.uin ?? '',
+    baseline_doc_minutes: m.baseline_doc_minutes != null ? String(m.baseline_doc_minutes) : '',
   };
 }
 
@@ -173,6 +179,15 @@ export default function SettingsPage() {
     if (ph !== undefined) payload.practice_phone = ph;
     const u = next(form.uin, me?.uin);
     if (u !== undefined) payload.uin = u;
+    // Numeric field: same "changed AND valid" discipline as the string diffs
+    // above, but an empty current value must NOT clear a previously-set
+    // baseline (backend contract — PATCH never blanks), so it's simply skipped.
+    const curBaseline = form.baseline_doc_minutes.trim();
+    const loadedBaseline = me?.baseline_doc_minutes != null ? String(me.baseline_doc_minutes) : '';
+    if (curBaseline !== loadedBaseline && curBaseline !== '') {
+      const bn = Number(curBaseline);
+      if (Number.isInteger(bn) && bn >= 1 && bn <= 60) payload.baseline_doc_minutes = bn;
+    }
 
     if (Object.keys(payload).length === 0) {
       setSaveOk(true);
@@ -325,6 +340,17 @@ export default function SettingsPage() {
                     onChange={(e) => setField('org_name', e.target.value)}
                     placeholder="напр. АИППМП Здраве"
                     maxLength={200}
+                  />
+                </Field>
+                <Field label="Минути за документация на преглед (преди TuberMed)">
+                  <TextInput
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={60}
+                    value={form.baseline_doc_minutes}
+                    onChange={(e) => setField('baseline_doc_minutes', e.target.value)}
+                    placeholder="напр. 8"
                   />
                 </Field>
               </div>
