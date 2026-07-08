@@ -15,10 +15,17 @@ import { Icon } from '@/components/ui/Icon';
 //    baseline drops the label.
 const MIN_NOTES = 3;
 
-// Whole-minute saved value → "≈ N ч" at/above an hour, else "≈ N мин".
+// Whole-minute saved value → "≈ N ч M мин" at/above an hour, else "≈ N мин".
+// Hours FLOOR + exact remainder so we never round up past the true figure
+// (90 min must read "≈ 1 ч 30 мин", never "≈ 2 ч").
 function fmtSaved(min: number): string {
-  if (min >= 60) return `≈ ${Math.round(min / 60)} ч`;
-  return `≈ ${Math.round(min)} мин`;
+  const m = Math.round(min);
+  if (m >= 60) {
+    const h = Math.floor(m / 60);
+    const rem = m % 60;
+    return rem === 0 ? `≈ ${h} ч` : `≈ ${h} ч ${rem} мин`;
+  }
+  return `≈ ${m} мин`;
 }
 
 export default function ValueStatsCard({
@@ -82,7 +89,7 @@ export default function ValueStatsCard({
             {thisWeek.notes === 1 ? 'преглед' : 'прегледа'}).
           </p>
           <p className="text-xs mt-1" style={{ color: 'var(--color-ink)' }}>
-            {lastNote ? `Последен лист: спестени ${fmtSaved(lastNote.savedMinutes)}. ` : ''}
+            {lastNote && lastNote.savedMinutes >= 1 ? `Последен лист: спестени ${fmtSaved(lastNote.savedMinutes)}. ` : ''}
             {today.savedMinutes >= 1 ? `Днес: ${fmtSaved(today.savedMinutes)}. ` : ''}
             {thisWeek.avgAuthoredPct != null
               ? `TuberMed написа ~${thisWeek.avgAuthoredPct}% от текста.`
