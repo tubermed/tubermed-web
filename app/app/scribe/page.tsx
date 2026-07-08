@@ -62,6 +62,9 @@ function ScribePageInner() {
   const [mode, setMode] = useState<Mode>('phone');
   const [view, setView] = useState<View>('record');
   const [error, setError] = useState<string | null>(null);
+  // Calm (amber) counterpart to `error` — used when a timed-out upload retry finds
+  // the recording already received and processing on the server (a 409). Never red.
+  const [notice, setNotice] = useState<string | null>(null);
   const [consultationId, setConsultationId] = useState<string | null>(null);
   const [pendingVisit, setPendingVisit] = useState<PendingVisit | null>(null);
   // Cold-start recovery: set to the ?visit= id when sessionStorage is absent
@@ -307,6 +310,15 @@ function ScribePageInner() {
         router.replace('/app/login');
         return;
       }
+      if (err instanceof ApiError && err.status === 409) {
+        // The original upload actually reached the server (a hung/half-open
+        // connection we timed out locally) and this consultation is already being
+        // processed there — a re-send can't help and can't duplicate (the backend
+        // 409-gates on status). Show a calm notice, not a red error, and stop
+        // offering a same-audio retry that would only 409 again.
+        setNotice('Изпращането е получено и вече се обработва — не е нужно да изпращате отново.');
+        return;
+      }
       if (err instanceof ApiError) {
         // Reached the server this time — classify normally (5xx → recovery panel,
         // 4xx → plain banner). The retained blob is no longer the recovery path.
@@ -394,6 +406,10 @@ function ScribePageInner() {
             <ErrorBanner message={error} onClose={() => setError(null)} />
           )}
 
+          {notice && (
+            <ErrorBanner message={notice} tone="notice" onClose={() => setNotice(null)} />
+          )}
+
           {view === 'processing' && <ProcessingView />}
 
           {/* PhoneMode owns a long-lived WebSocket and the recovery
@@ -467,14 +483,22 @@ function ScribePageInner() {
 function ErrorBanner({
   message,
   onClose,
+  tone = 'error',
 }: {
   message: string;
   onClose: () => void;
+  tone?: 'error' | 'notice';
 }) {
+  // 'notice' is the calm amber tone (e.g. "already received, still processing on
+  // the server") — never the red danger tone, which would read as a failure.
+  const palette =
+    tone === 'notice'
+      ? { background: 'var(--color-warn-soft)', color: 'var(--color-warn)' }
+      : { background: 'var(--color-danger-soft)', color: 'var(--color-danger)' };
   return (
     <div
       className="mb-6 px-4 py-3 rounded-md flex items-start justify-between gap-3"
-      style={{ background: 'var(--color-danger-soft)', color: 'var(--color-danger)' }}
+      style={palette}
     >
       <div className="text-sm">{message}</div>
       <button
@@ -785,12 +809,17 @@ const PROCESSING_STEPS = [
 
 function ProcessingView() {
   const [active, setActive] = useState(0);
+  // Past the usual window the steps have nothing left to advance; swap the static
+  // hint for a calm reassurance so a slow run reads as "still working", not frozen.
+  const [overtime, setOvertime] = useState(false);
   useEffect(() => {
     const t1 = setTimeout(() => setActive(1), 7000);
     const t2 = setTimeout(() => setActive(2), 16000);
+    const t3 = setTimeout(() => setOvertime(true), 32000);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
+      clearTimeout(t3);
     };
   }, []);
 
@@ -838,7 +867,9 @@ function ProcessingView() {
         })}
       </ul>
       <div className="mt-5 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-        Обикновено отнема ~15–30 сек.
+        {overtime
+          ? 'Почти готово — отнема малко повече от обичайното…'
+          : 'Обикновено отнема ~15–30 сек.'}
       </div>
     </div>
   );

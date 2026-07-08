@@ -29,6 +29,13 @@ import type {
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL!;
 const STORAGE_KEY = 'tuber_auth';
 
+// Client-side ceiling for the one-shot PC scribe upload (upload + Soniox + Haiku).
+// Bounds a hung/half-open connection so the retry panel surfaces in ~1 min instead
+// of the browser's own multi-minute default. Retries are duplicate-safe — the
+// backend 409-gates /api/transcribe on consultation status — so a timeout only ever
+// costs a re-send, never a double note, never data loss (the audio blob is retained).
+const UPLOAD_TIMEOUT_MS = 60_000;
+
 export interface DoctorInfo {
   id: string;
   name: string;
@@ -271,11 +278,17 @@ export const api = {
     fd.append('audio', audio, filename);
     const headers: Record<string, string> = {};
     if (opts?.consultationId) headers['X-Consultation-Id'] = opts.consultationId;
+    // Bound the single upload+transcribe+extract request. On timeout the fetch
+    // aborts (AbortError → the scribe flow's retainable-failure path); `signal`
+    // rides through request()'s option spread into fetch — no wrapper change.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
     return request<TranscribeResult>('/api/transcribe', {
       method: 'POST',
       body: fd,
       headers,
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
   },
   editConsultation: (
     consultationId: string,
