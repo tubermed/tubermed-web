@@ -199,18 +199,27 @@ export interface MeResponse {
   rzi_number?: string | null;
   nzok_contract?: string | null;
   practice_phone?: string | null;
+  // Doctor's self-reported manual-documentation minutes/visit (migration 019).
+  // ABSENT when 019 isn't applied; null when applied but unset; number when set.
+  baseline_doc_minutes?: number | null;
 }
 
-// GET /api/auth/me/value-stats (JWT) — B2 value card. Aggregate NUMBERS ONLY
-// (a count + a whole percent), no PII. avgAuthoredPct is null when there are no
-// notes with a measured authored fraction yet (the card shows a neutral state).
+// GET /api/auth/me/value-stats (JWT) — B2 value card, now minutes-saved.
+// Aggregate NUMBERS ONLY, no PII. savedMinutes = Σ max(0, baselineMinutes −
+// review) over the window (whole minutes). baselineSource: 'estimate' = the
+// labeled assumed baseline; 'doctor' = the doctor's own captured minutes.
+// avgAuthoredPct stays as the demoted secondary stat (null before any measured note).
 export interface ValueStatsWindow {
   notes: number;
+  savedMinutes: number;
   avgAuthoredPct: number | null;
 }
 export interface ValueStats {
+  baselineMinutes: number;
+  baselineSource: 'estimate' | 'doctor';
   thisWeek: ValueStatsWindow;
   today: ValueStatsWindow;
+  lastNote: { savedMinutes: number } | null;
 }
 
 export interface UpdateMePayload {
@@ -224,6 +233,7 @@ export interface UpdateMePayload {
   practice_phone?: string;
   consultations_band?: ConsultationsBand;
   onboarding_completed?: boolean;
+  baseline_doc_minutes?: number;
 }
 
 // POST /api/auth/change-password (JWT). Email-auth doctors only — a PIN-only
