@@ -27,6 +27,8 @@
 //     correction threshold — adversarial review (2026-06-15) showed a looser rule
 //     collapses OPPOSITE terms (хипертония↔хипотония) and distinct drugs.
 
+import labLexiconData from './lab-lexicon.json';
+
 export interface SourceSpan {
   start: number; // inclusive char offset into the ORIGINAL transcript
   end: number;   // exclusive
@@ -313,6 +315,223 @@ function groundVitalRanges(value: string, tt: TToken[]): { start: number; end: n
   return merged;
 }
 
+// ── Lab-list grounding (Изследвания only) ─────────────────────────────────────
+// The investigations fields (izsledvania = results, naznacheni = ordered tests)
+// are comma-separated lab labels that the extractor NORMALIZES to canonical short
+// forms (ПКК, СУЕ, CRP, hs-CRP …). Those tokenize below the ≥4-letter needle bar,
+// so the precision-first text matcher drops them and a section whose labs are
+// plainly in the transcript collapses to "no clear source". We bridge each item
+// back to its spoken form(s) via the committed lab lexicon (a mirror of the
+// backend LAB_ENTRIES — the same table that normalized the labels), then require
+// those spoken words to ACTUALLY be present. An un-spoken lab grounds to nothing,
+// so the honest "no clear source" is preserved; matching stays scoped to these
+// two fields, so precision everywhere else is untouched.
+interface LabEntry {
+  id: string;
+  label: string;
+  aliases: string[];
+  parent: string | null;
+}
+const LAB_ENTRIES: LabEntry[] = (labLexiconData as { entries: LabEntry[] }).entries;
+
+// Mirrors the backend normKey: trim + lowercase + collapse internal whitespace.
+function labNormKey(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/gu, ' ');
+}
+
+// normKey → LAB_ENTRIES index (first-wins, mirroring the backend buildIndex:
+// a label is registered before its own aliases, an earlier entry before a later).
+const LAB_KEY_INDEX: Map<string, number> = (() => {
+  const m = new Map<string, number>();
+  LAB_ENTRIES.forEach((e, i) => {
+    const add = (raw: string) => {
+      const k = labNormKey(raw);
+      if (k && !m.has(k)) m.set(k, i);
+    };
+    add(e.label);
+    for (const a of e.aliases) add(a);
+  });
+  return m;
+})();
+
+function isLabField(fieldKey: string): boolean {
+  return fieldKey === 'izsledvania' || fieldKey === 'naznacheni';
+}
+
+// Resolve one list item to its canonical lab entry. Whole-string first; on a
+// miss, retry the LEADING label portion (a results item trails a value/unit
+// after the label — "CRP 12 mg/L", "гликиран хемоглобин 7.2%"), dropping trailing
+// words. Leading-only — never a mid-string substring — so a modified phrase like
+// "Контролна кръвна картина" (starts with "контролна") can't resolve to ПКК,
+// keeping the backend's whole-string classify discipline. A mis-resolve is
+// harmless anyway: it only picks which lab's spoken forms to SEARCH, and
+// grounding still requires one of them to be present in the transcript.
+function resolveLab(item: string): LabEntry | null {
+  const whole = LAB_KEY_INDEX.get(labNormKey(item));
+  if (whole !== undefined) return LAB_ENTRIES[whole];
+  const words = item.trim().split(/\s+/u);
+  for (let n = words.length - 1; n >= 1; n--) {
+    const k = LAB_KEY_INDEX.get(labNormKey(words.slice(0, n).join(' ')));
+    if (k !== undefined) return LAB_ENTRIES[k];
+  }
+  return null;
+}
+
+// The spoken variants to search for a resolved lab: its canonical label plus
+// every alias. The subtype→parent link is deliberately NOT followed — grounding
+// a subtype (hs-CRP) to a bare mention of the general test (CRP) would overstate
+// what was actually said.
+function labSearchForms(e: LabEntry): string[] {
+  return [...new Set([e.label, ...e.aliases])];
+}
+
+// Exact, in-order, adjacent token-sequence match — for pure-abbreviation forms
+// (ПКК, hs-CRP, TG) that carry no ≥4-letter needle. EXACT only: no fuzzy, no
+// inflection (an abbreviation must never fuzzy-collapse onto a neighbour).
+// Returns the matched transcript token indices, or null.
+const LAB_ABBREV_GAP = 4; // 'hs' and 'crp' in a spoken "hs-CRP" sit ~1–2 chars apart
+function matchExactSequence(seq: string[], tt: TToken[]): number[] | null {
+  const n = seq.length;
+  if (n === 0) return null;
+  for (let i = 0; i + n <= tt.length; i++) {
+    let ok = true;
+    for (let j = 0; j < n; j++) {
+      if (tt[i + j].norm !== seq[j]) { ok = false; break; }
+      if (j > 0 && tt[i + j].start - tt[i + j - 1].end > LAB_ABBREV_GAP) { ok = false; break; }
+    }
+    if (ok) return Array.from({ length: n }, (_, j) => i + j);
+  }
+  return null;
+}
+
+// A Bulgarian connector/function word inside a lab long-form — skippable when
+// matching the phrase ("скорост НА утаяване", "креатинин В кръвта").
+const LAB_CONNECTORS = new Set<string>([
+  'на', 'и', 'в', 'за', 'от', 'с', 'със', 'по', 'до', 'или',
+]);
+
+// A form's REQUIRED anchors, in order: content words (≥4 letters → matchNeedle,
+// so exact/inflection/fuzzy) and short abbreviation fragments (crp, ldl, т4, лош,
+// and single distinguishing letters like the Д of "витамин Д"/"Д-димер" → exact).
+// Connectors and pure-number/value tokens are dropped; the "с" of "С-реактивен"
+// falls out because it is a connector. This is what a spoken form must ACTUALLY
+// contain to ground — the generic word an alias happens to collapse to (a bare
+// "холестерол", "висок", "реактивен") never grounds the lab on its own.
+interface LabAnchor { norm: string; content: boolean }
+function labAnchors(form: string): { anchors: LabAnchor[]; raw: string[] } {
+  const raw = form.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const anchors: LabAnchor[] = [];
+  for (const t of raw) {
+    if (LAB_CONNECTORS.has(t)) continue;
+    const letters = (t.match(/\p{L}/gu) || []).length;
+    if (letters === 0) continue; // pure numbers/values are not anchors (as in isContentToken)
+    if (letters >= 4 && !STOPWORDS.has(t)) anchors.push({ norm: t, content: true });
+    else anchors.push({ norm: t, content: false }); // abbr/short/qualifier anchor (crp, ldl, д)
+  }
+  return { anchors, raw };
+}
+
+// Match a multi-anchor form as a CONTIGUOUS spoken phrase: the anchors appear in
+// order, immediately consecutive except for skippable connector words, and with
+// NO sentence boundary between them. This is the precision core — it rejects a
+// form whose words merely sit nearby in unrelated prose ("добър контрол на
+// холестерола" ≠ HDL "добър холестерол"; "висок и чувствителен. CRP" ≠ hs-CRP)
+// while accepting the real phrase and its inflections/connectors ("скорост на
+// утаяване на еритроцитите"). Returns the matched transcript token indices, or null.
+function matchLabPhrase(anchors: LabAnchor[], tt: TToken[], transcript: string): number[] | null {
+  const matches = (a: LabAnchor, norm: string) =>
+    a.content ? matchNeedle(norm, [a.norm]) === 0 : norm === a.norm;
+  for (let s = 0; s < tt.length; s++) {
+    if (!matches(anchors[0], tt[s].norm)) continue;
+    const picks = [s];
+    let prevEnd = tt[s].end;
+    let ri = 1;
+    let ok = true;
+    for (let j = s + 1; ri < anchors.length; j++) {
+      if (j >= tt.length) { ok = false; break; }
+      if (matches(anchors[ri], tt[j].norm)) {
+        // a sentence boundary must never sit between two anchors of one lab name
+        if (/[.!?;\n]/u.test(transcript.slice(prevEnd, tt[j].start))) { ok = false; break; }
+        picks.push(j); prevEnd = tt[j].end; ri++;
+        continue;
+      }
+      if (LAB_CONNECTORS.has(tt[j].norm)) continue; // a connector between anchors is allowed
+      ok = false; break; // an unrelated token between anchors → this occurrence fails
+    }
+    if (ok && ri === anchors.length) return picks;
+  }
+  return null;
+}
+
+// Ground one spoken FORM (a lexicon label or alias) against the transcript:
+//   • pure abbreviation (ПКК, CRP, hs-CRP, LDL) — no content anchor → an exact,
+//     adjacent token sequence; an ultra-short one (<3 chars, e.g. ГФ/ТГ) never
+//     grounds standalone — too collision-prone;
+//   • single content word (креатинин, урея) — present via matchNeedle and ≥
+//     singleMinLen chars (4 for a confirmed lexicon lab, the generic 6 for the
+//     unknown-item fallback);
+//   • multi-anchor phrase (пълна кръвна картина, LDL холестерол, high-sensitive
+//     CRP, витамин Д) — ALL anchors as a contiguous spoken phrase (matchLabPhrase).
+// Returns matched token indices, or null.
+function groundLabForm(
+  form: string,
+  tt: TToken[],
+  transcript: string,
+  singleMinLen: number,
+): number[] | null {
+  const { anchors, raw } = labAnchors(form);
+  if (anchors.length === 0) return raw.join('').length >= 3 ? matchExactSequence(raw, tt) : null;
+  if (!anchors.some((a) => a.content)) {
+    const seq = anchors.map((a) => a.norm);
+    return seq.join('').length >= 3 ? matchExactSequence(seq, tt) : null;
+  }
+  if (anchors.length === 1) {
+    const a = anchors[0];
+    if (a.norm.length < singleMinLen) return null;
+    for (let i = 0; i < tt.length; i++) if (matchNeedle(tt[i].norm, [a.norm]) === 0) return [i];
+    return null;
+  }
+  return matchLabPhrase(anchors, tt, transcript);
+}
+
+// Per-ITEM lab grounding: split the field into its listed labs (comma / semicolon
+// / "и"-separated), resolve each to its lexicon entry and search its spoken forms
+// (longest match wins); an unknown item falls back to grounding its own text.
+// Union the matched token ranges of every item that actually grounded. Returns
+// null when nothing grounded (→ the caller's honest "no clear source"), so an
+// un-spoken lab is never invented.
+function groundLabList(value: string, tt: TToken[], transcript: string): SourceSpan | null {
+  const items = value.split(/[,;·\n]+|\s+и\s+/u).map((s) => s.trim()).filter(Boolean);
+  if (items.length === 0) return null;
+
+  const hitTokens = new Set<number>();
+  for (const item of items) {
+    const entry = resolveLab(item);
+    let best: number[] | null = null;
+    if (entry) {
+      // Confirmed lab → a 4-char single-word floor (a lexicon term is safe short).
+      for (const form of labSearchForms(entry)) {
+        const r = groundLabForm(form, tt, transcript, 4);
+        if (r && (!best || r.length > best.length)) best = r;
+      }
+    } else {
+      // Unknown item → the generic 6-char single-word precision floor.
+      best = groundLabForm(item, tt, transcript, 6);
+    }
+    if (best) for (const i of best) hitTokens.add(i);
+  }
+  if (hitTokens.size === 0) return null;
+
+  const idxs = [...hitTokens].sort((a, b) => a - b);
+  const tokens: { start: number; end: number }[] = [];
+  for (const i of idxs) {
+    const last = tokens[tokens.length - 1];
+    if (last && tt[i].start <= last.end) last.end = Math.max(last.end, tt[i].end);
+    else tokens.push({ start: tt[i].start, end: tt[i].end });
+  }
+  return { start: tokens[0].start, end: tokens[tokens.length - 1].end, tokens };
+}
+
 export function findSourceSpan(
   fieldKey: string,
   fieldValue: string,
@@ -324,6 +543,14 @@ export function findSourceSpan(
 
   const tt = tokenizeWithOffsets(transcript);
   if (tt.length === 0) return null;
+
+  // Lab-list grounding (izsledvania/naznacheni): bridge normalized short-form
+  // labels back to their spoken variants via the lab lexicon. These fields are
+  // governed ENTIRELY by the lab path — its per-item precision (require the
+  // abbreviation or the full spoken phrase) must not be undercut by the generic
+  // single-word matcher, which would otherwise ground a resolved "свободен Т4" to
+  // the bare adjective "свободен". A miss returns the honest null.
+  if (isLabField(fieldKey)) return groundLabList(value, tt, transcript);
 
   // Text needles (numbers excluded by design — see isContentToken). May be empty
   // for a numbers-only vitals field; the vital pass below handles that.

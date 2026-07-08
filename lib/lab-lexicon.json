@@ -1,0 +1,368 @@
+{
+  "_comment": "AUTO-GENERATED from tubermed-backend lib/vocabulary/lab-shortforms.js LAB_ENTRIES. Do not edit by hand — run `node scripts/gen-lab-lexicon.js` in tubermed-backend.",
+  "entries": [
+    {
+      "id": "cbc",
+      "label": "ПКК",
+      "aliases": [
+        "пълна кръвна картина",
+        "пълен кръвен тест",
+        "пълен кръвен анализ",
+        "кръвна картина"
+      ],
+      "parent": null
+    },
+    {
+      "id": "esr",
+      "label": "СУЕ",
+      "aliases": [
+        "седиментна скорост на еритроцитите",
+        "скорост на утаяване на еритроцитите",
+        "утаяване на еритроцитите"
+      ],
+      "parent": null
+    },
+    {
+      "id": "crp",
+      "label": "CRP",
+      "aliases": [
+        "С-реактивен протеин",
+        "C-реактивен протеин",
+        "ц-реактивен протеин"
+      ],
+      "parent": null
+    },
+    {
+      "id": "hscrp",
+      "label": "hs-CRP",
+      "aliases": [
+        "висок чувствителен CRP",
+        "високочувствителен CRP",
+        "високо чувствителен CRP",
+        "hsCRP",
+        "high-sensitive CRP",
+        "high sensitive CRP",
+        "high-sensitivity CRP",
+        "highly sensitive CRP"
+      ],
+      "parent": "crp"
+    },
+    {
+      "id": "pct",
+      "label": "прокалцитонин",
+      "aliases": [
+        "ПКТ",
+        "PCT"
+      ],
+      "parent": null
+    },
+    {
+      "id": "creat",
+      "label": "креатинин",
+      "aliases": [
+        "серумен креатинин",
+        "креатинин в кръвта"
+      ],
+      "parent": null
+    },
+    {
+      "id": "urea",
+      "label": "урея",
+      "aliases": [
+        "карбамид"
+      ],
+      "parent": null
+    },
+    {
+      "id": "egfr",
+      "label": "eGFR",
+      "aliases": [
+        "скорост на гломерулна филтрация",
+        "гломерулна филтрация",
+        "изчислена гломерулна филтрация",
+        "GFR",
+        "ГФ"
+      ],
+      "parent": null
+    },
+    {
+      "id": "elyte",
+      "label": "електролити",
+      "aliases": [
+        "серумни електролити",
+        "йонограма"
+      ],
+      "parent": null
+    },
+    {
+      "id": "alt",
+      "label": "ALT",
+      "aliases": [
+        "аланин аминотрансфераза",
+        "АЛАТ"
+      ],
+      "parent": null
+    },
+    {
+      "id": "ast",
+      "label": "AST",
+      "aliases": [
+        "аспартат аминотрансфераза",
+        "АСАТ"
+      ],
+      "parent": null
+    },
+    {
+      "id": "ggt",
+      "label": "ГГТ",
+      "aliases": [
+        "гама-глутамил трансфераза",
+        "GGT",
+        "гамаглутамилтрансфераза"
+      ],
+      "parent": null
+    },
+    {
+      "id": "alp",
+      "label": "алкална фосфатаза",
+      "aliases": [
+        "АФ",
+        "ALP"
+      ],
+      "parent": null
+    },
+    {
+      "id": "bili",
+      "label": "билирубин",
+      "aliases": [
+        "общ билирубин",
+        "серумен билирубин"
+      ],
+      "parent": null
+    },
+    {
+      "id": "lenz",
+      "label": "чернодробни ензими",
+      "aliases": [
+        "чернодробни показатели",
+        "чернодробна функция",
+        "хепатален панел"
+      ],
+      "parent": null
+    },
+    {
+      "id": "lipid",
+      "label": "липиден профил",
+      "aliases": [
+        "липидограма",
+        "липиден статус",
+        "пълна липидограма"
+      ],
+      "parent": null
+    },
+    {
+      "id": "chol",
+      "label": "общ холестерол",
+      "aliases": [
+        "тотален холестерол",
+        "холестерол общ"
+      ],
+      "parent": null
+    },
+    {
+      "id": "ldl",
+      "label": "LDL",
+      "aliases": [
+        "LDL холестерол",
+        "ЛДЛ",
+        "лош холестерол"
+      ],
+      "parent": null
+    },
+    {
+      "id": "hdl",
+      "label": "HDL",
+      "aliases": [
+        "HDL холестерол",
+        "ХДЛ",
+        "добър холестерол"
+      ],
+      "parent": null
+    },
+    {
+      "id": "tg",
+      "label": "триглицериди",
+      "aliases": [
+        "ТГ",
+        "TG"
+      ],
+      "parent": null
+    },
+    {
+      "id": "inr",
+      "label": "ИНР",
+      "aliases": [
+        "INR",
+        "международно нормализирано отношение"
+      ],
+      "parent": null
+    },
+    {
+      "id": "aptt",
+      "label": "aPTT",
+      "aliases": [
+        "АПТВ",
+        "активирано парциално тромбопластиново време",
+        "парциално тромбопластиново време"
+      ],
+      "parent": null
+    },
+    {
+      "id": "coag",
+      "label": "коагулограма",
+      "aliases": [
+        "коагулационен статус",
+        "коагулация"
+      ],
+      "parent": null
+    },
+    {
+      "id": "ddim",
+      "label": "D-димер",
+      "aliases": [
+        "Д-димер",
+        "D dimer"
+      ],
+      "parent": null
+    },
+    {
+      "id": "trop",
+      "label": "тропонин",
+      "aliases": [],
+      "parent": null
+    },
+    {
+      "id": "bnp",
+      "label": "BNP",
+      "aliases": [
+        "мозъчен натриуретичен пептид"
+      ],
+      "parent": null
+    },
+    {
+      "id": "ntbnp",
+      "label": "NT-proBNP",
+      "aliases": [
+        "NT-pro-BNP",
+        "NTproBNP"
+      ],
+      "parent": null
+    },
+    {
+      "id": "tsh",
+      "label": "ТСХ",
+      "aliases": [
+        "TSH",
+        "тиреостимулиращ хормон",
+        "тиреотропен хормон",
+        "тиреотропин"
+      ],
+      "parent": null
+    },
+    {
+      "id": "ft4",
+      "label": "свободен Т4",
+      "aliases": [
+        "fT4",
+        "свободен тироксин",
+        "св. Т4"
+      ],
+      "parent": null
+    },
+    {
+      "id": "ft3",
+      "label": "свободен Т3",
+      "aliases": [
+        "fT3",
+        "свободен трийодтиронин",
+        "св. Т3"
+      ],
+      "parent": null
+    },
+    {
+      "id": "glu",
+      "label": "кръвна захар",
+      "aliases": [
+        "кръвна глюкоза",
+        "глюкоза в кръвта",
+        "серумна глюкоза",
+        "гликемия"
+      ],
+      "parent": null
+    },
+    {
+      "id": "hba1c",
+      "label": "HbA1c",
+      "aliases": [
+        "гликиран хемоглобин",
+        "гликозилиран хемоглобин",
+        "А1с"
+      ],
+      "parent": null
+    },
+    {
+      "id": "ferr",
+      "label": "феритин",
+      "aliases": [
+        "серумен феритин"
+      ],
+      "parent": null
+    },
+    {
+      "id": "iron",
+      "label": "желязо",
+      "aliases": [
+        "серумно желязо"
+      ],
+      "parent": null
+    },
+    {
+      "id": "vitd",
+      "label": "витамин Д",
+      "aliases": [
+        "витамин D",
+        "25-OH витамин Д",
+        "25-хидроксивитамин Д",
+        "витамин Д3"
+      ],
+      "parent": null
+    },
+    {
+      "id": "urine",
+      "label": "урина общо изследване",
+      "aliases": [
+        "уринен анализ",
+        "общо изследване на урина",
+        "изследване на урина"
+      ],
+      "parent": null
+    },
+    {
+      "id": "sed",
+      "label": "седимент",
+      "aliases": [
+        "уринен седимент"
+      ],
+      "parent": null
+    },
+    {
+      "id": "ucult",
+      "label": "урокултура",
+      "aliases": [
+        "уринна култура",
+        "посявка на урина"
+      ],
+      "parent": null
+    }
+  ]
+}

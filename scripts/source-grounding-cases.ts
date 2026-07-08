@@ -225,5 +225,125 @@ console.log('\n— PART 7: partial-match honesty (highlight grounded words, grey
     'U3: unsourced clauses (везикуларно / не е измерено) never appear as a highlighted source');
 }
 
+console.log('\n— PART 8: normalized lab labels ground to spoken forms (Изследвания) —');
+// The reported miss: the extractor NORMALIZES labs to short forms (ПКК, СУЕ,
+// CRP, hs-CRP), which tokenize below the ≥4-letter needle bar → zero needles →
+// "no clear source", even though the labs are plainly in the transcript. The
+// lab lexicon (mirror of backend LAB_ENTRIES) bridges each item back to its
+// spoken form(s); an un-spoken lab still grounds to nothing (honesty preserved),
+// and only izsledvania/naznacheni are affected.
+const lowTokens = (r: ReturnType<typeof findSourceSpan>, t: string): string[] =>
+  r ? r.tokens.map((x) => t.slice(x.start, x.end).toLowerCase()) : [];
+
+// Acceptance case (verbatim from the bug report): abbreviations spoken as-is
+// plus a mixed English long form normalized to hs-CRP.
+{
+  const t = 'Назначавам за лабораторни изследвания: ПКК, СУЕ, CRP, high-sensitive CRP. Контролен преглед след седмица.';
+  const r = findSourceSpan('naznacheni', 'ПКК, СУЕ, CRP, hs-CRP', t);
+  assert(r !== null, 'PART8 acceptance: normalized lab labels ground (was "no clear source")');
+  const toks = lowTokens(r, t);
+  assert(toks.includes('пкк') && toks.includes('суе'), 'PART8 acceptance: ПКК and СУЕ highlighted');
+  assert(toks.filter((x) => x === 'crp').length >= 1, 'PART8 acceptance: CRP highlighted');
+  assert(toks.includes('high') && toks.includes('sensitive'),
+    'PART8 acceptance: hs-CRP → spoken "high-sensitive CRP" highlighted');
+}
+
+// Reverse (the common real case): the doctor SPEAKS the long forms and the note
+// carries the abbreviations.
+{
+  const t = 'Назначавам пълна кръвна картина, скорост на утаяване на еритроцитите и гликиран хемоглобин на гладно.';
+  const r = findSourceSpan('naznacheni', 'ПКК, СУЕ, HbA1c', t);
+  assert(r !== null, 'PART8 reverse: abbreviations ground to their spoken long forms');
+  const toks = lowTokens(r, t);
+  assert(toks.includes('пълна') && toks.includes('картина'), 'PART8 reverse: ПКК → "пълна кръвна картина"');
+  assert(toks.includes('утаяване') && toks.includes('еритроцитите'), 'PART8 reverse: СУЕ → "…утаяване на еритроцитите"');
+  assert(toks.includes('гликиран') && toks.includes('хемоглобин'), 'PART8 reverse: HbA1c → "гликиран хемоглобин"');
+}
+
+// Honesty — a lab present in the note but NOT spoken must not be highlighted,
+// while the spoken lab in the same field still grounds.
+{
+  const t = 'Назначавам само пълна кръвна картина за контрол.';
+  const r = findSourceSpan('naznacheni', 'ПКК, липиден профил', t);
+  assert(r !== null, 'PART8 partial: the spoken lab (ПКК) still grounds');
+  const toks = lowTokens(r, t);
+  assert(toks.includes('картина'), 'PART8 partial: spoken ПКК highlighted');
+  assert(!toks.includes('липиден') && !toks.includes('профил'),
+    'PART8 partial: un-spoken lab (липиден профил) contributes no highlight');
+}
+
+// Honesty — none of the labs spoken → the honest "no clear source" is preserved.
+assert(findSourceSpan('naznacheni', 'ПКК, СУЕ, CRP', 'Пациентът се оплаква от главоболие и умора.') === null,
+  'PART8 honesty: labs absent from transcript → null (no false grounding)');
+
+// Scope — the lab bridging is gated to izsledvania/naznacheni; a non-lab field
+// with a lab-looking token routes through the unchanged generic path.
+assert(findSourceSpan('terapia', 'ПКК', 'Назначавам ПКК днес.') === null,
+  'PART8 scope: lab short-form bridging does NOT apply to non-lab fields (terapia)');
+
+// izsledvania (results) is bridged too, not only naznacheni.
+{
+  const t = 'Днешният С-реактивен протеин е леко завишен, останалото в норма.';
+  const r = findSourceSpan('izsledvania', 'CRP 12 mg/L', t);
+  assert(r !== null && lowTokens(r, t).includes('реактивен'),
+    'PART8: izsledvania result "CRP" grounds to spoken "С-реактивен протеин"');
+}
+
+console.log('\n— PART 8b: adversarial precision (aliases must not ground on incidental words) —');
+// From the 2026-07 adversarial sweep: an alias that collapses to a common word
+// (hs-CRP→"висок чувствителен", CRP→"реактивен … протеин", LDL→"холестерол",
+// свободен Т4→"свободен") must NOT ground on an incidental mention. The fix
+// requires ALL of a form's anchors present as a tight ordered phrase.
+assert(findSourceSpan('izsledvania', 'hs-CRP', 'Болният е висок и чувствителен, без данни за инфекция.') === null,
+  'PART8b: hs-CRP ↛ incidental "висок и чувствителен" (no CRP said)');
+assert(findSourceSpan('izsledvania', 'CRP', 'Обсъдихме реактивен артрит и нисък общ протеин.') === null,
+  'PART8b: CRP ↛ scattered "реактивен … протеин" (reactive arthritis + total protein)');
+assert(findSourceSpan('naznacheni', 'LDL', 'Ще проследяваме холестерола след един месец.') === null,
+  'PART8b: LDL ↛ a bare generic "холестерол" (subtype not overstated)');
+assert(findSourceSpan('izsledvania', 'свободен Т4', 'Пациентът се чувства свободен и спокоен.') === null,
+  'PART8b: свободен Т4 ↛ the adjective "свободен" alone');
+// Positive controls — the genuine spoken forms MUST still ground.
+assert(findSourceSpan('naznacheni', 'hs-CRP', 'Назначавам високо чувствителен CRP за уточнение.') !== null,
+  'PART8b positive: real "високо чувствителен CRP" still grounds hs-CRP');
+assert(findSourceSpan('naznacheni', 'LDL', 'Проверяваме LDL холестерол този път.') !== null,
+  'PART8b positive: real "LDL холестерол" still grounds LDL');
+// "X и Y" within one item splits so BOTH labs ground (was: only СУЕ).
+{
+  const t = 'Направих СУЕ и CRP днес.';
+  const r = findSourceSpan('naznacheni', 'СУЕ и CRP', t);
+  const toks = lowTokens(r, t);
+  assert(r !== null && toks.includes('суе') && toks.includes('crp'),
+    'PART8b: "СУЕ и CRP" grounds BOTH labs (и-separated item split)');
+}
+
+console.log('\n— PART 8c: adversarial round 2 (phrase must be contiguous; short forms recoverable) —');
+// Second sweep found the phrase matcher could SKIP intervening words to stitch a
+// subtype from a generic mention, and cross a sentence boundary. The fix requires
+// anchors to be consecutive (connectors-only between) with no sentence break.
+assert(findSourceSpan('naznacheni', 'HDL', 'Има добър контрол на холестерола.') === null,
+  'PART8c: HDL ↛ "добър контрол на холестерола" (word-skip stitch rejected)');
+assert(findSourceSpan('izsledvania', 'общ холестерол', 'Направихме общ преглед на холестерола.') === null,
+  'PART8c: общ холестерол ↛ "общ преглед на холестерола"');
+assert(findSourceSpan('izsledvania', 'hs-CRP', 'Болният е висок и чувствителен. CRP назначен.') === null,
+  'PART8c: hs-CRP ↛ across a sentence boundary ("…чувствителен. CRP")');
+assert(findSourceSpan('naznacheni', 'витамин Д', 'Назначавам витамин C 500 мг дневно.') === null,
+  'PART8c: витамин Д ↛ "витамин C" (the Д qualifier must match)');
+assert(findSourceSpan('naznacheni', 'eGFR', 'Прегледът беше в гр. ГФ миналата седмица.') === null,
+  'PART8c: ultra-short abbrev "ГФ" (<3 chars) never grounds standalone');
+// Recoverable short forms that previously MISSED must now ground.
+{
+  const t = 'Направих Д-димер, беше отрицателен.';
+  assert(hit('izsledvania', 'D-димер', t) !== null, 'PART8c: D-димер grounds "Д-димер" (was un-groundable)');
+}
+{
+  const t = 'Назначавам урея и креатинин на пациента.';
+  const r = findSourceSpan('naznacheni', 'урея, креатинин', t);
+  const toks = lowTokens(r, t);
+  assert(r !== null && toks.includes('урея') && toks.includes('креатинин'),
+    'PART8c: урея (4 letters) grounds alongside креатинин');
+}
+assert(hit('izsledvania', 'hs-CRP', 'Направих hsCRP, беше нормален.') !== null,
+  'PART8c: one-token "hsCRP" grounds hs-CRP');
+
 console.log(`\n${passed + failed} assertions: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
