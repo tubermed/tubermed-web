@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, setSession, clearSession, getToken, ApiError } from "@/lib/api";
 import AuthBrandPanel from "@/components/AuthBrandPanel";
+import AuthBootSplash from "@/components/AuthBootSplash";
 import PasswordInput from "@/components/PasswordInput";
 import RememberMe from "@/components/RememberMe";
 
@@ -14,6 +15,12 @@ type LoginMode = "email" | "pin";
 // Stable no-op subscribe for useSyncExternalStore — the token only changes
 // through this page's own navigation, so no store notifications are needed.
 const subscribeNoop = () => () => {};
+
+// Client ceiling on the auto-forward session probe. A cold/hung /me must never
+// keep the branded splash up indefinitely: past this, fall through to the same
+// "probe failed → render the form" path a network failure already takes. Generous
+// vs a normal cold start (~2–4s) so only a genuinely stuck backend hits it.
+const PROBE_TIMEOUT_MS = 8000;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -48,14 +55,30 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!hasToken) return; // nothing stored — render the form as today
-    let cancelled = false;
+    // `settled` guarantees exactly one outcome wins — success, failure, timeout,
+    // or unmount — so a late-resolving /me can't redirect out from under a doctor
+    // who has since been shown the form.
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      // Cold/hung /me: stop waiting and render the form — the same fall-through a
+      // network failure takes below. Auth is untouched; this only bounds the
+      // auto-forward convenience, it does not change what login does.
+      setProbeFailed(true);
+    }, PROBE_TIMEOUT_MS);
     api
       .me() // validate before forwarding — same probe pattern as /app/scribe
       .then(() => {
-        if (!cancelled) router.replace("/app/new-visit"); // same destination as a fresh login
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        router.replace("/app/new-visit"); // same destination as a fresh login
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         if (err instanceof ApiError && err.status === 401) {
           clearSession(); // dead/stale token — clear it so nothing shadows the next login
         }
@@ -64,7 +87,8 @@ export default function LoginPage() {
         setProbeFailed(true);
       });
     return () => {
-      cancelled = true;
+      settled = true;
+      clearTimeout(timer);
     };
   }, [hasToken, router]);
 
@@ -96,15 +120,10 @@ export default function LoginPage() {
     setError(null);
   }
 
-  // Neutral state while the session probe is in flight — page background
-  // only, no flash of the full form mid-forward.
+  // Immediate branded loading state while the session probe is in flight — never
+  // a blank-white gate, and no flash of the full form mid-forward.
   if (probing) {
-    return (
-      <div
-        className="min-h-screen"
-        style={{ background: "var(--color-bg-surface)" }}
-      />
-    );
+    return <AuthBootSplash />;
   }
 
   return (

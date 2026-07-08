@@ -20,7 +20,7 @@
 // GDPR line's backdrop clean.
 const WAVE_BARS = [10, 18, 26, 38, 30, 46, 34, 52, 40, 28, 44, 32, 22, 36, 26, 16, 24, 14, 20, 12];
 
-function AuthTileMark({ size = 44 }: { size?: number }) {
+export function AuthTileMark({ size = 44 }: { size?: number }) {
   // Rounded-square gradient tile + white "T" + light-accent node (Direction 02).
   return (
     <svg

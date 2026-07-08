@@ -483,6 +483,25 @@ html, body {
   .proc-dot { animation: none !important; }
 }
 
+/* ── Auth boot splash spinner (components/AuthBootSplash) ─────────────────────
+   Immediate branded loading ring on the navy startup screen. Same border-spinner
+   technique as the scribe Spinner, themed light-on-navy; rotation hard-stopped
+   under reduced-motion per the repo convention (record-ring / proc-track). */
+.auth-boot-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 3px solid rgba(255, 255, 255, 0.22);
+  border-top-color: var(--color-nav-text-active);
+  animation: auth-boot-spin 0.8s linear infinite;
+}
+@keyframes auth-boot-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-boot-spinner { animation: none; }
+}
+
 /* ── Result page 3-column grid ─────────────────────────────── */
 
 .result-grid {
