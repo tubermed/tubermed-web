@@ -17,9 +17,9 @@ type LoginMode = "email" | "pin";
 const subscribeNoop = () => () => {};
 
 // Client ceiling on the auto-forward session probe. A cold/hung /me must never
-// keep the branded splash up indefinitely: past this, fall through to the same
-// "probe failed → render the form" path a network failure already takes. Generous
-// vs a normal cold start (~2–4s) so only a genuinely stuck backend hits it.
+// keep the branded splash up indefinitely: past this, forward into the app on the
+// still-valid stored token rather than block a remembered doctor on a slow probe.
+// Generous vs a normal cold start (~2–4s) so only a genuinely stuck backend hits it.
 const PROBE_TIMEOUT_MS = 8000;
 
 export default function LoginPage() {
@@ -37,6 +37,10 @@ export default function LoginPage() {
   // restart. Unchecked: sessionStorage, dies with the browser session.
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
+  // True once credentials are accepted and we are navigating into the app — the
+  // branded splash's correct home is here (authenticating → entering), never as a
+  // pre-form gate.
+  const [authenticating, setAuthenticating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Auto-forward: an already-authenticated doctor opening the login page goes
   // straight into the workspace. useSyncExternalStore is the hydration-safe
@@ -48,13 +52,13 @@ export default function LoginPage() {
     () => !!getToken(),
     () => false
   );
-  // Flipped (asynchronously, in the probe's catch) when the probe fails and
-  // the form should render after all.
+  // Flipped (asynchronously, in the probe's catch) only on a real 401 — the sole
+  // case where a stored token is dead and the form should render after all.
   const [probeFailed, setProbeFailed] = useState(false);
   const probing = hasToken && !probeFailed;
 
   useEffect(() => {
-    if (!hasToken) return; // nothing stored — render the form as today
+    if (!hasToken || authenticating) return; // nothing stored, or already entering — render the form / splash as-is
     // `settled` guarantees exactly one outcome wins — success, failure, timeout,
     // or unmount — so a late-resolving /me can't redirect out from under a doctor
     // who has since been shown the form.
@@ -62,10 +66,11 @@ export default function LoginPage() {
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      // Cold/hung /me: stop waiting and render the form — the same fall-through a
-      // network failure takes below. Auth is untouched; this only bounds the
-      // auto-forward convenience, it does not change what login does.
-      setProbeFailed(true);
+      // Cold/hung /me: the token is almost certainly valid (the backend verifies
+      // the JWT synchronously and 401s fast — the slowness is the post-auth DB
+      // work), so forward into the app on it rather than force a remembered doctor
+      // to re-login. Bounds the splash; auth is untouched.
+      router.replace("/app/new-visit");
     }, PROBE_TIMEOUT_MS);
     api
       .me() // validate before forwarding — same probe pattern as /app/scribe
@@ -81,16 +86,18 @@ export default function LoginPage() {
         clearTimeout(timer);
         if (err instanceof ApiError && err.status === 401) {
           clearSession(); // dead/stale token — clear it so nothing shadows the next login
+          setProbeFailed(true); // real 401 is the ONLY path that falls through to the form
+          return;
         }
-        // Network failure / 5xx: keep the (possibly valid) session and render
-        // the form — never block login on a failed probe.
-        setProbeFailed(true);
+        // Network failure / 5xx: keep the (valid) session and forward into the
+        // app on the stored token — never force re-login on a failed probe.
+        router.replace("/app/new-visit");
       });
     return () => {
       settled = true;
       clearTimeout(timer);
     };
-  }, [hasToken, router]);
+  }, [hasToken, authenticating, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -106,12 +113,12 @@ export default function LoginPage() {
               pin: pin.trim(),
             });
       setSession({ token: res.token, doctor: res.doctor }, remember);
+      setAuthenticating(true); // show the branded splash while entering the app
       router.push("/app/new-visit");
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Грешка при вход";
       setError(msg);
-    } finally {
-      setLoading(false);
+      setLoading(false); // re-enable the form; on success we navigate away instead
     }
   }
 
@@ -120,9 +127,10 @@ export default function LoginPage() {
     setError(null);
   }
 
-  // Immediate branded loading state while the session probe is in flight — never
-  // a blank-white gate, and no flash of the full form mid-forward.
-  if (probing) {
+  // Branded loading state — during a „Запомни ме" auto-login probe, and after a
+  // submit while entering the app. Never a blank-white gate, and never a pre-form
+  // gate for an un-remembered doctor (probing is false with no token).
+  if (probing || authenticating) {
     return <AuthBootSplash />;
   }
 
