@@ -1277,6 +1277,53 @@ function PhoneMode({
 
 const WAVE_BARS = 32;
 
+// Capture tuning (2026-07-16 far-field fix): bare getUserMedia({audio:true})
+// leaves the browser's call-tuned DSP ON (noiseSuppression + echoCancellation +
+// autoGainControl), which suppressed a quiet far-field speaker almost entirely.
+// Disable the two suppressors and KEEP autoGainControl (it lifts a faint, distant
+// voice — the one processor that helps dictation). Mono + 48kHz give Soniox a
+// clean source; here the raw webm is sent to Soniox directly, so the raised Opus
+// bitrate matters most of all. All values fall back safely if unsupported.
+const CAPTURE_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: false,
+  noiseSuppression: false,
+  autoGainControl: true,
+  channelCount: 1,
+  sampleRate: 48000,
+};
+const RECORDER_MIME = 'audio/webm;codecs=opus';
+const RECORDER_BITS = 96000; // Opus dictation target (64–128k); browser default is too low
+
+// Request tuned constraints; if the UA rejects an unsupported one, fall back to
+// bare audio:true so recording never fails outright.
+async function getTunedStream(): Promise<MediaStream> {
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: CAPTURE_CONSTRAINTS });
+  } catch {
+    return await navigator.mediaDevices.getUserMedia({ audio: true });
+  }
+}
+
+// MediaRecorder with explicit Opus + bitrate when supported; else the browser
+// default (e.g. Safari → mp4/AAC) so we always record something.
+function makeRecorder(stream: MediaStream): MediaRecorder {
+  try {
+    if (
+      typeof MediaRecorder !== 'undefined' &&
+      MediaRecorder.isTypeSupported &&
+      MediaRecorder.isTypeSupported(RECORDER_MIME)
+    ) {
+      return new MediaRecorder(stream, {
+        mimeType: RECORDER_MIME,
+        audioBitsPerSecond: RECORDER_BITS,
+      });
+    }
+  } catch {
+    /* fall through to browser default */
+  }
+  return new MediaRecorder(stream);
+}
+
 function PcMode({
   mode,
   onModeChange,
@@ -1397,8 +1444,8 @@ function PcMode({
 
   const startRecording = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream);
+      const stream = await getTunedStream();
+      const mr = makeRecorder(stream);
       chunksRef.current = [];
       mr.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
