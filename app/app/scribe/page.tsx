@@ -1294,6 +1294,12 @@ const CAPTURE_CONSTRAINTS: MediaTrackConstraints = {
 const RECORDER_MIME = 'audio/webm;codecs=opus';
 const RECORDER_BITS = 96000; // Opus dictation target (64–128k); browser default is too low
 
+// Too-quiet warning thresholds (mirror the phone page): warn when the smoothed
+// input level stays below -40 dBFS for ~2.5s while recording.
+const TOO_QUIET_DB = -40;
+const TOO_QUIET_MS = 2500;
+const TOO_QUIET_HYST = 2; // dB above the cutoff before the warning clears (anti-flicker)
+
 // Request tuned constraints; if the UA rejects an unsupported one, fall back to
 // bare audio:true so recording never fails outright.
 async function getTunedStream(): Promise<MediaStream> {
@@ -1362,6 +1368,7 @@ function PcMode({
 }) {
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  const [tooQuiet, setTooQuiet] = useState(false);
 
   const mrRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -1371,6 +1378,12 @@ function PcMode({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number | null>(null);
   const barsRef = useRef<HTMLDivElement[]>([]);
+  // Too-quiet warning: refs so the rAF draw loop only setState()s on an actual
+  // show/hide transition, never every frame.
+  const dbSmoothedRef = useRef(-60);
+  const lowSinceRef = useRef(0);
+  const tqDismissedRef = useRef(false);
+  const tqShownRef = useRef(false);
 
   // Initial bars
   useEffect(() => {
@@ -1405,6 +1418,16 @@ function PcMode({
       b.style.height = '4px';
       b.style.opacity = '0.4';
     });
+    // Clear the too-quiet warning when the waveform stops.
+    tqShownRef.current = false;
+    lowSinceRef.current = 0;
+    setTooQuiet(false);
+  }, []);
+
+  const dismissTooQuiet = useCallback(() => {
+    tqDismissedRef.current = true;
+    tqShownRef.current = false;
+    setTooQuiet(false);
   }, []);
 
   const startWaveform = useCallback((stream: MediaStream) => {
@@ -1423,6 +1446,7 @@ function PcMode({
       analyserRef.current = analyser;
 
       const data = new Uint8Array(analyser.frequencyBinCount);
+      const timeData = new Uint8Array(analyser.fftSize);
       const bars = barsRef.current;
       bars.forEach((b) => (b.style.opacity = '1'));
 
@@ -1435,6 +1459,36 @@ function PcMode({
           bar.style.height = h + 'px';
           bar.style.opacity = i > WAVE_BARS * 0.72 ? '0.5' : '1';
         });
+
+        // Sustained "too quiet" detection (mirrors the phone page). RMS→dBFS off
+        // the time-domain signal, smoothed; warn if it stays below -40 dBFS for
+        // ~2.5s. Refs + a change-guard keep this off the render path except on an
+        // actual show/hide transition. A 2 dB hysteresis band avoids flicker.
+        analyser.getByteTimeDomainData(timeData);
+        let sumSq = 0;
+        for (let i = 0; i < timeData.length; i++) {
+          const v = (timeData[i] - 128) / 128;
+          sumSq += v * v;
+        }
+        const rms = Math.sqrt(sumSq / timeData.length);
+        const dbInst = 20 * Math.log10(rms || 1e-5);
+        dbSmoothedRef.current = dbSmoothedRef.current * 0.8 + dbInst * 0.2;
+        const db = dbSmoothedRef.current;
+
+        let desired = tqShownRef.current;
+        if (tqDismissedRef.current) {
+          desired = false;
+        } else if (db <= TOO_QUIET_DB) {
+          if (lowSinceRef.current === 0) lowSinceRef.current = performance.now();
+          if (performance.now() - lowSinceRef.current >= TOO_QUIET_MS) desired = true;
+        } else if (db > TOO_QUIET_DB + TOO_QUIET_HYST) {
+          lowSinceRef.current = 0;
+          desired = false;
+        }
+        if (desired !== tqShownRef.current) {
+          tqShownRef.current = desired;
+          setTooQuiet(desired);
+        }
       };
       draw();
     } catch {
@@ -1455,6 +1509,12 @@ function PcMode({
       setRecording(true);
       onRecordingChange(true);
       setSeconds(0);
+      // Re-arm the too-quiet warning for this recording.
+      tqDismissedRef.current = false;
+      lowSinceRef.current = 0;
+      dbSmoothedRef.current = -60;
+      tqShownRef.current = false;
+      setTooQuiet(false);
       startWaveform(stream);
       timerRef.current = setInterval(() => {
         setSeconds((s) => s + 1);
@@ -1661,6 +1721,32 @@ function PcMode({
           className="flex items-end justify-center gap-1 mt-6"
           style={{ height: '64px' }}
         />
+
+        {/* Too-quiet warning — far-field aid; dismissible, never blocks recording.
+            Navy brand tokens so it reads as guidance, not an error. */}
+        {recording && tooQuiet && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mt-4 w-full max-w-sm flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium"
+            style={{
+              background: 'var(--color-brand-soft)',
+              border: '1px solid var(--color-brand)',
+              color: 'var(--color-brand-dark)',
+            }}
+          >
+            <span className="flex-1">Твърде тихо е — говорете по-близо до микрофона</span>
+            <button
+              type="button"
+              onClick={dismissTooQuiet}
+              aria-label="Скрий предупреждението"
+              className="shrink-0 leading-none text-lg px-1 cursor-pointer"
+              style={{ color: 'var(--color-brand)', background: 'transparent', border: 'none' }}
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {/* Stop & process — the accent CTA. Same stop+submit as the red control. */}
         {recording && (
