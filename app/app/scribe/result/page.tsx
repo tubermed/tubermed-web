@@ -1369,6 +1369,9 @@ function ResultPageInner() {
       <div className="result-grid flex-1">
         {/* ─── Left: section nav ─── */}
         <aside className="no-print">
+          {/* Консултація section nav — echo has its own section flow inside
+              EchoNoteView, so the left rail is empty on that path. */}
+          {!isEcho && (
           <div className="sticky top-[88px]">
             <div
               className="text-xs uppercase tracking-wider mb-3 font-medium"
@@ -1431,6 +1434,7 @@ function ResultPageInner() {
               </select>
             </div>
           </div>
+          )}
         </aside>
 
         {/* ─── Center: document ─── */}
