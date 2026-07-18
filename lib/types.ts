@@ -40,6 +40,44 @@ export interface MkbReview {
   code?: string;
 }
 
+// ── Echo readout shape (note_type='echo') ────────────────────────────────────
+// A DIFFERENT JSONB shape from TranscribeFields — measurements ({value,unit})
+// nested under izmervania.* / klapi.<valve>.*, plus free-text sections, and NO
+// diagnosis/МКБ key anywhere by construction. Produced by the backend echo
+// template (lib/templates/echo-v1.js); the display descriptor is mirrored in
+// lib/echo-template.ts. Fields are optional — an unmeasured field is absent/empty.
+export interface EchoMeasurement {
+  value: string;
+  unit: string;
+}
+
+export interface EchoValve {
+  opisanie?: string;
+  regurgitatsia?: string;
+  vmax?: EchoMeasurement;
+  sreden_gradient?: EchoMeasurement;
+  ava?: EchoMeasurement;
+  mva?: EchoMeasurement;
+  tr_vmax?: EchoMeasurement;
+}
+
+export interface EchoFields {
+  izmervania?: Record<string, EchoMeasurement>;
+  fi_metod?: string;
+  segmentna_kinetika?: string;
+  mpp?: string;
+  klapi?: {
+    aortna?: EchoValve;
+    mitralna?: EchoValve;
+    trikuspidalna?: EchoValve;
+    pulmonalna?: EchoValve;
+  };
+  zakljuchenie?: string;
+  uncertain_spans?: UncertainSpan[];
+  _template?: string;
+  _disclaimer?: string;
+}
+
 export interface TranscribeFields {
   anamneza?: string;
   alergii?: string[];

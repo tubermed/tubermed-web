@@ -27,7 +27,11 @@ import type {
   PendingVisit,
   ExportSignalPayload,
   MkbReview,
+  EchoFields,
+  EchoMeasurement,
 } from '@/lib/types';
+import EchoNoteView from '@/components/EchoNoteView';
+import { setEchoPath } from '@/lib/echo-template';
 import { mergeBackendAlerts, type SafetyAlert } from '@/lib/drug-safety';
 import { loadMkb, getMkbDataSync, resolveMkb } from '@/lib/mkb10';
 import { filedMainTerm, filedComorbidityTerm, spokenDivergesFromOfficial } from '@/lib/diagnosis';
@@ -584,6 +588,27 @@ function ResultPageInner() {
       trackEdit(String(key), charsChanged);
     },
     [trackEdit, computeCharsChanged]
+  );
+
+  // ── Echo field updaters (note_type='echo') ───────────────────
+  // The echo document is a different nested JSONB shape; these set a template
+  // dot-path immutably and route through the SAME edit-flush machinery as the
+  // консултація note (trackEdit → flushEdit → POST /edit with fieldsRef.current).
+  // `path` is the template field path, which is exactly what the backend's
+  // ECHO_EDIT_FIELDS whitelist validates the logged field name against.
+  const updateEchoText = useCallback(
+    (path: string, value: string) => {
+      setFields((prev) => setEchoPath(prev as unknown as EchoFields, path, value) as unknown as TranscribeFields);
+      trackEdit(path, value.length);
+    },
+    [trackEdit]
+  );
+  const updateEchoMeasurement = useCallback(
+    (path: string, next: EchoMeasurement) => {
+      setFields((prev) => setEchoPath(prev as unknown as EchoFields, path, next) as unknown as TranscribeFields);
+      trackEdit(path, (next.value || '').length);
+    },
+    [trackEdit]
   );
 
   // Comorbidity add — a search-first pick from the typeahead creates the row
@@ -1145,6 +1170,12 @@ function ResultPageInner() {
     year: 'numeric',
   });
 
+  // Document-type branch. note_type rides on the PendingVisit (set at staging,
+  // rebuilt from the backend on cold-start recovery). Echo has a different JSONB
+  // shape, NO diagnosis/МКБ UI, and no meds/drug-safety rail.
+  const isEcho = pendingVisit?.visit_metadata.note_type === 'echo';
+  const echoFields = fields as unknown as EchoFields;
+
   return (
     <AppShell doctor={doctor}>
       <Stepper steps={SCRIBE_FLOW_STEPS} current={3} />
@@ -1201,6 +1232,9 @@ function ResultPageInner() {
             onNext={goToNextReview}
           />
         )}
+        {/* Export/print/summary — консултація exporters. The echo paste-block
+            exporter + its buttons land in the next commit; approval stays shared. */}
+        {!isEcho && (
         <div className="flex items-center gap-2">
           <Button
             variant="toolbar"
@@ -1253,6 +1287,7 @@ function ResultPageInner() {
             Резюме за пациента
           </Button>
         </div>
+        )}
       </div>
 
       {/* 3-column grid */}
@@ -1371,7 +1406,7 @@ function ResultPageInner() {
               className="text-3xl font-semibold"
               style={{ color: 'var(--color-ink)', letterSpacing: '-0.01em' }}
             >
-              Амбулаторен лист
+              {isEcho ? 'Ехокардиографско изследване' : 'Амбулаторен лист'}
             </h1>
             <div
               className="text-sm tabular-nums"
@@ -1382,6 +1417,15 @@ function ResultPageInner() {
           </div>
 
           <div className="space-y-8">
+            {isEcho ? (
+              <EchoNoteView
+                fields={echoFields}
+                isLocked={isLocked}
+                onEditText={updateEchoText}
+                onEditMeasurement={updateEchoMeasurement}
+              />
+            ) : (
+            <>
             <DiagnosesSection
               osnovnaDiagnoza={fields.osnovna_diagnoza || ''}
               osnovnaMkb={fields.osnovna_mkb || ''}
@@ -1572,6 +1616,8 @@ function ResultPageInner() {
                 )}
               </div>
             )}
+            </>
+            )}
 
             {fields._disclaimer && (
               <div
@@ -1593,6 +1639,10 @@ function ResultPageInner() {
         {/* ─── Right: meds + safety + actions ─── */}
         <aside className="no-print">
           <div className="sticky top-[88px] space-y-4">
+            {/* Meds + drug-safety rail — консултація only. An echo readout
+                prescribes nothing, so it has no medications_list / med_alerts. */}
+            {!isEcho && (
+            <>
             <MedsPanel
               meds={fields.medications_list || []}
               onChange={onMedsChange}
@@ -1632,6 +1682,8 @@ function ResultPageInner() {
                   ))}
                 </div>
               </div>
+            )}
+            </>
             )}
 
             <div
