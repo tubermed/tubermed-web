@@ -21,6 +21,7 @@ import type {
   PatientSearchHit,
   PatientSummary,
   VisitType,
+  NoteType,
   Locale,
 } from '@/lib/types';
 
@@ -51,6 +52,7 @@ export interface PatientFormState {
 
   // Visit
   visit_type: VisitType | '';
+  note_type: NoteType;        // document template; default 'consultation'
   chief_complaint: string;
 
   // Documentation
@@ -69,6 +71,7 @@ export const EMPTY_FORM: PatientFormState = {
   allergies: [],
   chronic_conditions: [],
   visit_type: '',
+  note_type: 'consultation',
   chief_complaint: '',
   language: 'bg',
 };
@@ -86,6 +89,7 @@ export function fromPatient(p: PatientSummary): PatientFormState {
     allergies:          [...p.allergies],
     chronic_conditions: [...p.chronic_conditions],
     visit_type:         '',
+    note_type:          'consultation',
     chief_complaint:    '',
     language:           'bg',
   };
@@ -237,6 +241,7 @@ export default function PatientForm({
           spotlight tour highlights visit type + chief complaint as ONE step. */}
       <div data-tour="visit-context" className="flex flex-col gap-6">
         <VisitTypeSection state={state} set={set} />
+        <NoteTypeSection state={state} set={set} />
         <ChiefComplaintSection state={state} set={set} />
       </div>
       <DocumentationSection state={state} set={set} />
@@ -814,6 +819,43 @@ function VisitTypeSection({ state, set }: { state: PatientFormState; set: SetFn 
               key={t.value}
               type="button"
               onClick={() => set('visit_type', isActive ? '' : t.value)}
+              className="px-4 py-2 rounded-full text-sm font-medium transition focus-ring"
+              style={{
+                background:  isActive ? 'var(--color-brand)' : 'transparent',
+                color:       isActive ? 'white' : 'var(--color-text-muted)',
+                border:      `1px solid ${isActive ? 'var(--color-brand)' : 'var(--color-border-mid)'}`,
+              }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+    </FormSection>
+  );
+}
+
+// ── Section: Шаблон на документа ────────────────────────────────────────────
+// The document template (note_type). 'consultation' = Амбулаторен лист (default);
+// 'echo' = Ехокардиография — a structured readout with NO diagnosis/МКБ shape.
+// Always set (unlike visit_type, no empty state) so the capture payload is
+// unchanged and the picker just chooses which extraction template runs.
+const NOTE_TYPES: Array<{ value: NoteType; label: string }> = [
+  { value: 'consultation', label: 'Амбулаторен лист' },
+  { value: 'echo',         label: 'Ехокардиография' },
+];
+
+function NoteTypeSection({ state, set }: { state: PatientFormState; set: SetFn }) {
+  return (
+    <FormSection title="Шаблон на документа" icon="stethoscope">
+      <div className="flex flex-wrap gap-2">
+        {NOTE_TYPES.map((t) => {
+          const isActive = state.note_type === t.value;
+          return (
+            <button
+              key={t.value}
+              type="button"
+              onClick={() => set('note_type', t.value)}
               className="px-4 py-2 rounded-full text-sm font-medium transition focus-ring"
               style={{
                 background:  isActive ? 'var(--color-brand)' : 'transparent',

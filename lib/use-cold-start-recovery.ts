@@ -134,6 +134,7 @@ export function useColdStartRecovery(
           visit_metadata: {
             chief_complaint: consultation.chief_complaint,
             visit_type: consultation.visit_type,
+            note_type: consultation.note_type,
           },
           consent_to_record_at: consultation.consent_to_record_at,
         };

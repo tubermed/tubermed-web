@@ -95,6 +95,10 @@ export type WsMessage =
 export type NationalIdType = 'egn' | 'lnch' | 'foreign' | 'none';
 export type Gender         = 'male' | 'female' | 'other' | 'unknown';
 export type VisitType      = 'first' | 'followup' | 'urgent' | 'preventive' | 'remote';
+// Document template discriminator (backend migration 020 / lib/note-type.js).
+// 'consultation' = the Амбулаторен лист; 'echo' = the echocardiography readout
+// (no diagnosis/МКБ shape). Default 'consultation' everywhere.
+export type NoteType       = 'consultation' | 'echo';
 export type Locale         = 'bg';
 export type InsuranceStatus = 'nzok' | 'private' | 'uninsured' | (string & {});
 
@@ -201,6 +205,9 @@ export interface VisitStartPayload {
   patient_id: string;
   chief_complaint?: string | null;
   visit_type?: VisitType | null;
+  // Document template. Omitted/'consultation' → the default Амбулаторен лист;
+  // the backend only writes the column for non-default rows (visits/start).
+  note_type?: NoteType | null;
 }
 
 export interface VisitStartResponse {
@@ -274,6 +281,10 @@ export interface ConsultationDetail {
   exported_at: string | null;
   consent_to_record_at: string | null;
   visit_type: VisitType | null;
+  // Document template (backend migration 020, via the fail-soft reader). Always
+  // present — 'consultation' on legacy/un-migrated rows. Drives the result
+  // page's echo-vs-Амбулаторен-лист branch on cold-start recovery.
+  note_type: NoteType;
   chief_complaint: string | null;
   // Phase 2 Step D — osnovna_diagnoza / osnovna_mkb are no longer separate
   // columns on consultations; read them from `note.osnovna_diagnoza` /
@@ -294,6 +305,7 @@ export interface PendingVisit {
   visit_metadata: {
     chief_complaint: string | null;
     visit_type: VisitType | null;
+    note_type: NoteType;
   };
   // Filled in once the doctor records patient consent on /app/scribe.
   // Survives a tab refresh so the ConsentModal does not nag a doctor who
