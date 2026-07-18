@@ -52,6 +52,8 @@ import {
   openPdfPreview,
   generateWordHtml,
   downloadWord,
+  formatEchoPlainText,
+  generateEchoHtml,
   type ExportIdentity,
 } from '@/lib/exporters';
 import CopyButton from '@/components/CopyButton';
@@ -1071,6 +1073,44 @@ function ResultPageInner() {
     }
   }, [fields, isLocked, showToast, signalExport]);
 
+  // ── Echo exporters (note_type='echo') ────────────────────────
+  // The Изследвания→Резултати paste block + a clean report for print/PDF. Same
+  // approval gate (isLocked) + export signal as the консултація path.
+  const handleEchoCopy = useCallback(async () => {
+    if (isLocked) return;
+    const text = formatEchoPlainText(fields as unknown as EchoFields);
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      showToast('success', 'Копирано в клипборда');
+      signalExport('copy');
+    } else {
+      showToast('error', 'Копирането не е възможно в този браузър');
+    }
+  }, [fields, isLocked, showToast, signalExport]);
+
+  const handleEchoPdf = useCallback(() => {
+    if (isLocked) return;
+    const dateStr = new Date().toLocaleDateString('bg-BG', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const html = generateEchoHtml(fields as unknown as EchoFields, dateStr);
+    if (openPdfPreview(html)) {
+      showToast('success', 'Преглед отворен — Запази като PDF от бутона');
+      signalExport('pdf');
+    } else {
+      showToast('error', 'Изскачащият прозорец е блокиран — разрешете го за този сайт');
+    }
+  }, [fields, isLocked, showToast, signalExport]);
+
+  const handleEchoPrint = useCallback(() => {
+    if (isLocked) return;
+    const dateStr = new Date().toLocaleDateString('bg-BG', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const html = generateEchoHtml(fields as unknown as EchoFields, dateStr);
+    if (openPdfPreview(html, { autoPrint: true })) {
+      signalExport('print');
+    } else {
+      showToast('error', 'Изскачащият прозорец е блокиран — разрешете го за този сайт');
+    }
+  }, [fields, isLocked, showToast, signalExport]);
+
   const handlePdf = useCallback(() => {
     if (isLocked) return;
     const dateStr = new Date().toLocaleDateString('bg-BG', {
@@ -1232,8 +1272,9 @@ function ResultPageInner() {
             onNext={goToNextReview}
           />
         )}
-        {/* Export/print/summary — консултація exporters. The echo paste-block
-            exporter + its buttons land in the next commit; approval stays shared. */}
+        {/* Export bar branches on document type: консултація exporters
+            (PDF/Word/Копирай/Печат/Резюме) vs the echo paste-block exporters
+            below. Approval (StatusBadge) is shared. */}
         {!isEcho && (
         <div className="flex items-center gap-2">
           <Button
@@ -1285,6 +1326,40 @@ function ResultPageInner() {
             {isLocked && <Icon name="lock" />}
             <Icon name="file-text" />
             Резюме за пациента
+          </Button>
+        </div>
+        )}
+        {isEcho && (
+        <div className="flex items-center gap-2">
+          <Button
+            variant="toolbar"
+            onClick={handleEchoPdf}
+            disabled={isLocked}
+            title={isLocked ? 'Първо потвърдете прегледа' : undefined}
+          >
+            {isLocked && <Icon name="lock" />}
+            <Icon name="download" />
+            PDF
+          </Button>
+          <Button
+            variant="toolbar"
+            onClick={handleEchoCopy}
+            disabled={isLocked}
+            title={isLocked ? 'Първо потвърдете прегледа' : undefined}
+          >
+            {isLocked && <Icon name="lock" />}
+            <Icon name="copy" />
+            Копирай
+          </Button>
+          <Button
+            variant="toolbar"
+            onClick={handleEchoPrint}
+            disabled={isLocked}
+            title={isLocked ? 'Първо потвърдете прегледа' : undefined}
+          >
+            {isLocked && <Icon name="lock" />}
+            <Icon name="printer" />
+            Печат
           </Button>
         </div>
         )}

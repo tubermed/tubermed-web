@@ -3,8 +3,9 @@
 // PDF preview includes an in-page action bar with "Save as PDF" and "Close"
 // buttons that are hidden when actually printing.
 
-import type { TranscribeFields } from './types';
+import type { TranscribeFields, EchoFields } from './types';
 import { filedMainTerm, filedComorbidityTerm } from './diagnosis';
+import { ECHO_SECTIONS, readEchoPath } from './echo-template';
 
 export function escapeHtml(s: string): string {
   return s
@@ -125,6 +126,104 @@ export function formatPlainText(f: TranscribeFields): string {
   }
 
   return lines.join('\n').trim();
+}
+
+// ─── ECHO paste block (Изследвания → Резултати) ───────────────
+// The echo readout serialized as a Изследвания→Резултати-shaped block for
+// pasting into a hospital system — Соколов's „изследвания" mental model at the
+// output layer. Measurements render as „Label: value unit", free-text sections
+// as „Label: text"; only populated fields are emitted, in template order (incl.
+// the aorta section). There is NO diagnosis/МКБ line — the echo document has no
+// such shape by construction.
+function echoMeasurementText(f: EchoFields, path: string, fallbackUnit?: string): string {
+  const m = readEchoPath(f, path) as { value?: string; unit?: string } | undefined;
+  const val = m && typeof m.value === 'string' ? m.value.trim() : '';
+  if (!val) return '';
+  const unit = m && typeof m.unit === 'string' && m.unit ? m.unit : (fallbackUnit || '');
+  return unit ? `${val} ${unit}` : val;
+}
+
+export function formatEchoPlainText(f: EchoFields): string {
+  const lines: string[] = ['ЕХОКАРДИОГРАФСКО ИЗСЛЕДВАНЕ', ''];
+  let conclusion = '';
+
+  for (const section of ECHO_SECTIONS) {
+    if (section.key === 'zakljuchenie') {
+      conclusion = fieldText(readEchoPath(f, 'zakljuchenie') as string | undefined);
+      continue;
+    }
+    const rows: string[] = [];
+    for (const fld of section.fields) {
+      const val = fld.kind === 'measurement'
+        ? echoMeasurementText(f, fld.path, fld.unit)
+        : fieldText(readEchoPath(f, fld.path) as string | undefined);
+      if (val) rows.push(`  ${fld.label}: ${val}`);
+    }
+    if (rows.length > 0) {
+      lines.push(section.title.toUpperCase());
+      lines.push(...rows);
+      lines.push('');
+    }
+  }
+
+  if (conclusion) {
+    lines.push('ЗАКЛЮЧЕНИЕ:');
+    lines.push(conclusion);
+  }
+
+  return lines.join('\n').trim();
+}
+
+// Printable / PDF HTML for the echo document — a clean report (title + date +
+// sections + conclusion + disclaimer). Reuses openPdfPreview like the
+// консултація path. No НЗОК diagnosis block (the echo readout has none).
+export function generateEchoHtml(f: EchoFields, dateStr: string): string {
+  const esc = escapeHtml;
+  const secHtml: string[] = [];
+  let conclusion = '';
+
+  for (const section of ECHO_SECTIONS) {
+    if (section.key === 'zakljuchenie') {
+      conclusion = fieldText(readEchoPath(f, 'zakljuchenie') as string | undefined);
+      continue;
+    }
+    const rows: string[] = [];
+    for (const fld of section.fields) {
+      const val = fld.kind === 'measurement'
+        ? echoMeasurementText(f, fld.path, fld.unit)
+        : fieldText(readEchoPath(f, fld.path) as string | undefined);
+      if (!val) continue;
+      rows.push(
+        `<tr><td style="padding:3px 16px 3px 0;color:#5B6472;vertical-align:top">${esc(fld.label)}</td>` +
+        `<td style="padding:3px 0;color:#1F2933;font-weight:600">${esc(val)}</td></tr>`,
+      );
+    }
+    if (rows.length > 0) {
+      secHtml.push(
+        `<h2 style="font-family:'Inter',-apple-system,sans-serif;font-size:13pt;color:#1F3A5F;font-weight:600;margin:20px 0 4px;border-bottom:1px solid #DCE1E8;padding-bottom:3px">${esc(section.title)}</h2>` +
+        `<table style="border-collapse:collapse;font-size:11pt">${rows.join('')}</table>`,
+      );
+    }
+  }
+
+  const conclusionHtml = conclusion
+    ? `<h2 style="font-family:'Inter',-apple-system,sans-serif;font-size:13pt;color:#1F3A5F;font-weight:600;margin:20px 0 4px;border-bottom:1px solid #DCE1E8;padding-bottom:3px">Заключение</h2><p style="font-size:11pt;color:#1F2933;white-space:pre-wrap;margin:4px 0">${esc(conclusion)}</p>`
+    : '';
+
+  const disclaimer = typeof f._disclaimer === 'string' && f._disclaimer.trim()
+    ? `<p style="font-size:8.5pt;color:#8A94A6;margin-top:28px;border-top:1px solid #ECEFF3;padding-top:8px">${esc(f._disclaimer)}</p>`
+    : '';
+
+  return `<!DOCTYPE html><html lang="bg"><head><meta charset="utf-8"><title>Ехокардиографско изследване</title></head>
+<body style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:800px;margin:24px auto;padding:0 24px;color:#1F2933">
+<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:16px;margin-bottom:8px">
+  <h1 style="font-size:20pt;color:#1F3A5F;font-weight:700;margin:0">Ехокардиографско изследване</h1>
+  <span style="font-size:10pt;color:#5B6472">${esc(dateStr)}</span>
+</div>
+${secHtml.join('\n')}
+${conclusionHtml}
+${disclaimer}
+</body></html>`;
 }
 
 // ─── COPY TO CLIPBOARD ────────────────────────────────────────
