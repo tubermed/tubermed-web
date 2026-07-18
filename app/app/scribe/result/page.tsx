@@ -811,8 +811,19 @@ function ResultPageInner() {
   }, [fields.terapia, lastRemovedMedName]);
 
   // ── Navigation: click to scroll ──────────────────────────────
+  // Pin the clicked section while the programmatic smooth scroll is in
+  // flight: the IntersectionObserver below keeps firing for sections passing
+  // through its band, and without the pin the LAST section to enter (the one
+  // just below the target) stole the highlight — every downward nav click
+  // ended up marking the NEXT section (off-by-one). The pin also keeps
+  // bottom-of-document targets highlighted when the scroll clamps short of
+  // bringing them into the band. Manual scrolling resumes tracking on expiry.
+  const navPinUntilRef = useRef(0);
+  const NAV_PIN_MS = 1000; // > Chrome's smooth-scroll duration for this page
+
   const navTo = useCallback((item: NavItem) => {
     setActiveNav(item.id);
+    navPinUntilRef.current = performance.now() + NAV_PIN_MS;
     if (item.scrollMode === 'top') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
@@ -824,14 +835,32 @@ function ResultPageInner() {
   // ── Active-section observer (sync on scroll) ─────────────────
   useEffect(() => {
     if (!original) return;
+    // Observer entries carry only targets whose intersection CHANGED, so the
+    // active section must be derived from the full in-band set, not from the
+    // latest batch — picking from the batch alone highlighted whichever
+    // section crossed the band boundary last, not the topmost visible one.
+    const inBand = new Set<Element>();
     const observer = new IntersectionObserver(
       (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort(
-            (a, b) => a.boundingClientRect.top - b.boundingClientRect.top
-          );
-        if (visible.length > 0) setActiveNav(visible[0].target.id);
+        entries.forEach((e) => {
+          if (e.isIntersecting) inBand.add(e.target);
+          else inBand.delete(e.target);
+        });
+        if (performance.now() < navPinUntilRef.current) return; // nav-click pin
+        let topEl: Element | null = null;
+        let topY = Infinity;
+        inBand.forEach((el) => {
+          if (!el.isConnected) {
+            inBand.delete(el);
+            return;
+          }
+          const y = el.getBoundingClientRect().top;
+          if (y < topY) {
+            topY = y;
+            topEl = el;
+          }
+        });
+        if (topEl) setActiveNav((topEl as Element).id);
       },
       { rootMargin: '-120px 0px -60% 0px', threshold: 0 }
     );
