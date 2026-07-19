@@ -100,6 +100,22 @@ export interface InvestigationBlock {
   source?: InvestigationBlockSource;
 }
 
+// ── Per-field source provenance (fields.field_sources) ──────────────────────
+// OPTIONAL sibling key on TranscribeFields (trust layer Batch B). Char offsets
+// into consultations.transcript (the RAW transcript) — offsets only, never
+// quoted text (quotes are resolved server-side and dropped; no second PII
+// store — same discipline as InvestigationBlockSource above). Keys: 'vitals',
+// 'osnovna_diagnoza', 'napravlenia', 'medications_list.<i>' (index-aligned to
+// medications_list), 'izsledvania.<i>', 'naznacheni.<i>' (span enumeration —
+// the note fields stay prose strings). Narrative fields (anamneza, obektivno
+// prose) are deliberately never sourced. Absent on every legacy row; readers
+// must treat absence as "no resolved sources".
+export interface FieldSource {
+  method: string;   // resolver identifier, e.g. 'quote-v1'
+  start: number;
+  end: number;
+}
+
 export interface TranscribeFields {
   anamneza?: string;
   alergii?: string[];
@@ -119,6 +135,7 @@ export interface TranscribeFields {
   // blocks" and change nothing else about how the row renders/exports.
   izsledvania_blocks?: InvestigationBlock[];
   uncertain_spans?: UncertainSpan[];
+  field_sources?: Record<string, FieldSource>;    // see FieldSource above; absent on legacy rows
   med_alerts?: MedAlert[];
   mkb_review?: MkbReview;                          // derived: code-validity gate state
   _disclaimer?: string;

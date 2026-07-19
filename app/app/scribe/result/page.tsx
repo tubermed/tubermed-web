@@ -39,6 +39,7 @@ import { filedMainTerm, filedComorbidityTerm, spokenDivergesFromOfficial } from 
 import { loadIal } from '@/lib/ial-meds';
 import { findHighlights } from '@/lib/vital-rules';
 import { findSourceSpan, type SourceSpan } from '@/lib/source-grounding';
+import { storedSpanFor } from '@/lib/field-sources';
 import { mkbReviewCopy } from '@/lib/mkb-review';
 import {
   resolveUncertainSpans,
@@ -1005,7 +1006,12 @@ function ResultPageInner() {
         return;
       }
       setTranscriptOpen(true);
-      const span = findSourceSpan(fieldKey, value, transcript);
+      // Primary path: backend-resolved offsets (fields.field_sources), read
+      // from fieldsRef so the in-session /edit round-trip is always current.
+      // Bounds-validated against THIS transcript; invalid/absent → the
+      // alias-bridge guess, unchanged.
+      const stored = storedSpanFor(fieldKey, fieldsRef.current?.field_sources, transcript.length);
+      const span = stored ?? findSourceSpan(fieldKey, value, transcript);
       setSourceSpan(span);
       setSourceTick((n) => n + 1);
       if (!span) {
