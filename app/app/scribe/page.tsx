@@ -1367,10 +1367,18 @@ function PcMode({
   onRetainableFailure: (msg: string) => void;
 }) {
   const [recording, setRecording] = useState(false);
+  // Pause/resume within ONE recording (room-change case). While paused,
+  // `recording` stays true so the sidebar lock + beforeunload guard keep
+  // protecting the in-memory chunks — paused is still an active recording.
+  const [paused, setPaused] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [tooQuiet, setTooQuiet] = useState(false);
 
   const mrRef = useRef<MediaRecorder | null>(null);
+  // Live mic stream retained across pause so resume can restart the waveform
+  // without a new getUserMedia (tracks stay open — MediaRecorder.pause() only
+  // stops delivering chunks; the single-blob upload contract is unchanged).
+  const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const waveWrapRef = useRef<HTMLDivElement | null>(null);
@@ -1506,7 +1514,9 @@ function PcMode({
       };
       mr.start(500);
       mrRef.current = mr;
+      streamRef.current = stream;
       setRecording(true);
+      setPaused(false);
       onRecordingChange(true);
       setSeconds(0);
       // Re-arm the too-quiet warning for this recording.
@@ -1527,9 +1537,42 @@ function PcMode({
     }
   }, [startWaveform, onError, onRecordingChange]);
 
+  // Pause: stop chunk delivery + freeze the timer + park the waveform. Chunks
+  // already captured stay in chunksRef; the mic stream stays open (streamRef)
+  // so resume is instant and needs no new permission prompt.
+  const pauseRecording = useCallback(() => {
+    const mr = mrRef.current;
+    if (!mr || mr.state !== 'recording') return;
+    try { mr.pause(); } catch { return; /* pause unsupported — keep recording */ }
+    setPaused(true);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    stopWaveform();
+  }, [stopWaveform]);
+
+  const resumeRecording = useCallback(() => {
+    const mr = mrRef.current;
+    if (!mr || mr.state !== 'paused') return;
+    try { mr.resume(); } catch { return; }
+    setPaused(false);
+    // Re-arm the too-quiet detector so a pre-pause quiet streak can't fire
+    // a stale warning the moment the doctor resumes.
+    lowSinceRef.current = 0;
+    dbSmoothedRef.current = -60;
+    if (streamRef.current) startWaveform(streamRef.current);
+    if (!timerRef.current) {
+      timerRef.current = setInterval(() => {
+        setSeconds((s) => s + 1);
+      }, 1000);
+    }
+  }, [startWaveform]);
+
   const stopRecording = useCallback(async () => {
     if (!mrRef.current) return;
     setRecording(false);
+    setPaused(false);
     onRecordingChange(false);
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -1537,6 +1580,8 @@ function PcMode({
     }
     stopWaveform();
 
+    // MediaRecorder.stop() is valid from BOTH 'recording' and 'paused' — a
+    // doctor may end the visit without resuming; the final blob is identical.
     const mr = mrRef.current;
     const blob: Blob = await new Promise((resolve) => {
       mr.onstop = () =>
@@ -1545,6 +1590,7 @@ function PcMode({
       mr.stream.getTracks().forEach((t) => t.stop());
     });
     mrRef.current = null;
+    streamRef.current = null;
     // B4: retain the recording (in memory) so a failed upload can retry the SAME
     // audio without re-recording. The PARENT owns the ref because PcMode unmounts
     // while view==='processing'.
@@ -1650,7 +1696,7 @@ function PcMode({
           className="relative flex items-center justify-center"
           style={{ width: 176, height: 152 }}
         >
-          {recording && (
+          {recording && !paused && (
             <>
               <span
                 aria-hidden
@@ -1695,18 +1741,21 @@ function PcMode({
           {recording ? `${mm}:${ss}` : '00:00'}
         </div>
 
-        {/* Status — soft-green "На запис" pill while recording, else a hint. */}
+        {/* Status — soft-green "На запис" pill while recording, amber "На пауза"
+            while paused (recording still active — chunks retained), else a hint. */}
         {recording ? (
           <div
             className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium"
-            style={{ background: 'var(--color-ok-soft)', color: 'var(--color-ok-strong)' }}
+            style={paused
+              ? { background: 'var(--color-warn-soft)', color: 'var(--color-warn)' }
+              : { background: 'var(--color-ok-soft)', color: 'var(--color-ok-strong)' }}
           >
             <span
               aria-hidden
               className="inline-block w-2 h-2 rounded-full"
-              style={{ background: 'var(--color-ok)' }}
+              style={{ background: paused ? 'var(--color-warn)' : 'var(--color-ok)' }}
             />
-            На запис · AI слуша
+            {paused ? 'На пауза · записът се пази' : 'На запис · AI слуша'}
           </div>
         ) : (
           <div className="mt-3 text-sm" style={{ color: 'var(--color-text-muted)' }}>
@@ -1748,9 +1797,19 @@ function PcMode({
           </div>
         )}
 
-        {/* Stop & process — the accent CTA. Same stop+submit as the red control. */}
+        {/* Stop & process — the accent CTA. Same stop+submit as the red control.
+            Pause/resume sits beside it: one recording, one blob — pausing only
+            gaps the Opus stream (room change, e.g. walking to the pacemaker). */}
         {recording && (
-          <div className="mt-6 w-full flex justify-center">
+          <div className="mt-6 w-full flex justify-center gap-3">
+            <Button
+              variant="secondary"
+              onClick={paused ? resumeRecording : pauseRecording}
+              className="px-6"
+            >
+              <Icon name={paused ? 'mic' : 'pause'} />{' '}
+              {paused ? 'Продължи записа' : 'Пауза'}
+            </Button>
             <Button variant="primary" onClick={stopRecording} className="px-6">
               <Icon name="check" /> Спри и обработи
             </Button>
