@@ -67,10 +67,10 @@ export const ECHO_SECTIONS: EchoSectionDescriptor[] = [
     fields: [
       { path: 'izmervania.e_valna',  label: 'E вълна',                 kind: 'measurement', unit: 'm/s' },
       { path: 'izmervania.a_valna',  label: 'A вълна',                 kind: 'measurement', unit: 'm/s' },
-      { path: 'izmervania.e_a',      label: 'E/A отношение',           kind: 'measurement', unit: 'ratio' },
+      { path: 'izmervania.e_a',      label: 'E/A отношение',           kind: 'measurement', unit: '' },
       { path: 'izmervania.dt',       label: 'Децелерационно време',    kind: 'measurement', unit: 'ms', refNorma: '140–240' },
       { path: 'izmervania.e_prim',   label: "e' (септален/латерален)", kind: 'measurement', unit: 'cm/s' },
-      { path: 'izmervania.e_e_prim', label: "E/e'",                    kind: 'measurement', unit: 'ratio', refNorma: '<14' },
+      { path: 'izmervania.e_e_prim', label: "E/e'",                    kind: 'measurement', unit: '', refNorma: '<14' },
       { path: 'izmervania.lavi',     label: 'Индексиран обем на ЛП',   kind: 'measurement', unit: 'ml/m²', refNorma: '≤34' },
     ],
   },
@@ -78,7 +78,7 @@ export const ECHO_SECTIONS: EchoSectionDescriptor[] = [
     key: 'lyavo_predsardie',
     title: 'Ляво предсърдие / Междупредсърдна преграда',
     fields: [
-      { path: 'izmervania.lp', label: 'Ляво предсърдие (размер)',  kind: 'measurement', unit: 'mm', refNorma: '20–40' },
+      { path: 'izmervania.lp', label: 'Ляво предсърдие',          kind: 'measurement', unit: 'mm', refNorma: '20–40' },
       { path: 'mpp',           label: 'Междупредсърдна преграда',  kind: 'text' },
     ],
   },
@@ -90,7 +90,7 @@ export const ECHO_SECTIONS: EchoSectionDescriptor[] = [
       { path: 'izmervania.tapse',  label: 'ТАПСЕ',                            kind: 'measurement', unit: 'mm', refNorma: '≥17' },
       { path: 'izmervania.s_prim', label: "S' (трикуспидален)",              kind: 'measurement', unit: 'cm/s', refNorma: '≥9.5' },
       { path: 'izmervania.sndk',   label: 'Систолно налягане в дясна камера', kind: 'measurement', unit: 'mmHg', refNorma: '<35' },
-      { path: 'izmervania.dp',     label: 'Дясно предсърдие (размер)',        kind: 'measurement', unit: 'mm' },
+      { path: 'izmervania.dp',     label: 'Дясно предсърдие',                 kind: 'measurement', unit: 'mm' },
     ],
   },
   {
