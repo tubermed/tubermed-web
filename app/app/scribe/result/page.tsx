@@ -614,6 +614,32 @@ function ResultPageInner() {
     [trackEdit]
   );
 
+  // ── Embedded-block field updaters (izsledvania_blocks) ───────
+  // Same dot-path mechanism as the echo updaters, prefixed with the block's
+  // list position: `izsledvania_blocks.${i}.fields.${path}` (setEchoPath
+  // clones the blocks ARRAY as an array on the way down). Routes through the
+  // SAME trackEdit → flushEdit machinery — /edit persists the whole fields
+  // object verbatim, so the blocks round-trip with zero backend change. The
+  // logged field name is the full prefixed path; edit-metrics deliberately
+  // does not measure it yet (unmeasured, not corrupted — C10 adds per-block
+  // metrics).
+  const updateBlockText = useCallback(
+    (blockIndex: number, path: string, value: string) => {
+      const fullPath = `izsledvania_blocks.${blockIndex}.fields.${path}`;
+      setFields((prev) => setEchoPath(prev, fullPath, value));
+      trackEdit(fullPath, value.length);
+    },
+    [trackEdit]
+  );
+  const updateBlockMeasurement = useCallback(
+    (blockIndex: number, path: string, next: EchoMeasurement) => {
+      const fullPath = `izsledvania_blocks.${blockIndex}.fields.${path}`;
+      setFields((prev) => setEchoPath(prev, fullPath, next));
+      trackEdit(fullPath, (next.value || '').length);
+    },
+    [trackEdit]
+  );
+
   // Comorbidity add — a search-first pick from the typeahead creates the row
   // (code + official term together). The doctor picked it, so there is no spoken
   // original; diagnoza + mkb_term are both the official term.
@@ -1621,12 +1647,19 @@ function ResultPageInner() {
                     titled card per block, ahead of the free-text remainder.
                     Absent on every row the backend emits today → this maps
                     over nothing and old rows render exactly as before.
-                    Read-only until the dot-path edit variant is wired (C6). */}
+                    Edits address `izsledvania_blocks.${i}.fields.${path}` and
+                    flow through the same debounced /edit flush as every other
+                    field (editing is never gated on isLocked — see the card). */}
                 {Array.isArray(fields.izsledvania_blocks) &&
                   fields.izsledvania_blocks.length > 0 && (
                     <div className="mb-4 space-y-4">
                       {fields.izsledvania_blocks.map((b, i) => (
-                        <InvestigationBlockCard key={i} block={b} />
+                        <InvestigationBlockCard
+                          key={i}
+                          block={b}
+                          onEditText={(p, v) => updateBlockText(i, p, v)}
+                          onEditMeasurement={(p, m) => updateBlockMeasurement(i, p, m)}
+                        />
                       ))}
                     </div>
                   )}

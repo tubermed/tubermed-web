@@ -14,9 +14,9 @@
 // affordances, NEVER editing (docs/history/2026-06.md: "Pre-approval editing
 // is ALWAYS enabled … do NOT re-gate editing on isLocked" — re-gating caused
 // the reconcile deadlock). This card adds no egress affordance of its own; its
-// export path is the page's gated exporters. Until the dot-path edit variant
-// is wired (C6), the card renders read-only: rows get isLocked=true and the
-// edit callbacks are optional.
+// export path is the page's gated exporters. Rows are editable whenever both
+// edit callbacks are supplied (the result page wires them through the shared
+// debounced /edit flush); a caller that omits them gets a read-only card.
 //
 // Card chrome stays flat (hairline border, no elevation) — the note sheet is
 // "one calm sheet"; elevation is reserved for the safety rail.

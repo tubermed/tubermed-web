@@ -142,6 +142,10 @@ export function readEchoPath(obj: unknown, path: string): unknown {
 }
 
 // Immutably set a dot-path on an EchoFields object (clones each touched level).
+// Numeric segments may walk INTO arrays (embedded blocks are addressed as
+// `izsledvania_blocks.${i}.fields.${path}`), so an array level must be cloned
+// as an ARRAY — spreading it into `{...}` would silently turn the blocks list
+// into a plain object keyed '0','1',… and corrupt the persisted note.
 export function setEchoPath<T>(obj: T, path: string, value: unknown): T {
   const keys = path.split('.');
   const root: Record<string, unknown> = { ...(obj as Record<string, unknown>) };
@@ -149,8 +153,13 @@ export function setEchoPath<T>(obj: T, path: string, value: unknown): T {
   for (let i = 0; i < keys.length - 1; i++) {
     const k = keys[i];
     const cur = node[k];
-    node[k] = cur && typeof cur === 'object' ? { ...(cur as Record<string, unknown>) } : {};
-    node = node[k] as Record<string, unknown>;
+    const cloned = Array.isArray(cur)
+      ? [...cur]
+      : cur && typeof cur === 'object'
+        ? { ...(cur as Record<string, unknown>) }
+        : {};
+    node[k] = cloned;
+    node = cloned as unknown as Record<string, unknown>;
   }
   node[keys[keys.length - 1]] = value;
   return root as T;
