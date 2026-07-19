@@ -3,9 +3,10 @@
 // PDF preview includes an in-page action bar with "Save as PDF" and "Close"
 // buttons that are hidden when actually printing.
 
-import type { TranscribeFields, EchoFields } from './types';
+import type { TranscribeFields, EchoFields, InvestigationBlock } from './types';
 import { filedMainTerm, filedComorbidityTerm } from './diagnosis';
-import { ECHO_SECTIONS, readEchoPath } from './echo-template';
+import { ECHO_SECTIONS, readEchoPath, type EchoSectionDescriptor } from './echo-template';
+import { getInvestigationBlockDescriptor } from './investigation-blocks';
 
 export function escapeHtml(s: string): string {
   return s
@@ -87,11 +88,20 @@ export function formatPlainText(f: TranscribeFields): string {
   section('АНАМНЕЗА', f.anamneza);
   section('ОБЕКТИВНО СЪСТОЯНИЕ', f.obektivno);
 
-  // Изследвания — results (izsledvania) + ordered tests (naznacheni).
+  // Изследвания — embedded blocks (izsledvania_blocks) first, mirroring the
+  // on-screen card order, then results (izsledvania) + ordered tests
+  // (naznacheni). No blocks → byte-identical to the pre-block output.
   const izs = fieldText(f.izsledvania);
   const naz = fieldText(f.naznacheni);
-  if (izs || naz) {
+  const blockTexts = serializableBlocks(f.izsledvania_blocks)
+    .map(blockPlainText)
+    .filter(Boolean);
+  if (izs || naz || blockTexts.length > 0) {
     lines.push('ИЗСЛЕДВАНИЯ');
+    for (const bt of blockTexts) {
+      lines.push('');
+      lines.push(bt);
+    }
     if (izs) {
       lines.push('');
       lines.push('Резултати от изследвания:');
@@ -143,11 +153,17 @@ function echoMeasurementText(f: EchoFields, path: string, fallbackUnit?: string)
   return unit ? `${val} ${unit}` : val;
 }
 
-export function formatEchoPlainText(f: EchoFields): string {
-  const lines: string[] = ['ЕХОКАРДИОГРАФСКО ИЗСЛЕДВАНЕ', ''];
+// Shared serialization core for a template-sectioned fields object — used by
+// the standalone echo document AND (per block) by embedded izsledvania_blocks.
+// Only populated fields are emitted, in template order; Заключение is captured
+// separately so every caller can place it last with its own chrome.
+function templatePlainBody(
+  f: EchoFields,
+  sections: EchoSectionDescriptor[],
+): { sectionLines: string[]; conclusion: string } {
+  const sectionLines: string[] = [];
   let conclusion = '';
-
-  for (const section of ECHO_SECTIONS) {
+  for (const section of sections) {
     if (section.key === 'zakljuchenie') {
       conclusion = fieldText(readEchoPath(f, 'zakljuchenie') as string | undefined);
       continue;
@@ -160,11 +176,18 @@ export function formatEchoPlainText(f: EchoFields): string {
       if (val) rows.push(`  ${fld.label}: ${val}`);
     }
     if (rows.length > 0) {
-      lines.push(section.title.toUpperCase());
-      lines.push(...rows);
-      lines.push('');
+      sectionLines.push(section.title.toUpperCase());
+      sectionLines.push(...rows);
+      sectionLines.push('');
     }
   }
+  return { sectionLines, conclusion };
+}
+
+export function formatEchoPlainText(f: EchoFields): string {
+  const lines: string[] = ['ЕХОКАРДИОГРАФСКО ИЗСЛЕДВАНЕ', ''];
+  const { sectionLines, conclusion } = templatePlainBody(f, ECHO_SECTIONS);
+  lines.push(...sectionLines);
 
   if (conclusion) {
     lines.push('ЗАКЛЮЧЕНИЕ:');
@@ -177,12 +200,22 @@ export function formatEchoPlainText(f: EchoFields): string {
 // Printable / PDF HTML for the echo document — a clean report (title + date +
 // sections + conclusion + disclaimer). Reuses openPdfPreview like the
 // консултація path. No НЗОК diagnosis block (the echo readout has none).
-export function generateEchoHtml(f: EchoFields, dateStr: string): string {
+// HTML twin of templatePlainBody: section header + label/value table per
+// populated section. Header size/margin are parameterized so the standalone
+// echo document keeps its exact markup (13pt / 20px — the defaults) while an
+// embedded block renders the same structure one visual level down.
+function templateHtmlSections(
+  f: EchoFields,
+  sections: EchoSectionDescriptor[],
+  opts?: { headerFontPt?: number; headerMargin?: string },
+): { secHtml: string[]; conclusion: string } {
   const esc = escapeHtml;
+  const size = opts?.headerFontPt ?? 13;
+  const margin = opts?.headerMargin ?? '20px 0 4px';
   const secHtml: string[] = [];
   let conclusion = '';
 
-  for (const section of ECHO_SECTIONS) {
+  for (const section of sections) {
     if (section.key === 'zakljuchenie') {
       conclusion = fieldText(readEchoPath(f, 'zakljuchenie') as string | undefined);
       continue;
@@ -200,11 +233,17 @@ export function generateEchoHtml(f: EchoFields, dateStr: string): string {
     }
     if (rows.length > 0) {
       secHtml.push(
-        `<h2 style="font-family:'Inter',-apple-system,sans-serif;font-size:13pt;color:#1F3A5F;font-weight:600;margin:20px 0 4px;border-bottom:1px solid #DCE1E8;padding-bottom:3px">${esc(section.title)}</h2>` +
+        `<h2 style="font-family:'Inter',-apple-system,sans-serif;font-size:${size}pt;color:#1F3A5F;font-weight:600;margin:${margin};border-bottom:1px solid #DCE1E8;padding-bottom:3px">${esc(section.title)}</h2>` +
         `<table style="border-collapse:collapse;font-size:11pt">${rows.join('')}</table>`,
       );
     }
   }
+  return { secHtml, conclusion };
+}
+
+export function generateEchoHtml(f: EchoFields, dateStr: string): string {
+  const esc = escapeHtml;
+  const { secHtml, conclusion } = templateHtmlSections(f, ECHO_SECTIONS);
 
   const conclusionHtml = conclusion
     ? `<h2 style="font-family:'Inter',-apple-system,sans-serif;font-size:13pt;color:#1F3A5F;font-weight:600;margin:20px 0 4px;border-bottom:1px solid #DCE1E8;padding-bottom:3px">Заключение</h2><p style="font-size:11pt;color:#1F2933;white-space:pre-wrap;margin:4px 0">${esc(conclusion)}</p>`
@@ -224,6 +263,61 @@ ${secHtml.join('\n')}
 ${conclusionHtml}
 ${disclaimer}
 </body></html>`;
+}
+
+// ─── Embedded investigation blocks → Изследвания sub-sections ─────────────────
+// Serialize fields.izsledvania_blocks for the три consultation exporters.
+// Tolerant reader, mirroring InvestigationBlockCard: a malformed block or an
+// unregistered `type` contributes NOTHING; rows without the key serialize
+// byte-identically to today. No new export path — these helpers only feed the
+// existing (approval-gated) clipboard/PDF/Word flows.
+interface SerializableBlock {
+  title: string;
+  sections: EchoSectionDescriptor[];
+  fields: EchoFields;
+}
+
+function serializableBlocks(blocks: InvestigationBlock[] | undefined): SerializableBlock[] {
+  if (!Array.isArray(blocks)) return [];
+  const out: SerializableBlock[] = [];
+  for (const b of blocks) {
+    if (!b || typeof b !== 'object' || typeof b.type !== 'string') continue;
+    if (!b.fields || typeof b.fields !== 'object') continue;
+    const d = getInvestigationBlockDescriptor(b.type);
+    if (!d) continue;
+    out.push({ title: d.title, sections: d.sections, fields: b.fields });
+  }
+  return out;
+}
+
+// One block as a clipboard sub-section: „Ехокардиография:" + the same body the
+// standalone echo paste-block emits (sans its document header), Заключение last.
+function blockPlainText(b: SerializableBlock): string {
+  const { sectionLines, conclusion } = templatePlainBody(b.fields, b.sections);
+  if (sectionLines.length === 0 && !conclusion) return '';
+  const lines: string[] = [b.title + ':', ''];
+  lines.push(...sectionLines);
+  if (conclusion) {
+    lines.push('ЗАКЛЮЧЕНИЕ:');
+    lines.push(conclusion);
+  }
+  return lines.join('\n').trimEnd();
+}
+
+// One block as an HTML sub-section (PDF + Word — inline styles only, so the
+// fragment is independent of either document's global css). Same structure as
+// the standalone echo report, one visual level below the Изследвания h2.
+function blockHtml(b: SerializableBlock): string {
+  const { secHtml, conclusion } = templateHtmlSections(b.fields, b.sections, {
+    headerFontPt: 10.5,
+    headerMargin: '12px 0 2px',
+  });
+  if (secHtml.length === 0 && !conclusion) return '';
+  const conclusionHtml = conclusion
+    ? `<h2 style="font-family:'Inter',-apple-system,sans-serif;font-size:10.5pt;color:#1F3A5F;font-weight:600;margin:12px 0 2px;border-bottom:1px solid #DCE1E8;padding-bottom:3px">Заключение</h2>` +
+      `<p style="font-size:11pt;color:#1F2933;white-space:pre-wrap;margin:4px 0">${escapeHtml(conclusion)}</p>`
+    : '';
+  return `<div style="margin:10px 0 14px"><div style="font-size:11.5pt;color:#1F3A5F;font-weight:600;margin:12px 0 0">◇ ${escapeHtml(b.title)}</div>${secHtml.join('')}${conclusionHtml}</div>`;
 }
 
 // ─── COPY TO CLIPBOARD ────────────────────────────────────────
@@ -333,8 +427,12 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string, identity?:
        <table>${rows}</table>`;
   }
 
+  // Embedded blocks render right under the Изследвания header, ahead of the
+  // free-text subsections (same order as the on-screen cards). '' when absent.
+  const blocksHtml = serializableBlocks(f.izsledvania_blocks).map(blockHtml).join('');
+
   const izsledvaniaHeader =
-    fieldText(f.izsledvania) || fieldText(f.naznacheni)
+    fieldText(f.izsledvania) || fieldText(f.naznacheni) || blocksHtml
       ? `<h2 style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14pt;color:#1F3A5F;font-weight:600;letter-spacing:-0.01em;margin:24px 0 6px;border-bottom:1px solid #DCE1E8;padding-bottom:4px">Изследвания</h2>`
       : '';
 
@@ -401,7 +499,7 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string, identity?:
 
       ${pdfSection('Анамнеза', f.anamneza || '')}
       ${pdfSection('Обективно състояние', f.obektivno || '')}
-      ${izsledvaniaHeader}
+      ${izsledvaniaHeader}${blocksHtml}
       ${pdfSection('Резултати от изследвания', f.izsledvania || '')}
       ${pdfSection('Назначени изследвания', f.naznacheni || '')}
       ${pdfSection('Терапия', f.terapia || '')}
@@ -526,6 +624,10 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string, identity?
 
   const wordMainTerm = filedMainTerm(f); // official term for a valid code; spoken fallback
 
+  // Embedded blocks — same inline-styled fragment as the PDF (Word renders it
+  // independently of this document's global h2 css). '' when absent.
+  const blocksHtml = serializableBlocks(f.izsledvania_blocks).map(blockHtml).join('');
+
   return `
 <html xmlns:o='urn:schemas-microsoft-com:office:office'
       xmlns:w='urn:schemas-microsoft-com:office:word'
@@ -561,7 +663,7 @@ ${pdRows ? `<h2>Придружаващи заболявания</h2><table>${pdR
 ${para('Анамнеза', f.anamneza)}
 ${para('Обективно състояние', f.obektivno)}
 
-${fieldText(f.izsledvania) || fieldText(f.naznacheni) ? '<h2>Изследвания</h2>' : ''}
+${fieldText(f.izsledvania) || fieldText(f.naznacheni) || blocksHtml ? '<h2>Изследвания</h2>' : ''}${blocksHtml}
 ${para('Резултати от изследвания', f.izsledvania)}
 ${para('Назначени изследвания', f.naznacheni)}
 
