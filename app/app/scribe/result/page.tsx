@@ -1555,7 +1555,6 @@ function ResultPageInner() {
             {isEcho ? (
               <EchoNoteView
                 fields={echoFields}
-                isLocked={isLocked}
                 onEditText={updateEchoText}
                 onEditMeasurement={updateEchoMeasurement}
               />

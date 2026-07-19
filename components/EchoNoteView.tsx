@@ -17,12 +17,16 @@ import type { EchoFields, EchoMeasurement, UncertainSpan } from '@/lib/types';
 
 interface EchoNoteViewProps {
   fields: EchoFields;
-  isLocked: boolean;
   // Persisted via the result page's edit-flush (same /edit endpoint as the
   // консултация note). `path` is the template field path (∈ ECHO_EDIT_FIELDS).
   onEditText: (path: string, value: string) => void;
   onEditMeasurement: (path: string, next: EchoMeasurement) => void;
 }
+// NOTE deliberately NO isLocked prop: pre-approval editing is ALWAYS enabled —
+// isLocked gates ONLY copy/export/approve, never editing (docs/history/
+// 2026-06.md, the reconcile-deadlock lesson). Wiring it into the inputs made
+// the echo document read-only before Потвърждавам and re-locked it after one
+// keystroke post-approval (trackEdit flips reviewStatus back to 'pending').
 
 export function readMeasurement(fields: EchoFields, path: string): EchoMeasurement {
   const v = readEchoPath(fields, path);
@@ -44,7 +48,7 @@ export function spanKeyFor(f: EchoFieldDescriptor): string {
   return f.kind === 'measurement' ? `${f.path}.value` : f.path;
 }
 
-export default function EchoNoteView({ fields, isLocked, onEditText, onEditMeasurement }: EchoNoteViewProps) {
+export default function EchoNoteView({ fields, onEditText, onEditMeasurement }: EchoNoteViewProps) {
   // Group flags by the field key they target, so each field can show its own.
   const flagsByField = useMemo(() => {
     const map: Record<string, UncertainSpan[]> = {};
@@ -81,7 +85,7 @@ export default function EchoNoteView({ fields, isLocked, onEditText, onEditMeasu
                     key={f.path}
                     descriptor={f}
                     value={readMeasurement(fields, f.path)}
-                    isLocked={isLocked}
+                    isLocked={false}
                     flags={flags}
                     onChange={(next) => onEditMeasurement(f.path, next)}
                   />
@@ -90,7 +94,7 @@ export default function EchoNoteView({ fields, isLocked, onEditText, onEditMeasu
                     key={f.path}
                     descriptor={f}
                     value={readText(fields, f.path)}
-                    isLocked={isLocked}
+                    isLocked={false}
                     flags={flags}
                     onChange={(v) => onEditText(f.path, v)}
                   />
