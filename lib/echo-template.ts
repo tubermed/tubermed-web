@@ -7,6 +7,13 @@
 // prod). When the backend template changes, update this mirror in the same PR
 // (same discipline as ial-inns.json / mkb10.json).
 //
+// This descriptor now serves TWO containers: the standalone echo note
+// (EchoNoteView, note_type='echo') AND embedded investigation cards inside the
+// консултация лист (fields.izsledvania_blocks, via the registry in
+// lib/investigation-blocks.ts). A backend template change must keep BOTH in
+// lockstep — the registry has no descriptors of its own, it only maps block
+// `type` keys onto the section lists defined here.
+//
 // Aliases and plausibility bounds live ONLY on the backend (they drive
 // extraction + flagging); the frontend needs only what it renders.
 //

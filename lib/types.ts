@@ -78,6 +78,28 @@ export interface EchoFields {
   _disclaimer?: string;
 }
 
+// ── Embedded investigation blocks (fields.izsledvania_blocks) ────────────────
+// NEW OPTIONAL sibling key on TranscribeFields — `izsledvania`/`naznacheni`
+// stay flat strings exactly as today. The backend does not emit this yet; the
+// frontend ships the tolerant reader first so old rows (key absent) keep
+// rendering and exporting byte-identically. Display descriptors live in
+// lib/investigation-blocks.ts (registry keyed by `type`).
+export interface InvestigationBlockSource {
+  method: string;   // segmentation pass identifier, e.g. 'segmentation-v1'
+  start: number;    // char offsets into consultations.transcript —
+  end: number;      // offsets only, never quoted text (no second PII store)
+}
+
+export interface InvestigationBlock {
+  type: string;       // block-registry key (note_type vocabulary), e.g. 'echo'
+  template: string;   // template version stamp (from fields._template), e.g. 'echo-v1'
+  // For type='echo' this is byte-compatible with the standalone-echo
+  // extracted_fields (nested izmervania.* / klapi.<valve>.*), incl. block-local
+  // uncertain_spans whose `field` keys are dot-paths RELATIVE to this object.
+  fields: EchoFields;
+  source?: InvestigationBlockSource;
+}
+
 export interface TranscribeFields {
   anamneza?: string;
   alergii?: string[];
@@ -92,6 +114,10 @@ export interface TranscribeFields {
   pridruzhavashti?: ComorbidDiagnosis[];
   napravlenia?: string;
   naznacheni?: string;
+  // OPTIONAL — present only once the backend emits embedded investigation
+  // blocks; absent on every legacy row. Readers must treat absence as "no
+  // blocks" and change nothing else about how the row renders/exports.
+  izsledvania_blocks?: InvestigationBlock[];
   uncertain_spans?: UncertainSpan[];
   med_alerts?: MedAlert[];
   mkb_review?: MkbReview;                          // derived: code-validity gate state
