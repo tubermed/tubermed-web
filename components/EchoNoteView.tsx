@@ -24,7 +24,7 @@ interface EchoNoteViewProps {
   onEditMeasurement: (path: string, next: EchoMeasurement) => void;
 }
 
-function readMeasurement(fields: EchoFields, path: string): EchoMeasurement {
+export function readMeasurement(fields: EchoFields, path: string): EchoMeasurement {
   const v = readEchoPath(fields, path);
   if (v && typeof v === 'object') {
     const m = v as Partial<EchoMeasurement>;
@@ -33,14 +33,14 @@ function readMeasurement(fields: EchoFields, path: string): EchoMeasurement {
   return { value: '', unit: '' };
 }
 
-function readText(fields: EchoFields, path: string): string {
+export function readText(fields: EchoFields, path: string): string {
   const v = readEchoPath(fields, path);
   return typeof v === 'string' ? v : '';
 }
 
 // The uncertain-span field key the backend attaches: measurements flag on
 // `${path}.value`; free text flags on the field path itself.
-function spanKeyFor(f: EchoFieldDescriptor): string {
+export function spanKeyFor(f: EchoFieldDescriptor): string {
   return f.kind === 'measurement' ? `${f.path}.value` : f.path;
 }
 
@@ -122,7 +122,11 @@ function FlagNotes({ flags }: { flags: UncertainSpan[] }) {
   );
 }
 
-function MeasurementRow({
+// MeasurementRow/TextRow are exported for reuse by InvestigationBlockCard
+// (embedded izsledvania_blocks on the консултация note) — same rendering for a
+// measurement/text field whichever container it lives in. `isLocked` disables
+// the input (read-only rendering); the styling and flag notes are identical.
+export function MeasurementRow({
   descriptor, value, isLocked, flags, onChange,
 }: {
   descriptor: EchoFieldDescriptor;
@@ -166,7 +170,7 @@ function MeasurementRow({
   );
 }
 
-function TextRow({
+export function TextRow({
   descriptor, value, isLocked, flags, onChange,
 }: {
   descriptor: EchoFieldDescriptor;

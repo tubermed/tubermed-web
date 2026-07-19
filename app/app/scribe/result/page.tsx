@@ -31,6 +31,7 @@ import type {
   EchoMeasurement,
 } from '@/lib/types';
 import EchoNoteView from '@/components/EchoNoteView';
+import InvestigationBlockCard from '@/components/InvestigationBlockCard';
 import { setEchoPath } from '@/lib/echo-template';
 import { mergeBackendAlerts, type SafetyAlert } from '@/lib/drug-safety';
 import { loadMkb, getMkbDataSync, resolveMkb } from '@/lib/mkb10';
@@ -1615,6 +1616,20 @@ function ResultPageInner() {
             {visibleSections['sec-izsledvania'] && (
               <div id="sec-izsledvania" className="scroll-mt-24">
                 <SectionHead title="Изследвания" icon="flask" />
+
+                {/* Embedded investigation blocks (izsledvania_blocks) — one
+                    titled card per block, ahead of the free-text remainder.
+                    Absent on every row the backend emits today → this maps
+                    over nothing and old rows render exactly as before.
+                    Read-only until the dot-path edit variant is wired (C6). */}
+                {Array.isArray(fields.izsledvania_blocks) &&
+                  fields.izsledvania_blocks.length > 0 && (
+                    <div className="mb-4 space-y-4">
+                      {fields.izsledvania_blocks.map((b, i) => (
+                        <InvestigationBlockCard key={i} block={b} />
+                      ))}
+                    </div>
+                  )}
 
                 {visibleSections['sec-rezultati'] && (
                   <div id="sec-rezultati" className="mb-4 scroll-mt-24">
