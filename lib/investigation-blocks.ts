@@ -12,11 +12,13 @@
 // (e.g. a newer backend emitting a type this build predates) must be skipped
 // gracefully by callers — never crash the лист, never invent a rendering.
 //
-// Only 'echo' exists today. Pacemaker/ECG are pending field-set validation;
-// each future block = backend template data file + registry entry here +
-// mirrored section descriptor.
+// 'echo' and 'pacemaker' exist today (pacemaker-v1 is a WORKING DRAFT pending
+// Соколов validation — trivially editable data). ECG is pending field-set
+// validation; each future block = backend template data file + registry entry
+// here + mirrored section descriptor.
 
 import { ECHO_SECTIONS, type EchoSectionDescriptor } from './echo-template';
+import { PACEMAKER_SECTIONS } from './pacemaker-template';
 
 export interface InvestigationBlockDescriptor {
   // Card title shown on the block's card in Изследвания.
@@ -25,7 +27,8 @@ export interface InvestigationBlockDescriptor {
 }
 
 export const INVESTIGATION_BLOCK_REGISTRY: Record<string, InvestigationBlockDescriptor> = {
-  echo: { title: 'Ехокардиография', sections: ECHO_SECTIONS },
+  echo:      { title: 'Ехокардиография', sections: ECHO_SECTIONS },
+  pacemaker: { title: 'Интерогация на кардиостимулатор', sections: PACEMAKER_SECTIONS },
 };
 
 // Lookup that keeps the tolerant-reader contract explicit at call sites:
