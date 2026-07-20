@@ -97,6 +97,8 @@ couldn't exercise headlessly).
 - **postcss CVE: DEFERRED, not reachable. NEVER `npm audit fix --force`** — installs next@9.3.3, destroys the app.
 - **`med_alerts` must flow through `mergeBackendAlerts()`** — never revert to bare `checkDrugSafety()`; `/edit` posts the FULL `fields` object. `lib/types.ts` must match the backend's JSON (contract edits touch both repos).
 - ЕГН checksum lives in BOTH repos: `lib/egn.ts` `isValidEgnChecksum` mirrors the backend's `validateEgnChecksum` — keep them in sync if the algorithm ever changes.
+- ⚠ **CROSS-REPO MIRROR INVARIANT — echo template:** `lib/echo-template.ts` is the committed display mirror of the backend's `lib/templates/echo-v1.js` (labels/units/dot-paths/kind/refNorma). A backend template change and this mirror must land TOGETHER (same discipline as `public/ial-inns.json`/`mkb10.json`); the descriptor serves BOTH the standalone echo note AND embedded `izsledvania_blocks` cards via `lib/investigation-blocks.ts` — keep both containers in lockstep. Aliases + plausibility bounds stay backend-only.
+- **`izsledvania_blocks` contract (embedded investigations):** a SIBLING key on the консултация fields — ABSENT (never `[]`) when there are no blocks; `izsledvania`/`naznacheni` stay flat strings. Block-local `uncertain_spans` live inside `block.fields` with dot-path `field` keys relative to the block; block edits round-trip via those dot-paths (C6) and `/edit` still posts the FULL `fields` object. `block.source` + `field_sources` offsets index the RAW transcript — never re-derive them client-side. Don't change the shape or the 3-state source UI (намерен източник / няма ясен източник / opt-in предположение) without a cross-repo task.
 
 # History
 
