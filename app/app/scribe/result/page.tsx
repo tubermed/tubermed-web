@@ -277,6 +277,13 @@ function ResultPageInner() {
   // sourceTick re-fires the scroll effect even when the same span is reselected.
   const [sourceSpan, setSourceSpan] = useState<SourceSpan | null>(null);
   const [sourceTick, setSourceTick] = useState(0);
+  // Honest source states (trust Batch B): 'stored' = backend-resolved offsets
+  // (confident, solid highlight); 'guess' = the alias-bridge, reachable ONLY
+  // via the explicit „Покажи предположение" opt-in (dashed highlight) — never
+  // the silent default. activeSourceField powers the „няма ясен източник"
+  // banner + its guess button for the last clicked unresolved field.
+  const [sourceMode, setSourceMode] = useState<'stored' | 'guess' | null>(null);
+  const [activeSourceField, setActiveSourceField] = useState<{ fieldKey: string; value: string } | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [mkbOpen, setMkbOpen] = useState(false);
   const [mkbTarget, setMkbTarget] = useState<MkbTarget | null>(null);
@@ -749,6 +756,19 @@ function ResultPageInner() {
     return map;
   }, [fields, acknowledged]);
 
+  // Per-field source state (trust Batch B): does the field have backend-resolved,
+  // bounds-valid offsets? Drives the SourceButton label — „виж източника" vs the
+  // honest „няма ясен източник" — BEFORE any click. anamneza and legacy rows are
+  // always unresolved (narrative fields are never sourced; old rows lack the key).
+  const sourceResolvedByField = useMemo(() => {
+    const len = (original?.transcript || '').length;
+    const map: Record<string, boolean> = {};
+    for (const k of ['anamneza', 'obektivno', 'izsledvania', 'naznacheni', 'terapia', 'napravlenia', 'osnovna_diagnoza']) {
+      map[k] = storedSpanFor(k, fields.field_sources, len) !== null;
+    }
+    return map;
+  }, [fields.field_sources, original]);
+
   const reviewItems = useMemo(() => {
     // Unified review counter: vital-range / transcription highlights AND
     // AI-uncertainty spans, in one "N за преглед" surface. Each item carries a
@@ -1008,18 +1028,39 @@ function ResultPageInner() {
       setTranscriptOpen(true);
       // Primary path: backend-resolved offsets (fields.field_sources), read
       // from fieldsRef so the in-session /edit round-trip is always current.
-      // Bounds-validated against THIS transcript; invalid/absent → the
-      // alias-bridge guess, unchanged.
+      // Bounds-validated against THIS transcript. Not resolved → the honest
+      // „няма ясен източник" banner; the alias-bridge runs ONLY via its
+      // explicit „Покажи предположение" opt-in (showGuess below).
       const stored = storedSpanFor(fieldKey, fieldsRef.current?.field_sources, transcript.length);
-      const span = stored ?? findSourceSpan(fieldKey, value, transcript);
-      setSourceSpan(span);
-      setSourceTick((n) => n + 1);
-      if (!span) {
-        showToast('info', 'Не открихме ясен източник — проверете ръчно.');
+      if (stored) {
+        setSourceMode('stored');
+        setActiveSourceField(null);
+        setSourceSpan(stored);
+      } else {
+        setSourceMode(null);
+        setActiveSourceField({ fieldKey, value });
+        setSourceSpan(null);
       }
+      setSourceTick((n) => n + 1);
     },
     [original, showToast]
   );
+
+  // The explicit opt-in: run the alias-bridge GUESS for the active unresolved
+  // field. A hit renders in the tentative dashed style; a miss keeps the
+  // banner and says so. Never invoked implicitly.
+  const showGuess = useCallback(() => {
+    if (!original || !activeSourceField) return;
+    const transcript = original.transcript || '';
+    const span = findSourceSpan(activeSourceField.fieldKey, activeSourceField.value, transcript);
+    if (span) {
+      setSourceMode('guess');
+      setSourceSpan(span);
+      setSourceTick((n) => n + 1);
+    } else {
+      showToast('info', 'Не открихме ясен източник — проверете ръчно.');
+    }
+  }, [original, activeSourceField, showToast]);
 
   // Scroll to the highlighted source span (or the transcript block when there's
   // no clear match) after each "виж източника" click. Keyed on sourceTick so a
@@ -1506,11 +1547,17 @@ function ResultPageInner() {
             id="transcript-block"
             className="mb-4 no-print"
             open={transcriptOpen}
-            onToggle={(e) =>
-              setTranscriptOpen(
-                (e.currentTarget as HTMLDetailsElement).open
-              )
-            }
+            onToggle={(e) => {
+              const open = (e.currentTarget as HTMLDetailsElement).open;
+              setTranscriptOpen(open);
+              // Closing the panel ends the source session — no stale banner or
+              // guess highlight on the next open.
+              if (!open) {
+                setSourceMode(null);
+                setActiveSourceField(null);
+                setSourceSpan(null);
+              }
+            }}
           >
             <summary
               className="cursor-pointer text-sm font-medium px-3 py-2 rounded-md inline-block"
@@ -1532,7 +1579,46 @@ function ResultPageInner() {
                 borderWidth: 1,
               }}
             >
-              <TranscriptBody transcript={original.transcript} span={sourceSpan} />
+              {/* Honest no-source state (trust Batch B): persistent banner, not
+                  a transient toast. The alias-bridge guess runs ONLY via the
+                  explicit button — never silently. */}
+              {activeSourceField && (
+                <div
+                  className="mb-3 p-3 rounded-md flex items-center flex-wrap gap-3 text-sm"
+                  style={{
+                    background: 'var(--color-bg)',
+                    border: '1px solid var(--color-border)',
+                    color: 'var(--color-text)',
+                  }}
+                >
+                  <span>Няма ясен източник за това поле в транскрипта.</span>
+                  {sourceMode === 'guess' ? (
+                    <span
+                      className="text-xs px-1.5 py-0.5 rounded"
+                      style={{
+                        border: '1px dashed var(--color-brand)',
+                        color: 'var(--color-brand)',
+                      }}
+                    >
+                      предположение
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={showGuess}
+                      className="text-xs underline decoration-dotted underline-offset-2 transition hover:opacity-80"
+                      style={{ color: 'var(--color-brand)', background: 'transparent' }}
+                    >
+                      Покажи предположение
+                    </button>
+                  )}
+                </div>
+              )}
+              <TranscriptBody
+                transcript={original.transcript}
+                span={sourceSpan}
+                variant={sourceMode === 'guess' ? 'guess' : 'stored'}
+              />
             </div>
           </details>
 
@@ -1590,6 +1676,7 @@ function ResultPageInner() {
                 )
               }
               sourceDisabled={!hasTranscript}
+              sourceResolved={sourceResolvedByField.osnovna_diagnoza}
               isLocked={isLocked}
               notifyCopy={notifyCopy}
             />
@@ -1607,9 +1694,11 @@ function ResultPageInner() {
               onAcknowledgeUncertain={(orig) => acknowledgeUncertain('anamneza', orig)}
               headerRight={
                 <>
+                  {uncertainByField.anamneza.length > 0 && <SourceStateBadge />}
                   <SourceButton
                     onClick={() => showSource('anamneza', fields.anamneza || '')}
                     disabled={!hasTranscript}
+                    resolved={sourceResolvedByField.anamneza}
                   />
                   <CopyButton
                     text={fields.anamneza || ''}
@@ -1632,9 +1721,11 @@ function ResultPageInner() {
               onAcknowledgeUncertain={(orig) => acknowledgeUncertain('obektivno', orig)}
               headerRight={
                 <>
+                  {uncertainByField.obektivno.length > 0 && <SourceStateBadge />}
                   <SourceButton
                     onClick={() => showSource('obektivno', fields.obektivno || '')}
                     disabled={!hasTranscript}
+                    resolved={sourceResolvedByField.obektivno}
                   />
                   <CopyButton
                     text={fields.obektivno || ''}
@@ -1673,10 +1764,14 @@ function ResultPageInner() {
                   <div id="sec-rezultati" className="mb-4 scroll-mt-24">
                     <div className="flex items-center justify-between gap-2">
                       <SubsectionHead title="Резултати от изследвания" />
-                      <SourceButton
-                        onClick={() => showSource('izsledvania', fields.izsledvania || '')}
-                        disabled={!hasTranscript}
-                      />
+                      <div className="flex items-center gap-2">
+                        {uncertainByField.izsledvania.length > 0 && <SourceStateBadge />}
+                        <SourceButton
+                          onClick={() => showSource('izsledvania', fields.izsledvania || '')}
+                          disabled={!hasTranscript}
+                          resolved={sourceResolvedByField.izsledvania}
+                        />
+                      </div>
                     </div>
                     <EditableField
                       value={fields.izsledvania || ''}
@@ -1694,10 +1789,14 @@ function ResultPageInner() {
                   <div id="sec-naznacheni" className="scroll-mt-24">
                     <div className="flex items-center justify-between gap-2">
                       <SubsectionHead icon="flask" title="Назначени изследвания" />
-                      <SourceButton
-                        onClick={() => showSource('naznacheni', fields.naznacheni || '')}
-                        disabled={!hasTranscript}
-                      />
+                      <div className="flex items-center gap-2">
+                        {uncertainByField.naznacheni.length > 0 && <SourceStateBadge />}
+                        <SourceButton
+                          onClick={() => showSource('naznacheni', fields.naznacheni || '')}
+                          disabled={!hasTranscript}
+                          resolved={sourceResolvedByField.naznacheni}
+                        />
+                      </div>
                     </div>
                     <EditableField
                       value={fields.naznacheni || ''}
@@ -1739,9 +1838,11 @@ function ResultPageInner() {
               onAcknowledgeUncertain={(orig) => acknowledgeUncertain('terapia', orig)}
               headerRight={
                 <>
+                  {uncertainByField.terapia.length > 0 && <SourceStateBadge />}
                   <SourceButton
                     onClick={() => showSource('terapia', fields.terapia || '')}
                     disabled={!hasTranscript}
+                    resolved={sourceResolvedByField.terapia}
                   />
                   <CopyButton
                     text={fields.terapia || ''}
@@ -1760,10 +1861,14 @@ function ResultPageInner() {
                   <div id="sec-napravlenia" className="scroll-mt-24">
                     <div className="flex items-center justify-between gap-2">
                       <SubsectionHead icon="clipboard" title="Направления за консултация" />
-                      <SourceButton
-                        onClick={() => showSource('napravlenia', fields.napravlenia || '')}
-                        disabled={!hasTranscript}
-                      />
+                      <div className="flex items-center gap-2">
+                        {uncertainByField.napravlenia.length > 0 && <SourceStateBadge />}
+                        <SourceButton
+                          onClick={() => showSource('napravlenia', fields.napravlenia || '')}
+                          disabled={!hasTranscript}
+                          resolved={sourceResolvedByField.napravlenia}
+                        />
+                      </div>
                     </div>
                     <EditableField
                       value={fields.napravlenia || ''}
@@ -2122,9 +2227,15 @@ function StatusBadge({
 function SourceButton({
   onClick,
   disabled,
+  resolved,
 }: {
   onClick: () => void;
   disabled?: boolean;
+  // Honest source state (trust Batch B): true = backend-resolved offsets exist
+  // → „виж източника"; false = no clear source → the button ITSELF says „няма
+  // ясен източник" before any click (persistent, not a transient toast), and
+  // clicking opens the banner with the explicit „Покажи предположение" opt-in.
+  resolved?: boolean;
 }) {
   return (
     <button
@@ -2134,13 +2245,36 @@ function SourceButton({
       title={
         disabled
           ? 'Източникът не е наличен'
-          : 'Покажи мястото в транскрипта, от което идва това поле'
+          : resolved
+            ? 'Покажи мястото в транскрипта, от което идва това поле'
+            : 'Няма потвърден източник в транскрипта — отвори за предположение'
       }
       className="no-print flex-shrink-0 text-xs underline decoration-dotted underline-offset-2 transition hover:opacity-80 disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
       style={{ color: 'var(--color-text-muted)', background: 'transparent' }}
     >
-      виж източника
+      {resolved ? 'виж източника' : 'няма ясен източник'}
     </button>
+  );
+}
+
+// Amber „AI несигурен" chip — rendered BESIDE the source button when the field
+// has live (resolved, unacknowledged) uncertain_spans. Composition, not
+// precedence: model self-uncertainty (gold vocabulary) and source traceability
+// (blue vocabulary) are orthogonal review systems — never conflate, never hide
+// one behind the other. no-print like every review affordance.
+function SourceStateBadge() {
+  return (
+    <span
+      className="no-print flex-shrink-0 text-xs px-1.5 py-0.5 rounded"
+      title="Моделът е отбелязал част от това поле за преглед"
+      style={{
+        background: 'rgba(183, 121, 31, 0.10)',
+        color: 'var(--color-gold)',
+        border: '1px solid rgba(183, 121, 31, 0.25)',
+      }}
+    >
+      AI несигурен
+    </span>
   );
 }
 
@@ -2154,9 +2288,15 @@ function SourceButton({
 function TranscriptBody({
   transcript,
   span,
+  variant = 'stored',
 }: {
   transcript: string;
   span: SourceSpan | null;
+  // 'stored' = backend-resolved offsets (confident: solid brand highlight);
+  // 'guess' = alias-bridge opt-in (tentative: dashed underline, no fill —
+  // same traceability-blue family, visibly weaker claim; gold stays reserved
+  // for AI-uncertainty and red for vital ranges).
+  variant?: 'stored' | 'guess';
 }) {
   if (!transcript) {
     return (
@@ -2188,14 +2328,25 @@ function TranscriptBody({
         key={`m${r.start}`}
         id={i === 0 ? 'source-mark' : undefined}
         className="source-mark"
-        style={{
-          background: 'var(--color-brand-soft)',
-          color: 'var(--color-text)',
-          borderBottom: '2px solid var(--color-brand)',
-          padding: '0 2px',
-          borderRadius: '3px',
-          fontWeight: 500,
-        }}
+        style={
+          variant === 'guess'
+            ? {
+                background: 'transparent',
+                color: 'var(--color-text)',
+                borderBottom: '2px dashed var(--color-brand)',
+                padding: '0 2px',
+                borderRadius: '3px',
+                fontWeight: 500,
+              }
+            : {
+                background: 'var(--color-brand-soft)',
+                color: 'var(--color-text)',
+                borderBottom: '2px solid var(--color-brand)',
+                padding: '0 2px',
+                borderRadius: '3px',
+                fontWeight: 500,
+              }
+        }
       >
         {transcript.slice(r.start, r.end)}
       </mark>
@@ -2302,6 +2453,7 @@ function DiagnosesSection({
   onComorbidityRemove,
   onShowSource,
   sourceDisabled,
+  sourceResolved,
   isLocked,
   notifyCopy,
 }: {
@@ -2320,6 +2472,7 @@ function DiagnosesSection({
   onComorbidityRemove: (index: number) => void;
   onShowSource: () => void;
   sourceDisabled: boolean;
+  sourceResolved: boolean;
   isLocked: boolean;
   notifyCopy: (ok: boolean) => void;
 }) {
@@ -2348,7 +2501,7 @@ function DiagnosesSection({
           >
             Основна диагноза
           </div>
-          <SourceButton onClick={onShowSource} disabled={sourceDisabled} />
+          <SourceButton onClick={onShowSource} disabled={sourceDisabled} resolved={sourceResolved} />
         </div>
         <div className="flex items-center gap-2">
           <MkbTypeahead
