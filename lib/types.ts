@@ -283,7 +283,9 @@ export interface RevealNationalIdResponse {
 }
 
 export interface VisitStartPayload {
-  patient_id: string;
+  // Transitional (identity removal): staging is identity-free; the field is
+  // gone from the UI and disappears from the contract with the backend B2 step.
+  patient_id?: string;
   chief_complaint?: string | null;
   visit_type?: VisitType | null;
   // Document template. Omitted/'consultation' → the default Амбулаторен лист;
@@ -293,7 +295,8 @@ export interface VisitStartPayload {
 
 export interface VisitStartResponse {
   consultation_id: string;
-  patient_summary: PatientSummary;
+  // null when the visit was staged without a patient (the identity-free path).
+  patient_summary: PatientSummary | null;
 }
 
 export interface TodayPatientStub {

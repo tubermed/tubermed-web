@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
 import { formatDateBg } from '@/lib/date';
+import { visitTypeLabel } from '@/components/VisitHeaderStrip';
 import type { TodayResponse, TodayConsultation } from '@/lib/types';
 import SkeletonInput from './SkeletonInput';
 
@@ -119,8 +120,9 @@ export default function TodayConsultations({ refreshKey, currentConsultationId }
             </div>
           </div>
         )}
-        {data && data.consultations.map((c) => (
-          <Row key={c.id} item={c} isCurrent={c.id === currentConsultationId} />
+        {data && data.consultations.map((c, i) => (
+          // /today returns the day ASC, so the ordinal is stable across refreshes.
+          <Row key={c.id} item={c} ordinal={i + 1} isCurrent={c.id === currentConsultationId} />
         ))}
       </div>
     </aside>
@@ -128,7 +130,7 @@ export default function TodayConsultations({ refreshKey, currentConsultationId }
 }
 
 // Loading placeholder mirroring a real Row's footprint — a time line over a
-// name line on the left, a status-pill box on the right, same pl-3 pr-2 py-2 —
+// label line on the left, a status-pill box on the right, same pl-3 pr-2 py-2 —
 // so the rail doesn't visibly jump when the consultations land.
 function SkeletonRailRow() {
   return (
@@ -142,12 +144,18 @@ function SkeletonRailRow() {
   );
 }
 
-function Row({ item, isCurrent }: { item: TodayConsultation; isCurrent: boolean }) {
+// Identity-free row — the visit's auto-generated label. A visit is identified
+// by its per-day ordinal + staging time, described by its visit type + chief
+// complaint, and (once generated) its diagnosis. No patient identity exists.
+function Row({ item, ordinal, isCurrent }: { item: TodayConsultation; ordinal: number; isCurrent: boolean }) {
   const status = STATUS_LABEL[item.status] ?? { text: item.status, tone: 'active' as const };
   const time = new Date(item.created_at).toLocaleTimeString('bg-BG', { hour: '2-digit', minute: '2-digit' });
-  const patientName = item.patient
-    ? [item.patient.first_name, item.patient.last_name].filter(Boolean).join(' ')
-    : 'Без пациент';
+
+  const complaint = item.chief_complaint?.trim() || null;
+  const typeLabel = item.visit_type ? visitTypeLabel(item.visit_type) : null;
+  const mainLabel = complaint ?? typeLabel ?? 'Преглед';
+  // Second context line: whichever of type/diagnosis is not already the main label.
+  const subParts = [complaint ? typeLabel : null, item.osnovna_diagnoza].filter(Boolean) as string[];
 
   const body = (
     <>
@@ -163,29 +171,41 @@ function Row({ item, isCurrent }: { item: TodayConsultation; isCurrent: boolean 
             className="text-xs tabular-nums"
             style={{ color: 'var(--color-text-muted)' }}
           >
-            {time}
+            №{ordinal} · {time}
           </div>
           <div className="text-sm truncate" style={{ color: 'var(--color-text)' }}>
-            {patientName}
+            {mainLabel}
           </div>
+          {subParts.length > 0 && (
+            <div className="text-xs truncate" style={{ color: 'var(--color-text-muted)' }}>
+              {subParts.join(' · ')}
+            </div>
+          )}
         </div>
         <StatusPill tone={status.tone}>{status.text}</StatusPill>
       </div>
     </>
   );
 
-  // A row WITHOUT a patient (orphaned / never-staged visit) stays a plain,
-  // non-interactive cell. A row WITH a patient becomes a link into that
-  // patient's history focused on this consultation — the /app/patients page
-  // reads ?patient=&visit= and opens the visit's note (see that page).
-  if (!item.patient) {
+  // Row click re-opens the visit itself (cold-start recovery renders it from
+  // ?visit=): a filed note opens on the result page, an in-flight visit lands
+  // back on the scribe. Abandoned rows stay non-interactive — recovery would
+  // only bounce them back here with a notice.
+  const href =
+    item.status === 'generated' || item.status === 'exported'
+      ? `/app/scribe/result?visit=${item.id}`
+      : item.status === 'abandoned'
+      ? null
+      : `/app/scribe?visit=${item.id}`;
+
+  if (!href) {
     return <div className="relative pl-3 pr-2 py-2 rounded-md">{body}</div>;
   }
 
   return (
     <Link
-      href={`/app/patients?patient=${item.patient.id}&visit=${item.id}`}
-      aria-label={`Отвори историята на ${patientName}`}
+      href={href}
+      aria-label={`Отвори преглед №${ordinal} от ${time}`}
       className="relative block pl-3 pr-2 py-2 rounded-md cursor-pointer transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-[var(--color-accent)]"
     >
       {body}
