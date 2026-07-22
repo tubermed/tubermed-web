@@ -12,23 +12,29 @@
 // (e.g. a newer backend emitting a type this build predates) must be skipped
 // gracefully by callers — never crash the лист, never invent a rendering.
 //
-// 'echo' and 'pacemaker' exist today (pacemaker-v1 is a WORKING DRAFT pending
-// Соколов validation — trivially editable data). ECG is pending field-set
-// validation; each future block = backend template data file + registry entry
-// here + mirrored section descriptor.
+// 'echo', 'pacemaker' and 'ekg' exist today (pacemaker-v1 and ekg-v1 are
+// WORKING DRAFTS pending Соколов validation — trivially editable data); each
+// future block = backend template data file + registry entry here + mirrored
+// section descriptor.
 
 import { ECHO_SECTIONS, type EchoSectionDescriptor } from './echo-template';
 import { PACEMAKER_SECTIONS } from './pacemaker-template';
+import { EKG_RENDER_STYLE, EKG_SECTIONS } from './ekg-template';
 
 export interface InvestigationBlockDescriptor {
   // Card title shown on the block's card in Изследвания.
   title: string;
   sections: EchoSectionDescriptor[];
+  // 'paragraph' — exporters join populated values into ONE short paragraph in
+  // template order (a light prose block like ЕКГ) instead of label/value
+  // rows. Absent → rows (echo/pacemaker today).
+  renderStyle?: 'paragraph';
 }
 
 export const INVESTIGATION_BLOCK_REGISTRY: Record<string, InvestigationBlockDescriptor> = {
   echo:      { title: 'Ехокардиография', sections: ECHO_SECTIONS },
   pacemaker: { title: 'Интерогация на кардиостимулатор', sections: PACEMAKER_SECTIONS },
+  ekg:       { title: 'ЕКГ', sections: EKG_SECTIONS, renderStyle: EKG_RENDER_STYLE },
 };
 
 // Lookup that keeps the tolerant-reader contract explicit at call sites:
