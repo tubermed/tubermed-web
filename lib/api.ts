@@ -21,6 +21,7 @@ import type {
   EditConsultationResponse,
   ExportSignalPayload,
   ConsultationDetailResponse,
+  ConsultationListResponse,
   PatientConsultationsResponse,
   PatientSummaryResponse,
   RetryExtractionResponse,
@@ -431,6 +432,18 @@ export const api = {
 
   // ── Today's consultations (right rail) ─────────────────────────────────
   consultationsToday: () => request<TodayResponse>('/api/consultations/today'),
+
+  // ── Notes library ──────────────────────────────────────────────────────
+  // Identity-free clinic-wide list, newest first. Same pagination contract
+  // as the patients-history list (total + has_more drive "Покажи още").
+  listConsultations: (opts: { offset?: number; limit?: number; status?: string } = {}) => {
+    const u = new URLSearchParams();
+    if (opts.offset !== undefined) u.set('offset', String(opts.offset));
+    if (opts.limit  !== undefined) u.set('limit',  String(opts.limit));
+    if (opts.status)               u.set('status', opts.status);
+    const qs = u.toString();
+    return request<ConsultationListResponse>(`/api/consultations${qs ? `?${qs}` : ''}`);
+  },
 
   // ── Consent ────────────────────────────────────────────────────────────
   // Records the patient's verbal consent against the consultation. The

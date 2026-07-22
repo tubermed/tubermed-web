@@ -6,7 +6,7 @@ import { RECOVERY_NOTICE_KEY } from '@/lib/use-cold-start-recovery';
 import WorkspaceTopBar from '@/components/WorkspaceTopBar';
 import { SCRIBE_FLOW_STEPS } from '@/lib/flow';
 import StartVisitCard, { EMPTY_START_VISIT, type StartVisitState } from '@/components/StartVisitCard';
-import TodayConsultations from '@/components/TodayConsultations';
+import NotesLibrary from '@/components/NotesLibrary';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import OnboardingWizard from '@/components/OnboardingWizard';
 import SpotlightTour, { type TourStep } from '@/components/SpotlightTour';
@@ -21,7 +21,7 @@ const PENDING_VISIT_KEY = 'tuber_pending_visit';
 const TOUR_STEPS: TourStep[] = [
   { selector: '[data-tour="visit-context"]', text: 'Изберете тип преглед — една кратка причина за визитата е достатъчна.' },
   { selector: '[data-tour="start"]', text: 'Натиснете тук и говорете с пациента както обикновено.' },
-  { selector: '[data-tour="today"]', text: 'Прегледите от деня се появяват тук — с час, тип и повод.' },
+  { selector: '[data-tour="today"]', text: 'Всички прегледи се появяват тук — най-новите най-отгоре, с час, тип и повод.' },
 ];
 
 export default function NewVisitPage() {
@@ -33,7 +33,6 @@ export default function NewVisitPage() {
   const [card, setCard]             = useState<StartVisitState>(EMPTY_START_VISIT);
   const [saving, setSaving]         = useState(false);
   const [toast, setToast]           = useState<ToastData | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
 
   // ── A4 first-run wizard + tour ───────────────────────────────────────────
   // The wizard opens ONLY on an explicit onboarding_completed_at === null
@@ -148,9 +147,12 @@ export default function NewVisitPage() {
         doctorInitials={doctorInitials}
       />
 
-      <div className="flex-1 grid gap-6 px-6 py-6"
-           style={{ gridTemplateColumns: 'minmax(0, 1fr) 320px' }}>
-        <div className="min-w-0">
+      {/* Home layout (identity removal): one column — the primary "Нов
+          преглед" action on top, the notes library beneath it. The library
+          subsumes the old today-rail: today's visits are simply its newest
+          group. */}
+      <div className="flex-1 px-6 py-6">
+        <div className="max-w-3xl mx-auto flex flex-col gap-6 min-w-0">
           <ValueStatsCard stats={valueStats} loading={valueStatsLoading} />
           <StartVisitCard
             state={card}
@@ -158,9 +160,9 @@ export default function NewVisitPage() {
             onStartVisit={handleStartVisit}
             isSaving={saving}
           />
-        </div>
-        <div data-tour="today">
-          <TodayConsultations refreshKey={refreshKey} />
+          <div data-tour="today">
+            <NotesLibrary />
+          </div>
         </div>
       </div>
 
@@ -177,9 +179,6 @@ export default function NewVisitPage() {
       {tourOpen && <SpotlightTour steps={TOUR_STEPS} onClose={() => setTourOpen(false)} />}
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
-
-      {/* refreshKey is reserved for future use (refresh today's rail after starting a visit). */}
-      <span className="hidden">{refreshKey}</span>
     </>
   );
 }

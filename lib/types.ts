@@ -325,6 +325,29 @@ export interface TodayResponse {
   consultations: TodayConsultation[];
 }
 
+// ── Notes library (identity-free) ───────────────────────────────────────────
+// Summary row returned by GET /api/consultations — the visit's auto-generated
+// label data (time, type, complaint, diagnosis, status). Full note fetched on
+// click via GET /api/consultations/:id.
+export interface ConsultationListItem {
+  id: string;
+  status: string;
+  created_at: string;
+  started_at: string | null;
+  exported_at: string | null;
+  visit_type: VisitType | null;
+  chief_complaint: string | null;
+  osnovna_diagnoza: string | null;
+}
+
+export interface ConsultationListResponse {
+  consultations: ConsultationListItem[];
+  total: number;
+  has_more: boolean;
+  offset: number;
+  limit: number;
+}
+
 // ── Patient history (Phase 3) ────────────────────────────────────────────────
 // Lightweight summary returned by GET /api/patients/:id/consultations.
 // Deliberately a subset of LastVisitSummary so the paginated list payload

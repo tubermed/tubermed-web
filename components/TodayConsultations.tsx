@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api, ApiError } from '@/lib/api';
 import { formatDateBg } from '@/lib/date';
 import { visitTypeLabel } from '@/components/VisitHeaderStrip';
+import { STATUS_LABEL, StatusPill, visitHref } from '@/components/NotesLibrary';
 import type { TodayResponse, TodayConsultation } from '@/lib/types';
 import SkeletonInput from './SkeletonInput';
 
@@ -14,15 +15,6 @@ interface TodayConsultationsProps {
   /** Optional: highlight a consultation_id as "current" (vertical accent bar). */
   currentConsultationId?: string | null;
 }
-
-const STATUS_LABEL: Record<string, { text: string; tone: 'pending' | 'active' | 'done' | 'error' }> = {
-  pending:   { text: 'Подготовка',  tone: 'pending' },
-  started:   { text: 'В ход',       tone: 'active'  },
-  generated: { text: 'Готов',       tone: 'done'    },
-  exported:  { text: 'Изнесен',     tone: 'done'    },
-  abandoned: { text: 'Прекратен',   tone: 'error'   },
-  error:     { text: 'Грешка',      tone: 'error'   },
-};
 
 export default function TodayConsultations({ refreshKey, currentConsultationId }: TodayConsultationsProps) {
   const [data, setData] = useState<TodayResponse | null>(null);
@@ -187,16 +179,9 @@ function Row({ item, ordinal, isCurrent }: { item: TodayConsultation; ordinal: n
     </>
   );
 
-  // Row click re-opens the visit itself (cold-start recovery renders it from
-  // ?visit=): a filed note opens on the result page, an in-flight visit lands
-  // back on the scribe. Abandoned rows stay non-interactive — recovery would
-  // only bounce them back here with a notice.
-  const href =
-    item.status === 'generated' || item.status === 'exported'
-      ? `/app/scribe/result?visit=${item.id}`
-      : item.status === 'abandoned'
-      ? null
-      : `/app/scribe?visit=${item.id}`;
+  // Row click re-opens the visit itself (see visitHref in NotesLibrary — the
+  // library owns the shared status vocabulary + destination logic).
+  const href = visitHref(item.status, item.id);
 
   if (!href) {
     return <div className="relative pl-3 pr-2 py-2 rounded-md">{body}</div>;
@@ -210,24 +195,6 @@ function Row({ item, ordinal, isCurrent }: { item: TodayConsultation; ordinal: n
     >
       {body}
     </Link>
-  );
-}
-
-function StatusPill({ tone, children }: { tone: 'pending' | 'active' | 'done' | 'error'; children: React.ReactNode }) {
-  const palette: Record<typeof tone, { bg: string; fg: string }> = {
-    pending: { bg: 'var(--color-gold-soft)', fg: 'var(--color-gold)' },
-    active:  { bg: 'var(--color-brand-soft)', fg: 'var(--color-brand)' },
-    done:    { bg: 'var(--color-ok-soft)',   fg: 'var(--color-ok)' },
-    error:   { bg: 'var(--color-danger-soft)', fg: 'var(--color-danger)' },
-  };
-  const c = palette[tone];
-  return (
-    <span
-      className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded flex-shrink-0"
-      style={{ background: c.bg, color: c.fg }}
-    >
-      {children}
-    </span>
   );
 }
 
