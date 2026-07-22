@@ -31,11 +31,12 @@ export default function AppShell({ doctor, sidebarLocked = false, children }: Ap
 }
 
 // ── Nav config — single source of truth for the sidebar across all pages. ──
-// "Нов преглед", "Пациенти" and "Настройки" are live destinations; "Шаблони"
-// remains reserved for a future route and rendered as disabled.
+// "Нов преглед" (the home: start card + notes library) and "Настройки" are
+// live destinations; "Шаблони" remains reserved for a future route and
+// rendered as disabled. There is no Пациенти entry — TuberMed keeps no
+// patient records (identity removal, 2026-07).
 const NAV_ITEMS: NavItem[] = [
   { label: 'Нов преглед', href: '/app/new-visit',                          icon: <NewVisitIcon /> },
-  { label: 'Пациенти',    href: '/app/patients',                            icon: <PatientsIcon /> },
   { label: 'Шаблони',     href: undefined, disabled: true,                  icon: <TemplatesIcon /> },
   { label: 'Настройки',   href: '/app/settings',                            icon: <SettingsIcon /> },
 ];
@@ -49,6 +50,5 @@ function Icon({ children }: { children: React.ReactNode }) {
   );
 }
 function NewVisitIcon()  { return <Icon><path d="M12 4v16M4 12h16" /></Icon>; }
-function PatientsIcon()  { return <Icon><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0116 0" /></Icon>; }
 function TemplatesIcon() { return <Icon><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M8 9h8M8 13h8M8 17h5" /></Icon>; }
 function SettingsIcon()  { return <Icon><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z" /></Icon>; }

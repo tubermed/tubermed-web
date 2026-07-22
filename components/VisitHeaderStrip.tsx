@@ -4,10 +4,8 @@
 // result document (/app/scribe/result). Identity-free by design: it renders
 // the visit's own metadata — staging time, visit type, chief complaint — from
 // the `tuber_pending_visit` sessionStorage payload (or its cold-start-recovery
-// reconstruction). A legacy payload may still carry a patient from before the
-// identity removal; its name renders transitionally until the field is gone.
+// reconstruction).
 
-import { ageFromBirthDate } from '@/lib/age';
 import type { PendingVisit, VisitType } from '@/lib/types';
 
 interface VisitHeaderStripProps {
@@ -19,14 +17,6 @@ export default function VisitHeaderStrip({ pending }: VisitHeaderStripProps) {
     ? new Date(pending.created_at).toLocaleTimeString('bg-BG', { hour: '2-digit', minute: '2-digit' })
     : null;
   const chiefComplaint = pending.visit_metadata.chief_complaint;
-
-  // Transitional: legacy sessionStorage payloads staged before the identity
-  // removal still carry a patient — show the name row until W3 drops the field.
-  const p = pending.patient ?? null;
-  const legacyName = p
-    ? [p.first_name, p.middle_name, p.last_name].filter(Boolean).join(' ')
-    : null;
-  const legacyAge = p ? ageFromBirthDate(p.birth_date) : null;
 
   return (
     <div
@@ -43,15 +33,6 @@ export default function VisitHeaderStrip({ pending }: VisitHeaderStripProps) {
               <Divider />
               <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
                 {startedAt}
-              </span>
-            </>
-          )}
-          {legacyName && (
-            <>
-              <Divider />
-              <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                {legacyName}
-                {legacyAge !== null ? `, ${legacyAge} г.` : ''}
               </span>
             </>
           )}

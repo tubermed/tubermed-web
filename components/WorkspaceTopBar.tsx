@@ -59,8 +59,8 @@ export default function WorkspaceTopBar({
           })}
         </nav>
 
-        {/* Spacer — patient lookup now lives inside the form (name typeahead +
-            ЕГН lookup), so the top bar no longer hosts a search input. */}
+        {/* Spacer — the top bar hosts no search input (there is no patient
+            lookup anywhere: TuberMed keeps no patient records). */}
         <div className="flex-1" />
 
         {/* Top-bar actions — bell + avatar stay visual placeholders; the gear is

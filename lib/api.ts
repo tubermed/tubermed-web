@@ -5,24 +5,14 @@ import type {
   SessionInit,
   SessionStatus,
   TranscribeFields,
-  PatientSearchResponse,
-  PatientDetailResponse,
-  PatientSummary,
-  CreatePatientPayload,
-  CreatePatientSuccess,
-  DedupConflict,
-  UpdatePatientPayload,
-  RevealNationalIdResponse,
   VisitStartPayload,
   VisitStartResponse,
-  TodayResponse,
   ConsentResponse,
   ApproveResponse,
   EditConsultationResponse,
   ExportSignalPayload,
   ConsultationDetailResponse,
   ConsultationListResponse,
-  PatientConsultationsResponse,
   PatientSummaryResponse,
   RetryExtractionResponse,
 } from './types';
@@ -245,12 +235,6 @@ export interface ChangePasswordPayload {
   new_password: string;
 }
 
-// Discriminated union for createPatient — the 409 dedup response is data,
-// not an exception. Callers render the DedupModal directly from the conflict.
-export type CreatePatientResult =
-  | { ok: true; data: CreatePatientSuccess }
-  | { ok: false; status: 409; dedup: DedupConflict };
-
 export const api = {
   health: () => request<{ status: string }>('/health'),
   login: (payload: LoginPayload | EmailLoginPayload) =>
@@ -348,78 +332,12 @@ export const api = {
       body: JSON.stringify({ scope, med_count: medCount }),
     }),
 
-  // ── Patients ───────────────────────────────────────────────────────────
-  searchPatients: (q: string, limit = 10) => {
-    const u = new URLSearchParams();
-    if (q) u.set('q', q);
-    u.set('limit', String(limit));
-    return request<PatientSearchResponse>(`/api/patients?${u.toString()}`);
-  },
-  // `method` is an audit discriminator (load context) forwarded to the backend's
-  // patient_viewed event. Optional — omitting it lets the backend default to
-  // 'unspecified'. Never carries any patient PII, just the load context.
-  getPatient: (id: string, method?: 'egn_typed' | 'name_pick' | 'history_view' | 'dedup_pick') => {
-    const qs = method ? `?method=${encodeURIComponent(method)}` : '';
-    return request<PatientDetailResponse>(`/api/patients/${id}${qs}`);
-  },
-
-  // Returns a discriminated union: success or 409-dedup. Other errors still throw ApiError.
-  async createPatient(payload: CreatePatientPayload): Promise<CreatePatientResult> {
-    try {
-      const data = await request<CreatePatientSuccess>('/api/patients', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      return { ok: true, data };
-    } catch (err) {
-      if (
-        err instanceof ApiError &&
-        err.status === 409 &&
-        err.body &&
-        typeof err.body === 'object' &&
-        'possible_duplicates' in (err.body as Record<string, unknown>)
-      ) {
-        return { ok: false, status: 409, dedup: err.body as DedupConflict };
-      }
-      throw err;
-    }
-  },
-  updatePatient: (id: string, payload: UpdatePatientPayload) =>
-    request<{ patient: PatientSummary }>(`/api/patients/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(payload),
-    }),
-  // `reason` is an audit discriminator forwarded to the backend's
-  // patient_national_id_revealed event. Optional — omitting it lets the backend
-  // default to 'manual_reveal'. Never carries any ЕГН value, just the reason tag.
-  revealNationalId: (patientId: string, reason?: 'manual_reveal' | 'name_load_autoreveal') => {
-    const qs = reason ? `?reason=${encodeURIComponent(reason)}` : '';
-    return request<RevealNationalIdResponse>(`/api/patients/${patientId}/national-id${qs}`);
-  },
-
-  // ── Patient history (read-only viewer) ─────────────────────────────────
-  // GET /api/consultations/:id returns ONE consultation's filed note for
-  // the read-only history viewer. `note` is the doctor's final extracted_
-  // fields OR null (pending/error/abandoned). Org-scoped server-side.
+  // ── Consultation read (single note) ────────────────────────────────────
+  // GET /api/consultations/:id returns ONE consultation's filed note.
+  // `note` is the doctor's final extracted_fields OR null
+  // (pending/error/abandoned). Org-scoped server-side.
   getConsultation: (consultationId: string) =>
     request<ConsultationDetailResponse>(`/api/consultations/${consultationId}`),
-
-  // GET /api/patients/:id/consultations — paginated visit summaries
-  // (newest first). Page size defaults to 10, server clamps to <=50.
-  // Returns total + has_more so the "Покажи още" button can be driven
-  // from a single endpoint for first-page and subsequent loads alike.
-  getPatientConsultations: (
-    patientId: string,
-    offset = 0,
-    limit = 10,
-  ) => {
-    const u = new URLSearchParams();
-    u.set('offset', String(offset));
-    u.set('limit', String(limit));
-    return request<PatientConsultationsResponse>(
-      `/api/patients/${patientId}/consultations?${u.toString()}`,
-    );
-  },
 
   // ── Visit staging ──────────────────────────────────────────────────────
   startVisit: (payload: VisitStartPayload) =>
@@ -429,9 +347,6 @@ export const api = {
     }),
   abandonVisit: (consultationId: string) =>
     request<{ ok: true }>(`/api/visits/${consultationId}/abandon`, { method: 'POST' }),
-
-  // ── Today's consultations (right rail) ─────────────────────────────────
-  consultationsToday: () => request<TodayResponse>('/api/consultations/today'),
 
   // ── Notes library ──────────────────────────────────────────────────────
   // Identity-free clinic-wide list, newest first. Same pagination contract

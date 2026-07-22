@@ -395,8 +395,8 @@ function ResultPageInner() {
 
   // ── Cold-start recovery driver ─────────────────────────────────────────
   // Fires only when the bootstrap above set recoverVisitId (tuber_last_result
-  // was absent). Rebuilds `original` (and thus the editable note) from the
-  // filed `note`, plus the patient header from getPatient. Inert on happy path.
+  // was absent). Rebuilds `original` (and thus the editable note) plus the
+  // visit header from the consultation row alone. Inert on happy path.
   const recovery = useColdStartRecovery(recoverVisitId, 'result');
   useEffect(() => {
     if (recovery.phase === 'redirect') {
@@ -2009,13 +2009,6 @@ function ResultPageInner() {
         consultationId={original.consultationId}
         onClose={() => setSummaryOpen(false)}
         onToast={showToast}
-        patientName={
-          pendingVisit?.patient
-            ? [pendingVisit.patient.first_name, pendingVisit.patient.last_name]
-                .filter(Boolean)
-                .join(' ')
-            : undefined
-        }
       />
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />

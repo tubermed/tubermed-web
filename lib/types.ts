@@ -171,121 +171,19 @@ export type WsMessage =
   // backend also sends statusCode:502 on Anthropic exhaustion (not read here).
   | { type: 'error'; message: string; code?: string };
 
-// ── Patient / Visit (Phase 2) ────────────────────────────────────────────────
+// ── Visit staging + notes library ────────────────────────────────────────────
+// TuberMed keeps no patient records: there is no patients table access, no
+// identity field, and no patient type anywhere in the app (identity removal,
+// 2026-07). A visit is described only by its own metadata.
 
-export type NationalIdType = 'egn' | 'lnch' | 'foreign' | 'none';
-export type Gender         = 'male' | 'female' | 'other' | 'unknown';
 export type VisitType      = 'first' | 'followup' | 'urgent' | 'preventive' | 'remote';
 // Document template discriminator (backend migration 020 / lib/note-type.js).
 // 'consultation' = the Амбулаторен лист; 'echo' = the echocardiography readout
 // (no diagnosis/МКБ shape). Default 'consultation' everywhere.
 export type NoteType       = 'consultation' | 'echo';
 export type Locale         = 'bg';
-export type InsuranceStatus = 'nzok' | 'private' | 'uninsured' | (string & {});
-
-export interface PatientSearchHit {
-  id: string;
-  first_name: string;
-  middle_name: string | null;
-  last_name: string;
-  birth_date: string | null;
-  national_id_last4: string | null;
-  national_id_type?: NationalIdType;
-}
-
-export interface PatientSummary {
-  id: string;
-  organization_id: string;
-  created_by_doctor_id: string | null;
-  national_id_type: NationalIdType;
-  national_id_last4: string | null;
-  first_name: string;
-  middle_name: string | null;
-  last_name: string;
-  birth_date: string | null;
-  gender: Gender | null;
-  allergies: string[];
-  chronic_conditions: string[];
-  insurance_status: string | null;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface LastVisitSummary {
-  id: string;
-  status: string;
-  created_at: string;
-  started_at: string | null;
-  note_generated_at: string | null;
-  exported_at: string | null;
-  osnovna_diagnoza: string | null;
-  osnovna_mkb: string | null;
-  visit_type: VisitType | null;
-  chief_complaint: string | null;
-  source_device: string | null;
-}
-
-export interface PatientDetailResponse {
-  patient: PatientSummary;
-  last_visits: LastVisitSummary[];
-}
-
-export interface PatientSearchResponse {
-  patients: PatientSearchHit[];
-  match: 'recent' | 'national_id_exact' | 'national_id_last4' | 'name_fuzzy' | 'none';
-  hint?: string;
-}
-
-export interface CreatePatientPayload {
-  national_id?: string;
-  national_id_type: NationalIdType;
-  first_name: string;
-  middle_name?: string | null;
-  last_name: string;
-  birth_date?: string | null;
-  gender?: Gender | null;
-  allergies?: string[];
-  chronic_conditions?: string[];
-  insurance_status?: string | null;
-  notes?: string | null;
-  force?: boolean;
-}
-
-export interface CreatePatientSuccess {
-  patient: PatientSummary;
-  validation_warning: string | null;
-}
-
-export interface DedupConflict {
-  error: string;
-  possible_duplicates: PatientSearchHit[];
-  matched_on: 'name+dob' | 'name_only';
-}
-
-export interface UpdatePatientPayload {
-  first_name?: string;
-  middle_name?: string | null;
-  last_name?: string;
-  birth_date?: string | null;
-  gender?: Gender | null;
-  allergies?: string[];
-  chronic_conditions?: string[];
-  insurance_status?: string | null;
-  notes?: string | null;
-  national_id?: string;
-  national_id_type?: NationalIdType;
-}
-
-export interface RevealNationalIdResponse {
-  national_id: string | null;
-  national_id_type: NationalIdType;
-}
 
 export interface VisitStartPayload {
-  // Transitional (identity removal): staging is identity-free; the field is
-  // gone from the UI and disappears from the contract with the backend B2 step.
-  patient_id?: string;
   chief_complaint?: string | null;
   visit_type?: VisitType | null;
   // Document template. Omitted/'consultation' → the default Амбулаторен лист;
@@ -295,34 +193,6 @@ export interface VisitStartPayload {
 
 export interface VisitStartResponse {
   consultation_id: string;
-  // null when the visit was staged without a patient (the identity-free path).
-  patient_summary: PatientSummary | null;
-}
-
-export interface TodayPatientStub {
-  id: string;
-  first_name: string;
-  middle_name: string | null;
-  last_name: string;
-}
-
-export interface TodayConsultation {
-  id: string;
-  status: string;
-  created_at: string;
-  started_at: string | null;
-  exported_at: string | null;
-  osnovna_diagnoza: string | null;
-  visit_type: VisitType | null;
-  chief_complaint: string | null;
-  patient: TodayPatientStub | null;
-}
-
-export interface TodayResponse {
-  date: string;
-  total: number;
-  done: number;
-  consultations: TodayConsultation[];
 }
 
 // ── Notes library (identity-free) ───────────────────────────────────────────
@@ -348,40 +218,15 @@ export interface ConsultationListResponse {
   limit: number;
 }
 
-// ── Patient history (Phase 3) ────────────────────────────────────────────────
-// Lightweight summary returned by GET /api/patients/:id/consultations.
-// Deliberately a subset of LastVisitSummary so the paginated list payload
-// stays small — full note fetched on click via GET /api/consultations/:id.
-export interface PatientConsultationSummary {
-  id: string;
-  status: string;
-  created_at: string;
-  visit_type: VisitType | null;
-  osnovna_diagnoza: string | null;
-  chief_complaint: string | null;
-}
-
-export interface PatientConsultationsResponse {
-  consultations: PatientConsultationSummary[];
-  total: number;
-  has_more: boolean;
-  offset: number;
-  limit: number;
-}
-
 // Returned by GET /api/consultations/:id. `note` reuses TranscribeFields —
 // the same shape /api/transcribe produces and /edit overwrites — so the
 // read-only history viewer can share field-rendering with the result page.
 // `note: null` is the normal empty case for pending/error/abandoned visits.
 export interface ConsultationDetail {
   id: string;
-  // patient_id + consent_to_record_at are additive fields the GET /:id handler
-  // now returns (cross-repo: tubermed-backend). They drive cold-start recovery:
-  // patient_id lets the frontend re-fetch the full PatientSummary for the header;
-  // consent_to_record_at suppresses a redundant consent re-prompt on recovery.
-  // patient_id is nullable — legacy / never-staged rows have none (treated as
-  // unrecoverable by useColdStartRecovery).
-  patient_id: string | null;
+  // consent_to_record_at drives cold-start recovery: it suppresses a redundant
+  // consent re-prompt after a hard refresh. (The row's patient_id, still
+  // returned by the backend until the column is dropped, is ignored here.)
   status: string;
   created_at: string;
   started_at: string | null;
@@ -408,9 +253,6 @@ export interface ConsultationDetailResponse {
 // rebuild it from the URL via useColdStartRecovery.
 export interface PendingVisit {
   consultation_id: string;
-  // Transitional (identity removal): a legacy sessionStorage payload may still
-  // carry the patient loaded at staging; new visits stage without one.
-  patient?: PatientSummary | null;
   // Staging timestamp (ISO) — rendered in the visit header strip.
   created_at?: string | null;
   visit_metadata: {

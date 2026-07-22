@@ -5,7 +5,7 @@
 import type { StepperStep } from '@/components/Stepper';
 
 export const SCRIBE_FLOW_STEPS: StepperStep[] = [
-  { label: 'Вход',     sublabel: 'Пациент'     },
+  { label: 'Вход',     sublabel: 'Преглед'     },
   { label: 'Запис',    sublabel: 'Консултация' },
   { label: 'Обработка', sublabel: 'AI анализ'   },
   { label: 'Резултат', sublabel: 'Документ'    },
