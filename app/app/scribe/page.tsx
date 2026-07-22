@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 import AppShell from '@/components/AppShell';
 import Stepper from '@/components/Stepper';
-import PatientHeaderStrip from '@/components/PatientHeaderStrip';
+import VisitHeaderStrip from '@/components/VisitHeaderStrip';
 import { SCRIBE_FLOW_STEPS } from '@/lib/flow';
 import {
   api,
@@ -368,7 +368,7 @@ function ScribePageInner() {
   return (
     <AppShell doctor={doctor} sidebarLocked={navLocked}>
       <Stepper steps={SCRIBE_FLOW_STEPS} current={stepperCurrent} />
-      {pendingVisit && <PatientHeaderStrip pending={pendingVisit} />}
+      {pendingVisit && <VisitHeaderStrip pending={pendingVisit} />}
       {/* U1 — the recording surface fits the viewport with no stray scroll.
           flex-1 + min-h-0 lets this region shrink WITHIN <main>: a flex child
           defaults to min-height:auto, which refuses to shrink below its content

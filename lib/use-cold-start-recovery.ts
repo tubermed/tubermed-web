@@ -2,21 +2,22 @@
 
 // ── Cold-start recovery for the scribe flow ─────────────────────────────────
 // On a hard refresh / new tab / laptop-sleep, the in-memory + sessionStorage
-// patient context (tuber_pending_visit / tuber_last_result) is gone, and the
+// visit context (tuber_pending_visit / tuber_last_result) is gone, and the
 // scribe pages would otherwise bounce to /app/new-visit. This hook recovers
 // from the URL (?visit=<consultation_id>) instead:
-//   1. GET /api/consultations/:id  → status + patient_id + note + consent ts
-//   2. GET /api/patients/:id        → full PatientSummary (for the header)
+//   GET /api/consultations/:id → status + visit metadata + note + consent ts
 // It assembles a PendingVisit-shaped object so existing components consume it
 // unchanged, and centralizes the status→destination matrix from the STEP 4
 // investigation report.
 //
+// Identity-free by design: recovery reads nothing but the consultation row —
+// the visit header renders from the row's own metadata.
+//
 // Runs ONLY when `visitId` is non-null — the pages pass null on the happy path
 // (sessionStorage present), so this never fires there.
 //
-// Unrecoverable (no patient_id on the row, 404, decrypt/network failure) →
-// redirect to /app/new-visit with a one-shot notice. We never render a
-// header-less / faked screen.
+// Unrecoverable (404, cross-org, network failure) → redirect to /app/new-visit
+// with a one-shot notice. We never render a faked screen.
 
 import { useEffect, useState } from 'react';
 import { api, ApiError, clearSession } from '@/lib/api';
@@ -104,13 +105,6 @@ export function useColdStartRecovery(
       try {
         const { consultation } = await api.getConsultation(visitId);
 
-        // No patient on the row (legacy / never-staged) → can't rebuild the
-        // header faithfully. Don't fake it.
-        if (!consultation.patient_id) {
-          redirect('/app/new-visit', 'visit_unavailable');
-          return;
-        }
-
         const dest = decide(
           page,
           consultation.status,
@@ -121,16 +115,13 @@ export function useColdStartRecovery(
           redirect(dest.to, dest.notice);
           return;
         }
-
-        // Rebuild the patient header. getPatient returns { patient, last_visits }
-        // — unwrap .patient (this repo has a documented response-unwrap-bug
-        // history; do not pass the wrapper through).
-        const detail = await api.getPatient(consultation.patient_id, 'history_view');
         if (cancelled) return;
 
+        // Rebuild the visit header from the row's own metadata — no patient
+        // fetch, no identity.
         const pendingVisit: PendingVisit = {
           consultation_id: consultation.id,
-          patient: detail.patient,
+          created_at: consultation.created_at,
           visit_metadata: {
             chief_complaint: consultation.chief_complaint,
             visit_type: consultation.visit_type,
@@ -156,7 +147,7 @@ export function useColdStartRecovery(
           redirect('/app/login');
           return;
         }
-        // 404 / cross-org / network / decrypt failure → unrecoverable.
+        // 404 / cross-org / network failure → unrecoverable.
         redirect('/app/new-visit', 'visit_unavailable');
       }
     })();

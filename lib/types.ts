@@ -377,12 +377,16 @@ export interface ConsultationDetailResponse {
   consultation: ConsultationDetail;
 }
 
-// Stored in sessionStorage to carry patient context from /app/new-visit
-// through /app/scribe to /app/scribe/result. The page that finds this absent
-// on /app/scribe redirects back to /app/new-visit (no recovery path yet).
+// Stored in sessionStorage to carry visit context from /app/new-visit
+// through /app/scribe to /app/scribe/result. On a hard refresh the pages
+// rebuild it from the URL via useColdStartRecovery.
 export interface PendingVisit {
   consultation_id: string;
-  patient: PatientSummary;
+  // Transitional (identity removal): a legacy sessionStorage payload may still
+  // carry the patient loaded at staging; new visits stage without one.
+  patient?: PatientSummary | null;
+  // Staging timestamp (ISO) — rendered in the visit header strip.
+  created_at?: string | null;
   visit_metadata: {
     chief_complaint: string | null;
     visit_type: VisitType | null;

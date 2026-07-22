@@ -14,7 +14,7 @@ import MedsPanel from '@/components/MedsPanel';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Button } from '@/components/ui/Button';
 import { NoteSectionHead } from '@/components/ui/NoteSection';
-import PatientHeaderStrip from '@/components/PatientHeaderStrip';
+import VisitHeaderStrip from '@/components/VisitHeaderStrip';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import { api, ApiError, getSession } from '@/lib/api';
 import type { DoctorInfo } from '@/lib/api';
@@ -1323,7 +1323,7 @@ function ResultPageInner() {
     <AppShell doctor={doctor}>
       <Stepper steps={SCRIBE_FLOW_STEPS} current={3} />
 
-      {pendingVisit && <PatientHeaderStrip pending={pendingVisit} />}
+      {pendingVisit && <VisitHeaderStrip pending={pendingVisit} />}
 
       {/* Critical safety banner — full width */}
       {criticals.length > 0 && (
@@ -2010,7 +2010,7 @@ function ResultPageInner() {
         onClose={() => setSummaryOpen(false)}
         onToast={showToast}
         patientName={
-          pendingVisit
+          pendingVisit?.patient
             ? [pendingVisit.patient.first_name, pendingVisit.patient.last_name]
                 .filter(Boolean)
                 .join(' ')
@@ -2584,6 +2584,6 @@ function DiagnosesSection({
   );
 }
 
-// PatientHeaderStrip + visitTypeLabel previously lived here as local functions;
-// extracted to components/PatientHeaderStrip.tsx so /app/scribe and
+// The header strip + visitTypeLabel previously lived here as local functions;
+// extracted to components/VisitHeaderStrip.tsx so /app/scribe and
 // /app/scribe/result render the exact same strip from one source.
