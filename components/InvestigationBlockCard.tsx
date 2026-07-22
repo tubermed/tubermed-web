@@ -91,12 +91,17 @@ export default function InvestigationBlockCard({
 
           return (
             <div key={section.key}>
-              <div
-                className="text-xs uppercase tracking-wider font-medium mb-2"
-                style={{ color: 'var(--color-text-muted)' }}
-              >
-                {section.title}
-              </div>
+              {/* A section titled identically to the card (the ЕКГ light
+                  block's single main section) would just repeat the header —
+                  skip it; the row labels carry the structure. */}
+              {section.title !== descriptor.title && (
+                <div
+                  className="text-xs uppercase tracking-wider font-medium mb-2"
+                  style={{ color: 'var(--color-text-muted)' }}
+                >
+                  {section.title}
+                </div>
+              )}
               <div className="space-y-3">
                 {section.fields.map((f) => {
                   const flags = flagsByField[spanKeyFor(f)] || [];
