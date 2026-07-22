@@ -21,7 +21,7 @@
 // Card chrome stays flat (hairline border, no elevation) — the note sheet is
 // "one calm sheet"; elevation is reserved for the safety rail.
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   MeasurementRow,
   TextRow,
@@ -29,6 +29,7 @@ import {
   readText,
   spanKeyFor,
 } from '@/components/EchoNoteView';
+import { blockParagraph } from '@/lib/exporters';
 import { getInvestigationBlockDescriptor } from '@/lib/investigation-blocks';
 import type { EchoMeasurement, InvestigationBlock, UncertainSpan } from '@/lib/types';
 
@@ -63,7 +64,23 @@ export default function InvestigationBlockCard({
 
   const descriptor =
     block && typeof block.type === 'string' ? getInvestigationBlockDescriptor(block.type) : undefined;
+
+  // Paragraph-style blocks (ЕКГ) display as the SAME single sentence the
+  // exporters emit — blockParagraph is the shared source of truth, so the
+  // on-screen line and the export can't drift. The per-field editors (the
+  // structure that keeps chestota a number, aliases correcting, and the
+  // no-diagnosis guarantee) stay underneath, revealed by „Редактирай".
+  const [expanded, setExpanded] = useState(false);
+  const isParagraph = descriptor?.renderStyle === 'paragraph';
+  const paragraph = descriptor && isParagraph && fields ? blockParagraph(fields, descriptor.sections) : '';
+  const hasFlags = Object.keys(flagsByField).length > 0;
   if (!descriptor || !fields) return null;
+
+  // Rows show for grid-style blocks always; for paragraph-style blocks when
+  // the doctor expands to edit, when there is nothing to read as prose yet,
+  // or when amber flags need their rows (flag notes render on the field).
+  const showRows = !isParagraph || expanded || !paragraph || hasFlags;
+  const showToggle = isParagraph && editable && paragraph !== '' && !hasFlags;
 
   return (
     <section
@@ -75,7 +92,24 @@ export default function InvestigationBlockCard({
         style={{ color: 'var(--color-ink)' }}
       >
         <span aria-hidden>◇</span> {descriptor.title}
+        {showToggle && (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((v) => !v)}
+            className="ml-auto text-xs font-normal underline-offset-2 hover:underline focus-ring rounded px-1"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            {expanded ? 'Свий' : 'Редактирай'}
+          </button>
+        )}
       </div>
+      {!showRows && (
+        <p className="text-sm whitespace-pre-wrap m-0" style={{ color: 'var(--color-text)' }}>
+          {paragraph}
+        </p>
+      )}
+      {showRows && (
       <div className="space-y-5">
         {descriptor.sections.map((section) => {
           // Same sparse-readout rule as the standalone echo document: a section
@@ -130,6 +164,7 @@ export default function InvestigationBlockCard({
           );
         })}
       </div>
+      )}
     </section>
   );
 }

@@ -296,14 +296,17 @@ function serializableBlocks(blocks: InvestigationBlock[] | undefined): Serializa
 // sentence („Синусов ритъм, 68 уд/мин, нормална електрична ос, без исхемични
 // промени."), never a stack of label/value rows. Заключение, when dictated,
 // is appended as a labelled final sentence.
-function blockParagraph(b: SerializableBlock): string {
+// EXPORTED as the single source of truth for the paragraph wording:
+// InvestigationBlockCard renders the SAME string on-screen, so the card and
+// the three exporters cannot drift.
+export function blockParagraph(fields: EchoFields, sections: EchoSectionDescriptor[]): string {
   const parts: string[] = [];
   let conclusion = '';
-  for (const section of b.sections) {
+  for (const section of sections) {
     for (const fld of section.fields) {
       const val = fld.kind === 'measurement'
-        ? echoMeasurementText(b.fields, fld.path, fld.unit)
-        : fieldText(readEchoPath(b.fields, fld.path) as string | undefined);
+        ? echoMeasurementText(fields, fld.path, fld.unit)
+        : fieldText(readEchoPath(fields, fld.path) as string | undefined);
       if (!val) continue;
       if (section.key === 'zakljuchenie') conclusion = val;
       else parts.push(val);
@@ -324,7 +327,7 @@ function blockParagraph(b: SerializableBlock): string {
 // standalone echo paste-block emits (sans its document header), Заключение last.
 function blockPlainText(b: SerializableBlock): string {
   if (b.renderStyle === 'paragraph') {
-    const para = blockParagraph(b);
+    const para = blockParagraph(b.fields, b.sections);
     return para ? `${b.title}: ${para}` : '';
   }
   const { sectionLines, conclusion } = templatePlainBody(b.fields, b.sections);
@@ -343,7 +346,7 @@ function blockPlainText(b: SerializableBlock): string {
 // the standalone echo report, one visual level below the Изследвания h2.
 function blockHtml(b: SerializableBlock): string {
   if (b.renderStyle === 'paragraph') {
-    const para = blockParagraph(b);
+    const para = blockParagraph(b.fields, b.sections);
     if (!para) return '';
     return `<div style="margin:10px 0 14px"><div style="font-size:11.5pt;color:#1F3A5F;font-weight:600;margin:12px 0 0">◇ ${escapeHtml(b.title)}</div>` +
       `<p style="font-size:11pt;color:#1F2933;white-space:pre-wrap;margin:4px 0">${escapeHtml(para)}</p></div>`;
