@@ -7,8 +7,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 # What this repo is
 
 TuberMed's frontend: Next.js 16 app on Vercel (`app.tubermed.com`) — the doctor-facing
-workspace (new-visit form, scribe recording, editable Амбулаторен лист, exports) plus the
-public marketing landing. The API is `tubermed-backend/` (Node/Express on Railway EU) —
+workspace (identity-free start-visit card, notes library, scribe recording, editable
+Амбулаторен лист, exports) plus the public marketing landing. The API is `tubermed-backend/` (Node/Express on Railway EU) —
 its contract and gates are documented in that repo's `CLAUDE.md`. All user-facing strings
 are Bulgarian; code, comments, and commit messages are English.
 
@@ -16,8 +16,9 @@ are Bulgarian; code, comments, and commit messages are English.
 
 - The doctor is the legal author: notes are editable, approval (`✓ Потвърждавам`) gates
   export and the patient summary — never bypass or fake the approval state client-side.
-- PII discipline: plaintext ЕГН only per the workflow rules below; no PII in URLs,
-  browser history, logs, or commits (fake ЕГНs/names only in tests and fixtures).
+- No patient identity: TuberMed keeps **no patient records** — there is no ЕГН or name
+  field anywhere in the workspace (identity removal, 2026-07). No PII in URLs, browser
+  history, `sessionStorage`, logs, or commits; synthetic data only in tests and fixtures.
 - EU-only browser traffic: cross-origin requests go to the EU backend and EU Sentry
   ingest ONLY (enforced by the derived CSP `connect-src`). Note: the backend's own
   extraction call currently goes to US `api.anthropic.com` pending the Bedrock EU
@@ -63,22 +64,31 @@ runner in this repo — verify interactive behavior in a live local browser (pre
 tools freeze CSS transitions/rAF — don't trust them for animated state; say what you
 couldn't exercise headlessly).
 
-# New-visit ЕГН workflow
+# Identity-free visit start + notes library
 
-`app/(workspace)/app/new-visit/page.tsx` + `components/PatientForm.tsx` — deliberate rules, do NOT "simplify":
+The workspace keeps **no patient records** — no ЕГН/name field, no search, no dedup. The
+whole patient surface (`PatientForm`, `PatientSearch`, `PatientResultRow`,
+`PatientLoadConfirmModal`, `EgnSwitchGuardModal`, `DedupModal`, `RevealEgnButton`,
+`TodayConsultations`, `lib/egn.ts`, `lib/national-id.ts`, `lib/age.ts`, the `/app/patients`
+page + its nav entry) was **removed** (W1–W3, `45b0dac`→`9eda9cb`). Do NOT reintroduce any of it.
 
-1. **Submit gate:** `canSubmit` includes `!egnInvalid` (egn, 10 digits, DOB underivable). Keep the gate.
-
-2. **Lookup lives INSIDE the form — no top search bar** (`PatientSearch`: patients page only).
-   (A) **Name typeahead:** Име/Презиме/Фамилия debounce `searchPatients` (fuzzy, transliterated) → dropdown. Ambiguous → a pick opens `PatientLoadConfirmModal`: [Зареди данни] loads the full record (incl. allergies/chronic — drug-safety); [Отказ] keeps the typed name, reopens the dropdown. The only confirm-before-load path.
-   (B) **Full valid 10-digit ЕГН → instant auto-load:** derives DOB/gender/age locally (no network) AND fires the backend exact-hash lookup. Match → auto-loads IMMEDIATELY (no dropdown/click); no match → new patient with derived fields. Backstop: the name appears instantly — a typo surfaces the wrong patient.
-   `EgnField` owns all ЕГН input, keyed by patient id (stale-guard resets). "× Изчисти" → `handleClearSelection`: direct `setForm(EMPTY_FORM)`, bypassing the interceptor.
-
-3. **Plaintext ЕГН on new-visit ONLY** (no mask/reveal link/"Смени"); patients page keeps masked last-4 + `RevealEgnButton` + 30s auto-hide. `fromPatient()` blanks `national_id` for ALL callers — plaintext NEVER comes from `getPatient`/search (GDPR). (a) auto-load re-applies the doctor-typed value; (b) typeahead: audit-logged `revealNationalId` ONCE on confirm-load (confirm = authorization; no auto-hide). Fetch plaintext ONLY via `revealNationalId`.
-
-4. **ЕГН-switch guard (`EgnSwitchGuardModal`).** Loaded patient with unsaved record edits + ЕГН change → HELD; modal lists changed fields (`changedEditableLabels`). [Запази] PATCHes the current patient FIRST (edits never lost), then swaps to an empty form + new ЕГН + derived DOB/gender; `chief_complaint` + `visit_type` CLEARED on BOTH patient-change paths — NO path may carry one patient's visit context to another; do NOT restore preserving. [Отказ] reverts, keeps edits. Fires on the FIRST divergence. `changedEditableLabels` EXCLUDES `birth_date`/`gender` (derived; including them misfired; still PATCHed via `persistPatient`). No unsaved edits → no guard; once the ID is invalid for its type (egn = 10 digits + DOB + checksum; lnch = 10 digits; foreign = non-empty; `shouldDropLoadedPatient`, `lib/national-id.ts`), `handleFormChange` DROPS the patient (clears identity + visit context; valid retype re-loads). Save-time last4 guard (`handleSaveDraft`/`handleStartVisit`) backstops a valid-but-different id.
-
-5. DEFERRED: patient-switch edit migration; revisit only if pilots ask.
+- **Start a visit (`components/StartVisitCard.tsx`).** `app/(workspace)/app/new-visit/page.tsx`
+  is one click from empty page to recording: visit type + document template + optional chief
+  complaint + „Започни запис" — **no submit gate and no identifier field**. Staging POSTs no
+  `patient_id` (backend `visits/start` accepts this); the `PendingVisit` payload carries visit
+  context only, and `sessionStorage` holds zero identity.
+- **Notes library (`components/NotesLibrary.tsx`).** The path to every note: `GET /api/consultations`
+  rendered newest-first, grouped by Sofia day, `status`-filterable, paginated („Покажи още").
+  Rows are the visit's auto-generated label (time, chief complaint, visit type, diagnosis,
+  status pill) and link to the visit itself — result page for filed notes, scribe for in-flight
+  ones. It subsumes the old today-rail (today's visits are its newest group) and replaces the
+  patients-history view; `StatusPill` / `STATUS_LABEL` / `visitHref` are shared from here.
+- **Visit header (`components/VisitHeaderStrip.tsx`, replaces `PatientHeaderStrip`).** Rebuilt
+  from the consultation row's OWN metadata (created_at, visit type, chief complaint) — never
+  a patient. The flow stepper's first stage is „Преглед", not „Пациент".
+- **Cold-start recovery (`lib/use-cold-start-recovery.ts`).** A `patient_id`-NULL row is NOT
+  unrecoverable — recovery no longer fetches a patient; it renders the header from the `?visit=`
+  row's metadata alone. Keep this identity-independent.
 
 # Standing rules — Sentry, CSP, design tokens
 
@@ -88,16 +98,13 @@ couldn't exercise headlessly).
 
 # Known gotchas
 
-- **P1-01 (web half OPEN):** `lib/egn.ts` `dobFromEgn` maps months 21–32 to the 1800s, no plausibility bound; a month typo shifts DOB a century. Backend 400s; `canSubmit` mirror TODO.
 - **Never "simplify" the result-page edit flush (silent data loss):** keep (1) `flushEdit` reads `fieldsRef.current`, never a captured `fields`; (2) flush-on-unmount (guard: `pendingEditField.current`). Stale closure dropped lone/last edits while `edit_count` bumped.
 - **Deploy hazard:** Vercel ships only tubermed-web, Railway only tubermed-backend — cross-repo reads ENOENT in prod. Use committed in-repo mirrors; `public/` is browser-only. Flag cross-repo runtime reads.
 - **Three review systems — never conflate:** vital-range warnings (`lib/vital-rules.ts`), amber AI-uncertainty spans (`lib/uncertain-spans.ts`, advisory, no gate), source traceability. New span surfaces: match `mkbReviewCopy`.
 - **Patient-summary 429s:** calm notice, never the red error; regenerate-429 preserves on-screen summary + unsaved edits; wording from server `error` only.
-- **patients page ~111/120:** lint errors; hoist `applyPage` above `loadPatient`.
 - **postcss CVE: DEFERRED, not reachable. NEVER `npm audit fix --force`** — installs next@9.3.3, destroys the app.
 - **`med_alerts` must flow through `mergeBackendAlerts()`** — never revert to bare `checkDrugSafety()`; `/edit` posts the FULL `fields` object. `lib/types.ts` must match the backend's JSON (contract edits touch both repos).
-- ЕГН checksum lives in BOTH repos: `lib/egn.ts` `isValidEgnChecksum` mirrors the backend's `validateEgnChecksum` — keep them in sync if the algorithm ever changes.
-- ⚠ **CROSS-REPO MIRROR INVARIANT — investigation templates:** `lib/echo-template.ts`, `lib/pacemaker-template.ts` and `lib/ekg-template.ts` are the committed display mirrors of the backend's `lib/templates/echo-v1.js` / `pacemaker-v1.js` / `ekg-v1.js` (labels/units/dot-paths/kind/refNorma, plus ЕКГ's `EKG_RENDER_STYLE`). A backend template change and its mirror must land TOGETHER (same discipline as `public/ial-inns.json`/`mkb10.json`). The echo descriptor serves BOTH the standalone echo note AND embedded `izsledvania_blocks` cards via `lib/investigation-blocks.ts` — keep both containers in lockstep; pacemaker and ekg are EMBEDDED-only (no standalone notes — backend `VALID_NOTE_TYPES` gates them) and are WORKING DRAFTS pending Соколов validation. ekg is the LIGHT block: `renderStyle:'paragraph'` makes the exporters join its values into ONE prose paragraph — don't regress it to label rows. Aliases + plausibility bounds stay backend-only.
+- ⚠ **CROSS-REPO MIRROR INVARIANT — investigation templates:** `lib/echo-template.ts`, `lib/pacemaker-template.ts` and `lib/ekg-template.ts` are the committed display mirrors of the backend's `lib/templates/echo-v1.js` / `pacemaker-v1.js` / `ekg-v1.js` (labels/units/dot-paths/kind/refNorma, plus ЕКГ's `EKG_RENDER_STYLE`). A backend template change and its mirror must land TOGETHER (same discipline as `public/ial-inns.json`/`mkb10.json`). The echo descriptor serves BOTH the standalone echo note AND embedded `izsledvania_blocks` cards via `lib/investigation-blocks.ts` — keep both containers in lockstep; pacemaker and ekg are EMBEDDED-only (no standalone notes — backend `VALID_NOTE_TYPES` gates them) and are WORKING DRAFTS pending Соколов validation. ekg is the LIGHT block: `renderStyle:'paragraph'` makes BOTH the on-screen card and the exporters render its values as ONE prose paragraph (one source of truth, `f6a36c3`) — don't regress it to label rows. Aliases + plausibility bounds stay backend-only.
 - **`izsledvania_blocks` contract (embedded investigations):** a SIBLING key on the консултация fields — ABSENT (never `[]`) when there are no blocks; `izsledvania`/`naznacheni` stay flat strings. Block-local `uncertain_spans` live inside `block.fields` with dot-path `field` keys relative to the block; block edits round-trip via those dot-paths (C6) and `/edit` still posts the FULL `fields` object. `block.source` + `field_sources` offsets index the RAW transcript — never re-derive them client-side. Don't change the shape or the 3-state source UI (намерен източник / няма ясен източник / opt-in предположение) without a cross-repo task.
 
 # History
