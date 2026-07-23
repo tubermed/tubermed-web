@@ -30,6 +30,32 @@ const src = (start: number, end: number, method = 'quote-v1'): FieldSource => ({
   assert(!!span && span.tokens.length === 1, 'scalar span has a single token range');
 }
 
+// ── 1b. G7 merge: obektivno ← vitals + obektivno_findings.* ──────────────────
+// G7 added per-finding exam grounding; obektivno now merges the dictated-vitals
+// span with each grounded finding clause into one multi-token span.
+{
+  const span = storedSpanFor('obektivno', {
+    vitals: src(40, 96),
+    'obektivno_findings.0': src(120, 150),
+    'obektivno_findings.1': src(200, 232),
+    'medications_list.0': src(300, 340), // unrelated field entry must not leak in
+  }, LEN);
+  assert(!!span && span.tokens.length === 3, 'obektivno merges vitals + two finding spans into 3 tokens');
+  assert(!!span && span.start === 40 && span.end === 232, 'obektivno span is the hull of vitals + finding tokens');
+  assert(!!span && span.tokens[0].start === 40 && span.tokens[1].start === 120 && span.tokens[2].start === 200,
+    'obektivno tokens sorted ascending regardless of key order');
+
+  // A grounded finding alone (no vitals) still resolves — the affordance lights it.
+  const findingOnly = storedSpanFor('obektivno', { 'obektivno_findings.2': src(120, 150) }, LEN);
+  assert(!!findingOnly && findingOnly.tokens.length === 1 && findingOnly.start === 120,
+    'a grounded finding alone resolves obektivno without a vitals span');
+
+  // An out-of-bounds finding is excluded; if it is the only entry, obektivno is
+  // honestly „няма ясен източник" (the G7 ungrounded-finding case).
+  assert(storedSpanFor('obektivno', { 'obektivno_findings.0': src(LEN + 5, LEN + 40) }, LEN) === null,
+    'obektivno whose only finding is out-of-bounds → null (няма ясен източник)');
+}
+
 // ── 2. Multi-item merge: terapia ← medications_list.* ────────────────────────
 {
   const span = storedSpanFor('terapia', {

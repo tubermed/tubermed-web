@@ -14,10 +14,15 @@ import type { SourceSpan } from './source-grounding';
 // fieldKey → field_sources keys. anamneza is deliberately ABSENT: narrative
 // fields are never quoted (a single quote for a whole-conversation synthesis
 // would be a confident-looking lie — the honest-null ruling). obektivno maps
-// to the dictated-vitals span only; its prose is likewise unquoted. terapia
-// maps to the per-medication spans (index-aligned to medications_list).
+// to the dictated-vitals span AND the per-finding exam spans (G7:
+// obektivno_findings.<i>, index-aligned to the exam-finding clauses), merged
+// into one multi-token span; its free-flowing prose is otherwise unquoted. An
+// ungrounded finding emits no offset, so it contributes no token — and an
+// obektivno with no grounded vitals or findings stays honestly „няма ясен
+// източник". terapia maps to the per-medication spans (index-aligned to
+// medications_list).
 const FIELD_SOURCE_LOOKUP: Record<string, { exact?: string[]; prefix?: string }> = {
-  obektivno:        { exact: ['vitals'] },
+  obektivno:        { exact: ['vitals'], prefix: 'obektivno_findings.' },
   osnovna_diagnoza: { exact: ['osnovna_diagnoza'] },
   napravlenia:      { exact: ['napravlenia'] },
   terapia:          { prefix: 'medications_list.' },
