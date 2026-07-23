@@ -251,7 +251,6 @@ export default function TuberMedHeroDesktop() {
                     <div className={`tmd-navi ${phase.screen !== 'result' ? 'on' : ''}`}>
                       <Ico n="plus" /> Нов преглед
                     </div>
-                    <div className="tmd-navi"><Ico n="users" /> Пациенти</div>
                   </nav>
                   <div className="tmd-doc"><span className="tmd-docav">ИИ</span> Д-р Иванов</div>
                 </aside>
