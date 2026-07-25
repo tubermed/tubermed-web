@@ -237,10 +237,17 @@ function LibraryRow({ item }: { item: ConsultationListItem }) {
   const status = STATUS_LABEL[item.status] ?? { text: item.status, tone: 'active' as const };
   const time = new Date(item.created_at).toLocaleTimeString('bg-BG', { hour: '2-digit', minute: '2-digit' });
 
+  // An Art-17 erasure scrubs chief_complaint along with the note, so an erased
+  // row would otherwise fall back to the bare visit type and read like an
+  // ordinary empty visit. Name it instead — the practice needs to see WHY the
+  // record is empty, and the surviving skeleton is the proof the visit happened.
+  const erased = !!item.erased_at;
   const complaint = item.chief_complaint?.trim() || null;
   const typeLabel = item.visit_type ? visitTypeLabel(item.visit_type) : null;
-  const mainLabel = complaint ?? typeLabel ?? 'Преглед';
-  const subParts = [complaint ? typeLabel : null, item.osnovna_diagnoza].filter(Boolean) as string[];
+  const mainLabel = erased ? 'Изтрито по заявка' : (complaint ?? typeLabel ?? 'Преглед');
+  const subParts = erased
+    ? ([typeLabel, 'съдържанието е премахнато'].filter(Boolean) as string[])
+    : ([complaint ? typeLabel : null, item.osnovna_diagnoza].filter(Boolean) as string[]);
 
   const body = (
     <div className="flex items-center justify-between gap-2">
@@ -248,7 +255,13 @@ function LibraryRow({ item }: { item: ConsultationListItem }) {
         <div className="text-xs tabular-nums" style={{ color: 'var(--color-text-muted)' }}>
           {time}
         </div>
-        <div className="text-sm truncate" style={{ color: 'var(--color-text)' }}>
+        <div
+          className="text-sm truncate"
+          style={{
+            color: erased ? 'var(--color-text-muted)' : 'var(--color-text)',
+            fontStyle: erased ? 'italic' : undefined,
+          }}
+        >
           {mainLabel}
         </div>
         {subParts.length > 0 && (

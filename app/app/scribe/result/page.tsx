@@ -319,12 +319,31 @@ function ResultPageInner() {
   const [sealedAt, setSealedAt] = useState<string | null>(null);
   const isSealed = sealedAt !== null;
 
+  // ── Article-17 erasure state ────────────────────────────────────────────
+  // Non-null = this note's clinical content was scrubbed on request. Distinct
+  // from „no note" (pending/error/abandoned): the visit happened, the record
+  // skeleton and the consent/approval timestamps survive, and the лист must
+  // SAY the content was removed rather than render a bare empty state.
+  const [erasedAt, setErasedAt] = useState<string | null>(null);
+  const isErased = erasedAt !== null;
+  const [eraseConfirmOpen, setEraseConfirmOpen] = useState(false);
+  const [erasing, setErasing] = useState(false);
+
   // A sealed note is APPROVED by construction (the backend only ever seals
   // approved rows), so it must never render as locked: Копирай / Печат / PDF /
   // export stay live. Sealed means cannot be changed, not cannot be used — a
   // doctor may legitimately re-copy the лист into Хипократ weeks later, and
   // unlike an unapproved note he can no longer edit-and-approve his way in.
-  const isLocked = !isSealed && reviewStatus !== 'confirmed';
+  //
+  // An ERASED note is the opposite case and wins over both: there is no content
+  // left, so exporting or summarising it would emit an empty document dressed
+  // as a лист. Lock it.
+  const isLocked = isErased || (!isSealed && reviewStatus !== 'confirmed');
+
+  // „Render as a document, not a form." True for a sealed note (closed for
+  // editing) and for an erased one (nothing left to edit — and an /edit POST
+  // from a stale tab is exactly how scrubbed content could crawl back).
+  const bodyReadOnly = isSealed || isErased;
 
   // ── Bootstrap ────────────────────────────────────────────────
   useEffect(() => {
@@ -445,6 +464,7 @@ function ResultPageInner() {
       // лист would be permanently un-exportable.
       if (recovery.noteApproved) setReviewStatus('confirmed');
       setSealedAt(recovery.sealedAt);
+      setErasedAt(recovery.erasedAt);
     }
   }, [recovery, router]);
 
@@ -473,21 +493,32 @@ function ResultPageInner() {
       try {
         const { consultation } = await api.getConsultation(reconcileVisitId);
         if (cancelled) return;
+
+        // Lifecycle state is adopted FIRST, before either bail-out below: these
+        // are server facts about the row, not a paint that could clobber a live
+        // edit. This path is how an OLD note gets opened while a previous
+        // visit's blob still sits in sessionStorage (notes-library click →
+        // ?visit=<other id> with tuber_last_result present) — miss it and a
+        // sealed лист renders fully editable, or an erased one renders the
+        // stale blob as if its content were still there.
+        if (consultation.note_approved) setReviewStatus('confirmed');
+        setSealedAt(consultation.sealed_at ?? null);
+        setErasedAt(consultation.erased_at ?? null);
+
         if (!consultation.note) {
+          // An erased note legitimately has none — blank the stale blob so the
+          // scrubbed content can't linger on screen, and say why (the erased
+          // banner renders off `erasedAt`), not „започнете нов преглед".
+          if (consultation.erased_at) {
+            setFields({});
+            return;
+          }
           if (consultation.status === 'abandoned' || consultation.status === 'error') {
             toastIdRef.current += 1;
             setToast({ kind: 'error', message: 'Бележката не е налична — започнете нов преглед', id: toastIdRef.current });
           }
           return;
         }
-        // Lifecycle state is set BEFORE the edited-fields bail-out below: the
-        // seal and the approval are server facts about this row, not a paint
-        // that could clobber a live edit, and this path is how an OLD note gets
-        // opened while a previous visit's blob still sits in sessionStorage
-        // (notes-library click → ?visit=<other id> with tuber_last_result
-        // present). Miss it and a sealed лист would render fully editable.
-        if (consultation.note_approved) setReviewStatus('confirmed');
-        setSealedAt(consultation.sealed_at ?? null);
 
         if (editedFieldsRef.current.size > 0) return;
         setFields({
@@ -556,7 +587,7 @@ function ResultPageInner() {
     // surface someone forgets to seal can still never write. (The backend
     // refuses anyway with 409 note_sealed; this just avoids a pointless
     // round-trip and a spurious edit_count bump attempt.)
-    if (isSealed) return;
+    if (bodyReadOnly) return;
     // Send the edited field name + chars_changed for analytics + the full
     // fields object for backend data sync. The chars_changed value is the
     // snapshot captured at the most recent trackEdit call within this
@@ -601,14 +632,14 @@ function ResultPageInner() {
       });
     pendingEditField.current = null;
     pendingCharsChangedRef.current = 0;
-  }, [original, isSealed]);
+  }, [original, bodyReadOnly]);
 
   const trackEdit = useCallback(
     (fieldKey: string, charsChanged: number) => {
       // A sealed note can't be edited; nothing to schedule, and the approval
       // must NOT be invalidated below (that would lock the exports on a note
       // that can never be re-approved by editing).
-      if (isSealed) return;
+      if (bodyReadOnly) return;
       pendingEditField.current = fieldKey;
       pendingCharsChangedRef.current = charsChanged;
       // Live per-field rollup map. Overwrite (not add) so the latest
@@ -619,7 +650,7 @@ function ResultPageInner() {
       editTimerRef.current = setTimeout(flushEdit, 1500);
       if (reviewStatus === 'confirmed') setReviewStatus('pending');
     },
-    [flushEdit, reviewStatus, isSealed]
+    [flushEdit, reviewStatus, bodyReadOnly]
   );
 
   // Keep a ref to the latest flushEdit so the unmount cleanup — which MUST use
@@ -1187,6 +1218,46 @@ function ResultPageInner() {
     }
   }, [original, reviewStatus, showToast]);
 
+  // ── Article-17 erasure („изтриване при поискване") ──────────────────────
+  // IRREVERSIBLE scrub-in-place of the note's clinical content. Not a delete:
+  // the record skeleton and the consent/approval timestamps survive as the
+  // practice's proof that the visit happened and was authorised.
+  //
+  // A SEALED note is still erasable — sealing decides whether the лист can
+  // still be CHANGED; it must never stand between a data subject and their
+  // right. Nothing here consults isSealed, and the backend doesn't either.
+  const eraseInFlightRef = useRef(false);
+  const runErase = useCallback(async () => {
+    if (!original || eraseInFlightRef.current) return;
+    eraseInFlightRef.current = true;
+    setErasing(true);
+    try {
+      const resp = await api.eraseConsultation(original.consultationId);
+      // Adopt the erased state in place rather than navigating away: the doctor
+      // asked for this and deserves to see it took effect on the лист they were
+      // looking at. The note body empties; the row skeleton stays.
+      setErasedAt(resp.erased_at ?? new Date().toISOString());
+      setFields({});
+      setEraseConfirmOpen(false);
+      showToast('success', 'Съдържанието на листа е изтрито по заявка.');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        // 'retrying' — a re-extraction is in flight and would re-populate the
+        // note AFTER the scrub. Transient (the 15-min sweeper bounds it), so
+        // this is a „try again", never a failure.
+        showToast('error', 'Листът се обработва в момента — опитайте пак след минута.');
+      } else {
+        showToast(
+          'error',
+          'Изтриването не бе изпълнено: ' + (err instanceof Error ? err.message : 'неизвестна грешка'),
+        );
+      }
+    } finally {
+      eraseInFlightRef.current = false;
+      setErasing(false);
+    }
+  }, [original, showToast]);
+
   // Shared callback for per-section CopyButtons — reuses the same Bulgarian
   // strings as the topbar full-document copy so the affordance feels uniform.
   const notifyCopy = useCallback(
@@ -1409,6 +1480,32 @@ function ResultPageInner() {
         </div>
       )}
 
+      {/* Article-17 erased state. Sits ABOVE the action bar because it explains
+          the whole page: without it, a scrubbed лист is just a blank form and
+          the doctor is left wondering whether something failed. Names the
+          erasure, dates it, and says what survived. */}
+      {isErased && (
+        <div
+          className="px-6 py-3 border-b"
+          style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)' }}
+        >
+          <div className="max-w-6xl mx-auto">
+            <div
+              className="text-sm font-semibold flex items-center gap-2 mb-1"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              <Icon name="alert-triangle" /> Съдържанието е изтрито по заявка
+              {erasedAt && <span className="font-normal">· {formatSealedAt(erasedAt)}</span>}
+            </div>
+            <div className="text-xs leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
+              Клиничният текст и транскрипцията са премахнати необратимо. Записът
+              за прегледа — дата, вид на посещението и отметките за съгласие и
+              потвърждение — остава.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top action bar */}
       <div
         className="px-6 py-3 border-b flex items-center justify-between gap-4 flex-wrap no-print"
@@ -1431,7 +1528,7 @@ function ResultPageInner() {
           }
           sealedAt={sealedAt}
         />
-        {reviewItems.length > 0 && (
+        {reviewItems.length > 0 && !isErased && (
           <ReviewCounter
             total={reviewItems.length}
             cursor={reviewCursor}
@@ -1712,7 +1809,7 @@ function ResultPageInner() {
                 fields={echoFields}
                 onEditText={updateEchoText}
                 onEditMeasurement={updateEchoMeasurement}
-                sealed={isSealed}
+                sealed={bodyReadOnly}
               />
             ) : (
             <>
@@ -1730,7 +1827,7 @@ function ResultPageInner() {
               onComorbidityBrowse={(i) => openMkbPicker({ kind: 'co', index: i })}
               onComorbidityAddBrowse={() => openMkbPicker({ kind: 'co-add' })}
               onComorbidityRemove={removeComorbidity}
-              sealed={isSealed}
+              sealed={bodyReadOnly}
               onShowSource={() =>
                 showSource(
                   'osnovna_diagnoza',
@@ -1753,7 +1850,7 @@ function ResultPageInner() {
               fieldKey="anamneza"
               value={fields.anamneza || ''}
               onChange={(v) => updateField('anamneza', v)}
-              readOnly={isSealed}
+              readOnly={bodyReadOnly}
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('anamneza', raw)}
               uncertainSpans={uncertainByField.anamneza}
@@ -1781,7 +1878,7 @@ function ResultPageInner() {
               fieldKey="obektivno"
               value={fields.obektivno || ''}
               onChange={(v) => updateField('obektivno', v)}
-              readOnly={isSealed}
+              readOnly={bodyReadOnly}
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('obektivno', raw)}
               uncertainSpans={uncertainByField.obektivno}
@@ -1822,7 +1919,7 @@ function ResultPageInner() {
                           block={b}
                           onEditText={(p, v) => updateBlockText(i, p, v)}
                           onEditMeasurement={(p, m) => updateBlockMeasurement(i, p, m)}
-                          sealed={isSealed}
+                          sealed={bodyReadOnly}
                         />
                       ))}
                     </div>
@@ -1849,7 +1946,7 @@ function ResultPageInner() {
                       onAcknowledge={(raw) => acknowledgeSpan('izsledvania', raw)}
                       uncertainSpans={uncertainByField.izsledvania}
                       onAcknowledgeUncertain={(orig) => acknowledgeUncertain('izsledvania', orig)}
-                      readOnly={isSealed}
+                      readOnly={bodyReadOnly}
                     />
                   </div>
                 )}
@@ -1874,7 +1971,7 @@ function ResultPageInner() {
                       highlightVitals={false}
                       uncertainSpans={uncertainByField.naznacheni}
                       onAcknowledgeUncertain={(orig) => acknowledgeUncertain('naznacheni', orig)}
-                      readOnly={isSealed}
+                      readOnly={bodyReadOnly}
                     />
                   </div>
                 )}
@@ -1891,7 +1988,7 @@ function ResultPageInner() {
                       onAcknowledge={(raw) => acknowledgeSpan('izsledvania', raw)}
                       uncertainSpans={uncertainByField.izsledvania}
                       onAcknowledgeUncertain={(orig) => acknowledgeUncertain('izsledvania', orig)}
-                      readOnly={isSealed}
+                      readOnly={bodyReadOnly}
                     />
                   )}
               </div>
@@ -1903,7 +2000,7 @@ function ResultPageInner() {
               fieldKey="terapia"
               value={fields.terapia || ''}
               onChange={(v) => updateField('terapia', v)}
-              readOnly={isSealed}
+              readOnly={bodyReadOnly}
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('terapia', raw)}
               uncertainSpans={uncertainByField.terapia}
@@ -1949,7 +2046,7 @@ function ResultPageInner() {
                       highlightVitals={false}
                       uncertainSpans={uncertainByField.napravlenia}
                       onAcknowledgeUncertain={(orig) => acknowledgeUncertain('napravlenia', orig)}
-                      readOnly={isSealed}
+                      readOnly={bodyReadOnly}
                     />
                   </div>
                 )}
@@ -1990,7 +2087,7 @@ function ResultPageInner() {
               lastRemovedName={lastRemovedMedName}
               onClearRemovedHint={() => setLastRemovedMedName(null)}
               isLocked={isLocked}
-              sealed={isSealed}
+              sealed={bodyReadOnly}
               notifyCopy={notifyCopy}
               onMedsCopied={(scope, medCount) => {
                 // Fire-and-forget — a failed network call must never affect
@@ -2079,10 +2176,42 @@ function ResultPageInner() {
                   <Icon name={isLocked ? 'lock' : 'printer'} /> Печат
                 </span>
               </button>
+
+              {/* Article 17. Set apart below a rule and in danger colours — it
+                  is irreversible and must never sit shoulder-to-shoulder with
+                  the everyday actions. Available on a SEALED note too: sealing
+                  blocks changes, never the data subject's right. Hidden once
+                  erased — there is nothing left to remove. */}
+              {original && !isErased && (
+                <div
+                  className="mt-3 pt-3 border-t"
+                  style={{ borderColor: 'var(--color-border)' }}
+                >
+                  <button
+                    onClick={() => setEraseConfirmOpen(true)}
+                    className="block w-full text-center py-2 rounded-md text-xs font-medium transition border hover:bg-[var(--color-danger-soft)]"
+                    style={{
+                      borderColor: 'var(--color-border-mid)',
+                      color: 'var(--color-danger)',
+                    }}
+                  >
+                    <span className="inline-flex items-center justify-center gap-1.5">
+                      <Icon name="alert-triangle" /> Изтрий по заявка
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </aside>
       </div>
+
+      <EraseConfirmModal
+        isOpen={eraseConfirmOpen}
+        busy={erasing}
+        onCancel={() => setEraseConfirmOpen(false)}
+        onConfirm={runErase}
+      />
 
       <MkbPicker
         isOpen={mkbOpen}
@@ -2215,6 +2344,96 @@ function ReviewCounter({
       <span>{display}</span>
       <Icon name="chevron-right" size={14} />
     </button>
+  );
+}
+
+// Article-17 confirmation. Deliberately verbose about the ASYMMETRY: what goes
+// (irreversibly) and what stays. A doctor acting on a patient's request needs to
+// know the practice keeps its proof that the visit happened and was consented
+// to — otherwise „изтрий" reads as destroying the practice's own legal record
+// and nobody will dare press it.
+//
+// No „don't ask again", no auto-focus on the destructive button: this is a
+// once-in-a-while irreversible action, and a moment's friction is the point.
+function EraseConfirmModal({
+  isOpen,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  isOpen: boolean;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    if (!isOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !busy) onCancel();
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isOpen, busy, onCancel]);
+
+  if (!isOpen) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 no-print"
+      style={{ background: 'rgba(15, 23, 42, 0.45)' }}
+      onClick={() => { if (!busy) onCancel(); }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="erase-title"
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-xl shadow-xl w-full max-w-md p-5"
+        style={{ border: '1px solid var(--color-border)' }}
+      >
+        <div
+          id="erase-title"
+          className="text-base font-semibold flex items-center gap-2 mb-3"
+          style={{ color: 'var(--color-danger)' }}
+        >
+          <Icon name="alert-triangle" /> Изтриване по заявка
+        </div>
+
+        <p className="text-sm leading-relaxed mb-3" style={{ color: 'var(--color-text)' }}>
+          Съдържанието на този лист ще бъде премахнато{' '}
+          <strong>необратимо</strong> — анамнеза, обективно състояние,
+          изследвания, диагнози, терапия, както и транскрипцията на разговора.
+          Действието не може да бъде отменено.
+        </p>
+
+        <div
+          className="text-xs leading-relaxed rounded-md px-3 py-2 mb-4"
+          style={{ background: 'var(--color-bg)', color: 'var(--color-text-muted)' }}
+        >
+          Записът за самия преглед остава: дата и час, вид на посещението, както
+          и отметките за съгласие и потвърждение от лекаря. Те са доказателството
+          на практиката, че прегледът се е състоял и е бил разрешен.
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            className="flex-1 py-2 rounded-md text-sm font-medium border transition hover:bg-[var(--color-bg)] disabled:opacity-40"
+            style={{ borderColor: 'var(--color-border-mid)', color: 'var(--color-text-muted)' }}
+          >
+            Отказ
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={busy}
+            className="flex-1 py-2 rounded-md text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
+            style={{ background: 'var(--color-danger)' }}
+          >
+            {busy ? 'Изтриване…' : 'Изтрий необратимо'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

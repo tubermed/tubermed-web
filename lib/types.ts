@@ -208,6 +208,12 @@ export interface ConsultationListItem {
   visit_type: VisitType | null;
   chief_complaint: string | null;
   osnovna_diagnoza: string | null;
+  /** Article-17 erasure marker. Non-null = the clinical content was scrubbed on
+   *  request. The row must SAY so: an erased note and a note that never
+   *  generated one both arrive with osnovna_diagnoza null, and rendering a
+   *  requested erasure as an empty visit reads as „нищо не се получи".
+   *  Optional — a backend without migration 022 omits the key entirely. */
+  erased_at?: string | null;
 }
 
 export interface ConsultationListResponse {
