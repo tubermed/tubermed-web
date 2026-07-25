@@ -308,7 +308,23 @@ function ResultPageInner() {
   // Guards the export signal — fire exactly once per consultation session
   // so multiple format clicks (PDF then Word) don't double-count.
   const exportSignalledRef = useRef(false);
-  const isLocked = reviewStatus !== 'confirmed';
+  // ── The visit-over seal (backend migration 025) ──────────────────────────
+  // Non-null = the лист is closed for editing, permanently. Corrections after
+  // this happen in Хипократ, which is the practice's real record.
+  //
+  // The backend is the enforcement (POST /:id/edit → 409 note_sealed); this
+  // state only decides how the page RENDERS. It arrives from GET /:id, so it
+  // is set on cold-start recovery and on the same-tab reconcile — the two
+  // paths by which a note from an earlier visit gets reopened.
+  const [sealedAt, setSealedAt] = useState<string | null>(null);
+  const isSealed = sealedAt !== null;
+
+  // A sealed note is APPROVED by construction (the backend only ever seals
+  // approved rows), so it must never render as locked: Копирай / Печат / PDF /
+  // export stay live. Sealed means cannot be changed, not cannot be used — a
+  // doctor may legitimately re-copy the лист into Хипократ weeks later, and
+  // unlike an unapproved note he can no longer edit-and-approve his way in.
+  const isLocked = !isSealed && reviewStatus !== 'confirmed';
 
   // ── Bootstrap ────────────────────────────────────────────────
   useEffect(() => {
@@ -420,6 +436,15 @@ function ResultPageInner() {
         medications_list: normalizeMedications(note.medications_list),
       });
       setPendingVisit(recovery.pendingVisit);
+      // Restore the SERVER's lifecycle state. Without this the page reopened
+      // every filed note as unconfirmed and locked Копирай/Печат/PDF on a note
+      // the doctor had already approved — /approve is idempotent, so the
+      // re-confirm it forced was pure friction. It becomes load-bearing with
+      // the seal: a sealed note can never be edited-and-approved back into an
+      // unlocked state, so if the approval didn't survive recovery, a closed
+      // лист would be permanently un-exportable.
+      if (recovery.noteApproved) setReviewStatus('confirmed');
+      setSealedAt(recovery.sealedAt);
     }
   }, [recovery, router]);
 
@@ -455,6 +480,15 @@ function ResultPageInner() {
           }
           return;
         }
+        // Lifecycle state is set BEFORE the edited-fields bail-out below: the
+        // seal and the approval are server facts about this row, not a paint
+        // that could clobber a live edit, and this path is how an OLD note gets
+        // opened while a previous visit's blob still sits in sessionStorage
+        // (notes-library click → ?visit=<other id> with tuber_last_result
+        // present). Miss it and a sealed лист would render fully editable.
+        if (consultation.note_approved) setReviewStatus('confirmed');
+        setSealedAt(consultation.sealed_at ?? null);
+
         if (editedFieldsRef.current.size > 0) return;
         setFields({
           ...consultation.note,
@@ -516,6 +550,13 @@ function ResultPageInner() {
 
   const flushEdit = useCallback(() => {
     if (!original) return;
+    // Defence in depth against a MISSED read-only surface. Every editor on this
+    // page takes a sealed/readOnly prop, but this is the single funnel through
+    // which any of them would reach the server — so one guard here means a
+    // surface someone forgets to seal can still never write. (The backend
+    // refuses anyway with 409 note_sealed; this just avoids a pointless
+    // round-trip and a spurious edit_count bump attempt.)
+    if (isSealed) return;
     // Send the edited field name + chars_changed for analytics + the full
     // fields object for backend data sync. The chars_changed value is the
     // snapshot captured at the most recent trackEdit call within this
@@ -538,15 +579,36 @@ function ResultPageInner() {
       })
       .catch((err) => {
         if (err instanceof ApiError) {
+          // 409 note_sealed: the лист was closed while this tab had it open —
+          // the doctor started their next visit elsewhere, or the time backstop
+          // fired. Adopt the server's truth so the page stops offering an edit
+          // it cannot save, and say so plainly rather than dropping the edit in
+          // silence. The doctor's on-screen text stays; only the note is closed.
+          if (err.status === 409 && err.code === 'note_sealed') {
+            const body = err.body as { sealed_at?: string | null } | null;
+            setSealedAt(body?.sealed_at ?? new Date().toISOString());
+            setReviewStatus('confirmed');
+            toastIdRef.current += 1;
+            setToast({
+              kind: 'error',
+              message: 'Листът е приключен — промените не са запазени. Корекциите се правят в Хипократ.',
+              id: toastIdRef.current,
+            });
+            return;
+          }
           console.warn('[edit-track] ' + err.status + ' ' + err.message);
         }
       });
     pendingEditField.current = null;
     pendingCharsChangedRef.current = 0;
-  }, [original]);
+  }, [original, isSealed]);
 
   const trackEdit = useCallback(
     (fieldKey: string, charsChanged: number) => {
+      // A sealed note can't be edited; nothing to schedule, and the approval
+      // must NOT be invalidated below (that would lock the exports on a note
+      // that can never be re-approved by editing).
+      if (isSealed) return;
       pendingEditField.current = fieldKey;
       pendingCharsChangedRef.current = charsChanged;
       // Live per-field rollup map. Overwrite (not add) so the latest
@@ -557,7 +619,7 @@ function ResultPageInner() {
       editTimerRef.current = setTimeout(flushEdit, 1500);
       if (reviewStatus === 'confirmed') setReviewStatus('pending');
     },
-    [flushEdit, reviewStatus]
+    [flushEdit, reviewStatus, isSealed]
   );
 
   // Keep a ref to the latest flushEdit so the unmount cleanup — which MUST use
@@ -1367,6 +1429,7 @@ function ResultPageInner() {
               ? mkbBlockMessage(fields.mkb_review)
               : undefined
           }
+          sealedAt={sealedAt}
         />
         {reviewItems.length > 0 && (
           <ReviewCounter
@@ -1649,6 +1712,7 @@ function ResultPageInner() {
                 fields={echoFields}
                 onEditText={updateEchoText}
                 onEditMeasurement={updateEchoMeasurement}
+                sealed={isSealed}
               />
             ) : (
             <>
@@ -1666,6 +1730,7 @@ function ResultPageInner() {
               onComorbidityBrowse={(i) => openMkbPicker({ kind: 'co', index: i })}
               onComorbidityAddBrowse={() => openMkbPicker({ kind: 'co-add' })}
               onComorbidityRemove={removeComorbidity}
+              sealed={isSealed}
               onShowSource={() =>
                 showSource(
                   'osnovna_diagnoza',
@@ -1688,6 +1753,7 @@ function ResultPageInner() {
               fieldKey="anamneza"
               value={fields.anamneza || ''}
               onChange={(v) => updateField('anamneza', v)}
+              readOnly={isSealed}
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('anamneza', raw)}
               uncertainSpans={uncertainByField.anamneza}
@@ -1715,6 +1781,7 @@ function ResultPageInner() {
               fieldKey="obektivno"
               value={fields.obektivno || ''}
               onChange={(v) => updateField('obektivno', v)}
+              readOnly={isSealed}
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('obektivno', raw)}
               uncertainSpans={uncertainByField.obektivno}
@@ -1755,6 +1822,7 @@ function ResultPageInner() {
                           block={b}
                           onEditText={(p, v) => updateBlockText(i, p, v)}
                           onEditMeasurement={(p, m) => updateBlockMeasurement(i, p, m)}
+                          sealed={isSealed}
                         />
                       ))}
                     </div>
@@ -1781,6 +1849,7 @@ function ResultPageInner() {
                       onAcknowledge={(raw) => acknowledgeSpan('izsledvania', raw)}
                       uncertainSpans={uncertainByField.izsledvania}
                       onAcknowledgeUncertain={(orig) => acknowledgeUncertain('izsledvania', orig)}
+                      readOnly={isSealed}
                     />
                   </div>
                 )}
@@ -1805,6 +1874,7 @@ function ResultPageInner() {
                       highlightVitals={false}
                       uncertainSpans={uncertainByField.naznacheni}
                       onAcknowledgeUncertain={(orig) => acknowledgeUncertain('naznacheni', orig)}
+                      readOnly={isSealed}
                     />
                   </div>
                 )}
@@ -1821,6 +1891,7 @@ function ResultPageInner() {
                       onAcknowledge={(raw) => acknowledgeSpan('izsledvania', raw)}
                       uncertainSpans={uncertainByField.izsledvania}
                       onAcknowledgeUncertain={(orig) => acknowledgeUncertain('izsledvania', orig)}
+                      readOnly={isSealed}
                     />
                   )}
               </div>
@@ -1832,6 +1903,7 @@ function ResultPageInner() {
               fieldKey="terapia"
               value={fields.terapia || ''}
               onChange={(v) => updateField('terapia', v)}
+              readOnly={isSealed}
               acknowledged={acknowledged}
               onAcknowledge={(raw) => acknowledgeSpan('terapia', raw)}
               uncertainSpans={uncertainByField.terapia}
@@ -1877,6 +1949,7 @@ function ResultPageInner() {
                       highlightVitals={false}
                       uncertainSpans={uncertainByField.napravlenia}
                       onAcknowledgeUncertain={(orig) => acknowledgeUncertain('napravlenia', orig)}
+                      readOnly={isSealed}
                     />
                   </div>
                 )}
@@ -1917,6 +1990,7 @@ function ResultPageInner() {
               lastRemovedName={lastRemovedMedName}
               onClearRemovedHint={() => setLastRemovedMedName(null)}
               isLocked={isLocked}
+              sealed={isSealed}
               notifyCopy={notifyCopy}
               onMedsCopied={(scope, medCount) => {
                 // Fire-and-forget — a failed network call must never affect
@@ -1968,6 +2042,23 @@ function ResultPageInner() {
                 style={{ background: 'var(--gradient-brand)' }}
                 onClick={() => {
                   sessionStorage.removeItem(RESULT_STORAGE_KEY);
+                  // The doctor is deliberately leaving this visit — close the
+                  // лист now rather than waiting for a backstop. Best-effort
+                  // ONLY: the enforceable triggers are the next
+                  // POST /api/visits/start and the hourly time backstop, so a
+                  // failed call costs nothing and must never block the nav.
+                  //
+                  // Wired HERE and nowhere else — deliberately not on unmount or
+                  // beforeunload. The seal has no unlock, so a hard refresh must
+                  // never close a note the doctor is still working on.
+                  //
+                  // An unapproved draft answers { sealed: false } and stays
+                  // editable, so an interrupted note is safe to walk away from.
+                  if (original) {
+                    api.sealConsultation(original.consultationId).catch(() => {
+                      /* a backstop will seal it — nothing to tell the doctor */
+                    });
+                  }
                 }}
               >
                 + Нова консултация
@@ -2127,6 +2218,17 @@ function ReviewCounter({
   );
 }
 
+// Sofia-local, day-precision. The seal instant only ever appears as reassurance
+// („this лист was closed then"), never as something to act on, so the date is
+// enough and a bare ISO string would read as debug output.
+function formatSealedAt(iso: string): string {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return '—';
+  return new Intl.DateTimeFormat('bg-BG', {
+    timeZone: 'Europe/Sofia', day: 'numeric', month: 'long', year: 'numeric',
+  }).format(new Date(t));
+}
+
 function StatusBadge({
   status,
   popupOpen,
@@ -2135,6 +2237,7 @@ function StatusBadge({
   onDismiss,
   blocked = false,
   blockHint,
+  sealedAt = null,
 }: {
   status: ReviewStatus;
   popupOpen: boolean;
@@ -2144,8 +2247,29 @@ function StatusBadge({
   /** МКБ gate — when true, the confirm action is disabled (invalid/missing code). */
   blocked?: boolean;
   blockHint?: string;
+  /** Non-null = the лист is sealed (visit over, closed for editing). Replaces
+   *  the badge with a terminal state, so the reason the body is inert is
+   *  obvious at a glance rather than something the doctor has to deduce from a
+   *  field that won't take a click. Not a button: there is no unlock. */
+  sealedAt?: string | null;
 }) {
   const isConfirmed = status === 'confirmed';
+
+  if (sealedAt) {
+    return (
+      <div
+        className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium"
+        style={{ background: 'var(--color-ok-soft)', color: 'var(--color-ok)' }}
+        title={`Приключен на ${formatSealedAt(sealedAt)} — редакциите се правят в Хипократ.`}
+      >
+        <span className="w-2 h-2 rounded-full" style={{ background: 'var(--color-ok)' }} />
+        <span className="inline-flex items-center gap-1.5">
+          <Icon name="check" /> Потвърден и затворен — само за преглед
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div className="relative">
       <button
@@ -2401,6 +2525,7 @@ function TextSection({
   uncertainSpans,
   onAcknowledgeUncertain,
   headerRight,
+  readOnly = false,
 }: {
   id: string;
   title: string;
@@ -2413,6 +2538,8 @@ function TextSection({
   uncertainSpans?: ResolvedUncertainSpan[];
   onAcknowledgeUncertain?: (original: string) => void;
   headerRight?: React.ReactNode;
+  /** Sealed лист — the section renders as a document (see EditableField). */
+  readOnly?: boolean;
 }) {
   return (
     <div id={id} className="scroll-mt-24">
@@ -2425,7 +2552,44 @@ function TextSection({
         onAcknowledge={onAcknowledge}
         uncertainSpans={uncertainSpans}
         onAcknowledgeUncertain={onAcknowledgeUncertain}
+        readOnly={readOnly}
       />
+    </div>
+  );
+}
+
+// A filed diagnosis on a sealed лист: the МКБ code + its official term, as a
+// line of the document. Deliberately not a disabled MkbTypeahead — a search box
+// that won't search reads as broken. Same height and horizontal rhythm as the
+// typeahead it replaces so the section doesn't reflow between the two states.
+function DiagnosisLine({
+  code,
+  term,
+  invalid = false,
+}: {
+  code: string;
+  term: string;
+  /** Keeps a filed-but-invalid code visually flagged — the note is closed, but
+   *  the reader still deserves to see that its code never validated. */
+  invalid?: boolean;
+}) {
+  const hasCode = code.trim().length > 0;
+  return (
+    <div className="flex-1 min-w-0 px-3 py-2 text-sm flex items-baseline gap-2">
+      {hasCode && (
+        <span
+          className="font-semibold flex-shrink-0"
+          style={{ color: invalid ? 'var(--color-red)' : 'var(--color-brand)' }}
+        >
+          {code.trim()}
+        </span>
+      )}
+      <span
+        className="min-w-0 break-words [overflow-wrap:anywhere]"
+        style={{ color: term.trim() ? 'var(--color-text)' : 'var(--color-text-muted)' }}
+      >
+        {term.trim() || 'Не е посочена'}
+      </span>
     </div>
   );
 }
@@ -2449,6 +2613,7 @@ function DiagnosesSection({
   sourceResolved,
   isLocked,
   notifyCopy,
+  sealed = false,
 }: {
   osnovnaDiagnoza: string;
   osnovnaMkb: string;
@@ -2468,6 +2633,10 @@ function DiagnosesSection({
   sourceResolved: boolean;
   isLocked: boolean;
   notifyCopy: (ok: boolean) => void;
+  /** Sealed лист: typeaheads become filed diagnosis lines, and „+ Добави" /
+   *  per-row remove disappear. The „виж източника" button stays — reading where
+   *  a diagnosis came from is exactly what a closed note is for. */
+  sealed?: boolean;
 }) {
   const needsReview = !!mkbReview?.needs_review;
   const atMaxComorbidities = pridruzhavashti.length >= 4; // backend STEP 2 contract caps at 4
@@ -2497,14 +2666,21 @@ function DiagnosesSection({
           <SourceButton onClick={onShowSource} disabled={sourceDisabled} resolved={sourceResolved} />
         </div>
         <div className="flex items-center gap-2">
-          <MkbTypeahead
-            code={osnovnaMkb}
-            term={mainTerm}
-            invalid={needsReview}
-            placeholder="Търсене на диагноза или МКБ код…"
-            onPick={onOsnovnaPick}
-            onBrowse={onOsnovnaBrowse}
-          />
+          {sealed ? (
+            // A search box on a closed лист invites a change that cannot land.
+            // Render what was filed — code + official term — and keep the copy
+            // button, which is the one thing a doctor still needs here.
+            <DiagnosisLine code={osnovnaMkb} term={mainTerm} invalid={needsReview} />
+          ) : (
+            <MkbTypeahead
+              code={osnovnaMkb}
+              term={mainTerm}
+              invalid={needsReview}
+              placeholder="Търсене на диагноза или МКБ код…"
+              onPick={onOsnovnaPick}
+              onBrowse={onOsnovnaBrowse}
+            />
+          )}
           {osnovnaMkb.trim() && (
             <CopyButton
               text={osnovnaMkb.trim()}
@@ -2544,29 +2720,35 @@ function DiagnosesSection({
         className="text-xs uppercase tracking-wider mb-3 font-medium flex items-center justify-between"
         style={{ color: 'var(--color-text-muted)' }}
       >
-        <span>Придружаващи заболявания{atMaxComorbidities ? ' · макс 4' : ''}</span>
-        <button
-          onClick={onComorbidityAddBrowse}
-          disabled={atMaxComorbidities}
-          title={atMaxComorbidities ? 'Макс 4 придружаващи заболявания' : undefined}
-          className="text-xs font-semibold px-2 py-1 rounded transition hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40"
-          style={{ color: 'var(--color-brand)', background: 'var(--color-brand-soft)' }}
-        >
-          + Добави
-        </button>
+        <span>Придружаващи заболявания{sealed || !atMaxComorbidities ? '' : ' · макс 4'}</span>
+        {!sealed && (
+          <button
+            onClick={onComorbidityAddBrowse}
+            disabled={atMaxComorbidities}
+            title={atMaxComorbidities ? 'Макс 4 придружаващи заболявания' : undefined}
+            className="text-xs font-semibold px-2 py-1 rounded transition hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40"
+            style={{ color: 'var(--color-brand)', background: 'var(--color-brand-soft)' }}
+          >
+            + Добави
+          </button>
+        )}
       </div>
       <div className="space-y-2">
-        {pridruzhavashti.map((d, i) => (
-          <MkbTypeahead
-            key={i}
-            code={d.mkb}
-            term={filedComorbidityTerm(d)}
-            placeholder="Търсене на придружаващо заболяване…"
-            onPick={(code, term) => onComorbidityPick(i, code, term)}
-            onBrowse={() => onComorbidityBrowse(i)}
-            onRemove={() => onComorbidityRemove(i)}
-          />
-        ))}
+        {pridruzhavashti.map((d, i) =>
+          sealed ? (
+            <DiagnosisLine key={i} code={d.mkb} term={filedComorbidityTerm(d)} />
+          ) : (
+            <MkbTypeahead
+              key={i}
+              code={d.mkb}
+              term={filedComorbidityTerm(d)}
+              placeholder="Търсене на придружаващо заболяване…"
+              onPick={(code, term) => onComorbidityPick(i, code, term)}
+              onBrowse={() => onComorbidityBrowse(i)}
+              onRemove={() => onComorbidityRemove(i)}
+            />
+          ),
+        )}
         {pridruzhavashti.length === 0 && (
           <div className="text-sm px-3 py-1" style={{ color: 'var(--color-text-muted)' }}>
             Няма придружаващи заболявания.

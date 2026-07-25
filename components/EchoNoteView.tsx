@@ -21,6 +21,11 @@ interface EchoNoteViewProps {
   // консултация note). `path` is the template field path (∈ ECHO_EDIT_FIELDS).
   onEditText: (path: string, value: string) => void;
   onEditMeasurement: (path: string, next: EchoMeasurement) => void;
+  /** SEALED readout (backend migration 025): the visit is over and the лист is
+   *  closed for editing, permanently. Every row renders its value as text
+   *  instead of an input — see MeasurementRow/TextRow for why this is a third
+   *  state and not just a stronger `isLocked`. */
+  sealed?: boolean;
 }
 // NOTE deliberately NO isLocked prop: pre-approval editing is ALWAYS enabled —
 // isLocked gates ONLY copy/export/approve, never editing (docs/history/
@@ -48,7 +53,7 @@ export function spanKeyFor(f: EchoFieldDescriptor): string {
   return f.kind === 'measurement' ? `${f.path}.value` : f.path;
 }
 
-export default function EchoNoteView({ fields, onEditText, onEditMeasurement }: EchoNoteViewProps) {
+export default function EchoNoteView({ fields, onEditText, onEditMeasurement, sealed = false }: EchoNoteViewProps) {
   // Group flags by the field key they target, so each field can show its own.
   const flagsByField = useMemo(() => {
     const map: Record<string, UncertainSpan[]> = {};
@@ -86,6 +91,7 @@ export default function EchoNoteView({ fields, onEditText, onEditMeasurement }: 
                     descriptor={f}
                     value={readMeasurement(fields, f.path)}
                     isLocked={false}
+                    sealed={sealed}
                     flags={flags}
                     onChange={(next) => onEditMeasurement(f.path, next)}
                   />
@@ -95,6 +101,7 @@ export default function EchoNoteView({ fields, onEditText, onEditMeasurement }: 
                     descriptor={f}
                     value={readText(fields, f.path)}
                     isLocked={false}
+                    sealed={sealed}
                     flags={flags}
                     onChange={(v) => onEditText(f.path, v)}
                   />
@@ -130,14 +137,22 @@ function FlagNotes({ flags }: { flags: UncertainSpan[] }) {
 // (embedded izsledvania_blocks on the консултация note) — same rendering for a
 // measurement/text field whichever container it lives in. `isLocked` disables
 // the input (read-only rendering); the styling and flag notes are identical.
+//
+// `sealed` is a THIRD state, not a stronger `isLocked`. A disabled input still
+// reads as a form whose fields mysteriously don't respond; a sealed лист must
+// read as a document. So sealed renders the VALUE as text — no border, no
+// field background, no focus ring, no caret — while keeping the label, the
+// units, the reference range, the flag colour and the spacing byte-identical,
+// so the doctor recognises the same лист he just approved.
 export function MeasurementRow({
-  descriptor, value, isLocked, flags, onChange,
+  descriptor, value, isLocked, flags, onChange, sealed = false,
 }: {
   descriptor: EchoFieldDescriptor;
   value: EchoMeasurement;
   isLocked: boolean;
   flags: UncertainSpan[];
   onChange: (next: EchoMeasurement) => void;
+  sealed?: boolean;
 }) {
   const flagged = flags.length > 0;
   return (
@@ -151,57 +166,84 @@ export function MeasurementRow({
         )}
       </label>
       <span className="inline-flex items-baseline gap-1.5">
-        <input
-          type="text"
-          inputMode="decimal"
-          value={value.value}
-          disabled={isLocked}
-          placeholder="—"
-          onChange={(e) => onChange({ value: e.target.value, unit: value.unit })}
-          className="w-24 px-2 py-1 rounded text-sm text-right focus-ring disabled:opacity-60"
-          style={{
-            border: `1px solid ${flagged ? 'var(--color-gold)' : 'var(--color-border-mid)'}`,
-            background: isLocked ? 'var(--color-bg)' : 'white',
-            color: 'var(--color-text)',
-          }}
-        />
+        {sealed ? (
+          // Same 6rem column so a sealed readout keeps the approved layout's
+          // right-aligned value column instead of reflowing.
+          <span
+            className="w-24 px-2 py-1 text-sm text-right inline-block"
+            style={{ color: flagged ? 'var(--color-gold)' : 'var(--color-text)' }}
+          >
+            {value.value.trim() || '—'}
+          </span>
+        ) : (
+          <input
+            type="text"
+            inputMode="decimal"
+            value={value.value}
+            disabled={isLocked}
+            placeholder="—"
+            onChange={(e) => onChange({ value: e.target.value, unit: value.unit })}
+            className="w-24 px-2 py-1 rounded text-sm text-right focus-ring disabled:opacity-60"
+            style={{
+              border: `1px solid ${flagged ? 'var(--color-gold)' : 'var(--color-border-mid)'}`,
+              background: isLocked ? 'var(--color-bg)' : 'white',
+              color: 'var(--color-text)',
+            }}
+          />
+        )}
         <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
           {value.unit || descriptor.unit || ''}
         </span>
       </span>
+      {/* Flags stay: they are advisory prose, already non-interactive, and
+          reading what the AI doubted is part of reading the note honestly. */}
       <div className="w-full"><FlagNotes flags={flags} /></div>
     </div>
   );
 }
 
 export function TextRow({
-  descriptor, value, isLocked, flags, onChange,
+  descriptor, value, isLocked, flags, onChange, sealed = false,
 }: {
   descriptor: EchoFieldDescriptor;
   value: string;
   isLocked: boolean;
   flags: UncertainSpan[];
   onChange: (v: string) => void;
+  sealed?: boolean;
 }) {
   const flagged = flags.length > 0;
+  const hasContent = value.trim().length > 0;
   return (
     <div>
       <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
         {descriptor.label}
       </label>
-      <textarea
-        value={value}
-        disabled={isLocked}
-        placeholder="Не е споменато"
-        rows={descriptor.path === 'zakljuchenie' ? 3 : 2}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 rounded text-sm resize-y focus-ring disabled:opacity-60"
-        style={{
-          border: `1px solid ${flagged ? 'var(--color-gold)' : 'var(--color-border-mid)'}`,
-          background: isLocked ? 'var(--color-bg)' : 'white',
-          color: 'var(--color-text)',
-        }}
-      />
+      {sealed ? (
+        // Same padding + text size as the textarea it replaces, so the sealed
+        // лист keeps the approved layout; whitespace-pre-wrap preserves the
+        // dictated line breaks a textarea would have shown.
+        <div
+          className="w-full px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed"
+          style={{ color: hasContent ? 'var(--color-text)' : 'var(--color-text-muted)' }}
+        >
+          {hasContent ? value : 'Не е споменато'}
+        </div>
+      ) : (
+        <textarea
+          value={value}
+          disabled={isLocked}
+          placeholder="Не е споменато"
+          rows={descriptor.path === 'zakljuchenie' ? 3 : 2}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full px-3 py-2 rounded text-sm resize-y focus-ring disabled:opacity-60"
+          style={{
+            border: `1px solid ${flagged ? 'var(--color-gold)' : 'var(--color-border-mid)'}`,
+            background: isLocked ? 'var(--color-bg)' : 'white',
+            color: 'var(--color-text)',
+          }}
+        />
+      )}
       <FlagNotes flags={flags} />
     </div>
   );

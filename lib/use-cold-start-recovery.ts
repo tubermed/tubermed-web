@@ -33,6 +33,22 @@ export type ColdStartRecovery =
       status: string;
       pendingVisit: PendingVisit;
       note: TranscribeFields | null;
+      // Lifecycle state the result page cannot infer from `note` alone.
+      //
+      // noteApproved: without it the page reopened every filed note as
+      // unconfirmed and locked copy/print/PDF — a note the doctor had already
+      // approved. That was always wrong; it becomes untenable with the seal,
+      // because a sealed note must stay usable and can never be re-approved
+      // into an unlocked state by editing.
+      //
+      // sealedAt: non-null = closed for editing, permanently (backend /edit
+      // answers 409 note_sealed). null on a server without migration 025.
+      //
+      // erasedAt: non-null = the content was scrubbed under Article 17, which
+      // is why `note` is empty — distinct from a visit that never generated one.
+      noteApproved: boolean;
+      sealedAt: string | null;
+      erasedAt: string | null;
     }
   | { phase: 'redirect'; to: string };
 
@@ -135,6 +151,11 @@ export function useColdStartRecovery(
           status: consultation.status,
           pendingVisit,
           note: consultation.note,
+          // ?? defaults keep an older backend (one that predates these keys)
+          // rendering exactly as it does today: unapproved, unsealed, unerased.
+          noteApproved: consultation.note_approved ?? false,
+          sealedAt:     consultation.sealed_at ?? null,
+          erasedAt:     consultation.erased_at ?? null,
         });
       } catch (err) {
         // Invalid/expired token → clear the dead session BEFORE bouncing to

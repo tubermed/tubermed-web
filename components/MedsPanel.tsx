@@ -18,6 +18,16 @@ interface MedsPanelProps {
   /** True when the doctor hasn't confirmed the review yet — gates the
    *  copy-all button. The row click → edit flow stays available either way. */
   isLocked: boolean;
+  /** SEALED note (backend migration 025): the visit is over and the лист is
+   *  closed for editing, permanently.
+   *
+   *  Orthogonal to `isLocked`, which gates COPY on review approval. A sealed
+   *  note is approved by construction, so copy stays LIVE — the doctor may
+   *  legitimately re-copy the medication list into Хипократ weeks later.
+   *  Sealed means cannot be changed, not cannot be used. What goes is the
+   *  editing surface: the row's click-to-edit, the remove ×, and „+ Добави
+   *  медикамент". */
+  sealed?: boolean;
   /** Toast callback shared with the rest of /app/scribe/result. */
   notifyCopy: (ok: boolean) => void;
   /** Fires once per successful copy click. The parent forwards to
@@ -45,6 +55,7 @@ export default function MedsPanel({
   lastRemovedName,
   onClearRemovedHint,
   isLocked,
+  sealed = false,
   notifyCopy,
   onMedsCopied,
 }: MedsPanelProps) {
@@ -196,6 +207,7 @@ export default function MedsPanel({
               onClick={() => openForEdit(i)}
               onRemove={() => removeAt(i)}
               isLocked={isLocked}
+              sealed={sealed}
               notifyCopy={notifyCopy}
               onCopied={onMedsCopied}
             />
@@ -257,16 +269,20 @@ export default function MedsPanel({
           </div>
         )}
 
-        <button
-          onClick={openForAdd}
-          className="w-full py-2 rounded-md text-xs font-medium border-2 border-dashed transition hover:bg-[var(--color-brand-light)]"
-          style={{
-            borderColor: 'var(--color-border-mid)',
-            color: 'var(--color-text-muted)',
-          }}
-        >
-          + Добави медикамент
-        </button>
+        {/* Nothing can be added to a closed лист — the affordance goes away
+            entirely rather than sitting there disabled. */}
+        {!sealed && (
+          <button
+            onClick={openForAdd}
+            className="w-full py-2 rounded-md text-xs font-medium border-2 border-dashed transition hover:bg-[var(--color-brand-light)]"
+            style={{
+              borderColor: 'var(--color-border-mid)',
+              color: 'var(--color-text-muted)',
+            }}
+          >
+            + Добави медикамент
+          </button>
+        )}
       </div>
 
       <MedsPicker
@@ -337,17 +353,22 @@ function MedRow({
   onClick,
   onRemove,
   isLocked,
+  sealed = false,
   notifyCopy,
   onCopied,
 }: {
   med: Medication;
   triggered: boolean;
   /** Whole row is the edit affordance — fires unless the remove × or copy
-   *  button was hit (both stop propagation). */
+   *  button was hit (both stop propagation). Inert when `sealed`. */
   onClick: () => void;
   onRemove: () => void;
   /** Disables the per-row copy until the review is confirmed. */
   isLocked: boolean;
+  /** Sealed лист: the row becomes a document line — no role="button", no
+   *  keyboard activation, no pointer, no hover wash, no remove ×. The copy
+   *  button stays, because a sealed note is still meant to be used. */
+  sealed?: boolean;
   /** Shared Toast callback — true = success, false = failure. */
   notifyCopy: (ok: boolean) => void;
   /** Optional analytics hook — fires only on successful copy. */
@@ -371,17 +392,28 @@ function MedRow({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onClick();
-        }
-      }}
-      title="Кликни за редакция"
-      className="flex items-stretch gap-2 px-2.5 py-2 rounded-md border cursor-pointer group transition hover:bg-[var(--color-brand-light)] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+      role={sealed ? undefined : 'button'}
+      tabIndex={sealed ? undefined : 0}
+      onClick={sealed ? undefined : onClick}
+      onKeyDown={
+        sealed
+          ? undefined
+          : (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
+            }
+      }
+      title={sealed ? undefined : 'Кликни за редакция'}
+      // Identical box, spacing and alert colouring either way — only the
+      // pointer, the hover wash and the focus ring go, so the sealed row reads
+      // as a printed line rather than a control that ignores clicks.
+      className={
+        sealed
+          ? 'flex items-stretch gap-2 px-2.5 py-2 rounded-md border'
+          : 'flex items-stretch gap-2 px-2.5 py-2 rounded-md border cursor-pointer group transition hover:bg-[var(--color-brand-light)] focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1'
+      }
       style={{
         background: triggered ? 'var(--color-danger-soft)' : 'var(--color-bg-card)',
         borderColor: triggered ? 'var(--color-danger)' : 'var(--color-border)',
@@ -454,16 +486,18 @@ function MedRow({
         >
           <Icon name={isLocked ? 'lock' : 'copy'} />
         </button>
-        <button
-          type="button"
-          onClick={handleRemove}
-          aria-label="Премахни"
-          title="Премахни медикамента"
-          className="w-9 h-9 rounded-md flex items-center justify-center text-2xl leading-none transition hover:bg-[var(--color-danger-soft)]"
-          style={{ color: 'var(--color-text-muted)' }}
-        >
-          ×
-        </button>
+        {!sealed && (
+          <button
+            type="button"
+            onClick={handleRemove}
+            aria-label="Премахни"
+            title="Премахни медикамента"
+            className="w-9 h-9 rounded-md flex items-center justify-center text-2xl leading-none transition hover:bg-[var(--color-danger-soft)]"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            ×
+          </button>
+        )}
       </div>
     </div>
   );

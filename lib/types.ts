@@ -232,6 +232,24 @@ export interface ConsultationDetail {
   started_at: string | null;
   exported_at: string | null;
   consent_to_record_at: string | null;
+  // Approval state, restored on cold-start recovery. Without it, reopening an
+  // already-approved note from the notes library rendered it as unconfirmed
+  // and LOCKED Копирай/Печат/PDF on a note the doctor had already filed —
+  // /approve is idempotent, so the re-confirm it forced was pure friction.
+  // A sealed note must stay usable, which makes this load-bearing.
+  note_approved: boolean;
+  note_approved_at: string | null;
+  // The visit-over seal (backend migration 025). Non-null = the лист is closed
+  // for editing, permanently: POST /:id/edit answers 409 note_sealed. It stays
+  // fully usable — copy / print / PDF / export are deliberately NOT gated —
+  // and fully erasable. `null` on any server without 025 applied (the backend
+  // reads it fail-soft), so the UI must treat null as „still open".
+  sealed_at: string | null;
+  // Article-17 erasure marker (backend migration 022). Non-null = the clinical
+  // content was scrubbed on request; the row skeleton and the consent/approval
+  // timestamps survive. Distinguishes „изтрито по заявка" from a note that
+  // never generated one — both arrive here as note: null.
+  erased_at: string | null;
   visit_type: VisitType | null;
   // Document template (backend migration 020, via the fail-soft reader). Always
   // present — 'consultation' on legacy/un-migrated rows. Drives the result

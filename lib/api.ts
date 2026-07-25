@@ -112,6 +112,20 @@ export class ApiError extends Error {
     super(message);
     this.body = body;
   }
+
+  /** Machine-readable discriminator the backend attaches to its blocking 4xx
+   *  bodies — 'note_sealed', 'mkb_review_required', 'retrying', … Callers must
+   *  branch on THIS, never on the Bulgarian `message`: the copy is user-facing
+   *  and may be reworded, the code is the contract. `null` when the body
+   *  carried none. */
+  get code(): string | null {
+    const b = this.body;
+    if (b && typeof b === 'object' && 'code' in b) {
+      const c = (b as { code: unknown }).code;
+      if (typeof c === 'string') return c;
+    }
+    return null;
+  }
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -380,6 +394,42 @@ export const api = {
     request<ApproveResponse>(`/api/consultations/${consultationId}/approve`, {
       method: 'POST',
     }),
+
+  // ── Seal the лист (visit over) ─────────────────────────────────────────
+  // Best-effort „the doctor left the visit" signal. The backend's enforceable
+  // triggers (next POST /api/visits/start, and the hourly time backstop) are
+  // the mechanism — this only makes the close immediate when the doctor does
+  // leave deliberately. Call it ONLY from the explicit „+ Нова консултация"
+  // action, NEVER from unmount or beforeunload: the seal has no unlock, so a
+  // hard refresh must not close a лист the doctor is still working on.
+  //
+  // FIRE-AND-FORGET — callers must `.catch()`. The doctor is already navigating
+  // away; a failed signal costs nothing (a backstop seals the note anyway) and
+  // must never block or surface an error. An unapproved note answers
+  // { sealed: false } and stays editable.
+  sealConsultation: (consultationId: string) =>
+    request<{ ok: true; sealed: boolean; sealed_at: string | null }>(
+      `/api/consultations/${consultationId}/seal`,
+      { method: 'POST' },
+    ),
+
+  // ── Article-17 erasure („изтриване при поискване") ─────────────────────
+  // IRREVERSIBLE scrub-in-place of the note's clinical content. Not a row
+  // delete: the record skeleton and the consent/approval timestamps survive as
+  // the practice's legal proof that the visit happened and was authorised.
+  //
+  // ORG-wide on the backend by design — an Art-17 request arrives at the
+  // practice, so any doctor in the clinic may act on it. A SEALED note is
+  // still erasable: sealing blocks changes, never the data subject's right.
+  //
+  // NOT fire-and-forget — the caller confirms first and must surface failures.
+  // 409 (`code: 'retrying'`) means a re-extraction is in flight; it is
+  // transient and the right response is „обработва се, опитайте пак".
+  eraseConsultation: (consultationId: string) =>
+    request<{ ok: true; erased_at: string | null }>(
+      `/api/consultations/${consultationId}/erase`,
+      { method: 'POST' },
+    ),
 
   // ── Patient after-visit summary (A2) ───────────────────────────────────
   // Generates (or returns the cached) plain-language Bulgarian summary the

@@ -39,14 +39,20 @@ interface InvestigationBlockCardProps {
   // the caller prefixes `izsledvania_blocks.${i}.fields.` for /edit.
   onEditText?: (path: string, value: string) => void;
   onEditMeasurement?: (path: string, next: EchoMeasurement) => void;
+  /** SEALED note (backend migration 025) — the лист is closed for editing,
+   *  permanently. Rows render their values as text (see EchoNoteView's
+   *  MeasurementRow/TextRow) and the paragraph block's „Редактирай" toggle is
+   *  withdrawn: on a sealed note there is nothing to expand into. */
+  sealed?: boolean;
 }
 
 export default function InvestigationBlockCard({
   block,
   onEditText,
   onEditMeasurement,
+  sealed = false,
 }: InvestigationBlockCardProps) {
-  const editable = !!(onEditText && onEditMeasurement);
+  const editable = !sealed && !!(onEditText && onEditMeasurement);
   const fields =
     block && typeof block === 'object' && block.fields && typeof block.fields === 'object'
       ? block.fields
@@ -145,6 +151,7 @@ export default function InvestigationBlockCard({
                       descriptor={f}
                       value={readMeasurement(fields, f.path)}
                       isLocked={!editable}
+                      sealed={sealed}
                       flags={flags}
                       onChange={(next) => onEditMeasurement?.(f.path, next)}
                     />
@@ -154,6 +161,7 @@ export default function InvestigationBlockCard({
                       descriptor={f}
                       value={readText(fields, f.path)}
                       isLocked={!editable}
+                      sealed={sealed}
                       flags={flags}
                       onChange={(v) => onEditText?.(f.path, v)}
                     />

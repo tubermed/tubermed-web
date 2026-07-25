@@ -21,6 +21,21 @@ interface EditableFieldProps {
   uncertainSpans?: ResolvedUncertainSpan[];
   /** Acknowledge an uncertain span (keyed `unc::${field}::${original}` upstream). */
   onAcknowledgeUncertain?: (original: string) => void;
+  /** SEALED note (backend migration 025): the visit is over and the лист is
+   *  closed for editing, permanently. Render it as a DOCUMENT, not as a form —
+   *  no click-to-edit, no caret, no hover wash, no "Кликни за редакция" hint.
+   *
+   *  Deliberately not the same thing as a disabled input: a field that still
+   *  looks editable but silently does nothing reads as broken, not as closed.
+   *
+   *  The review marks stay VISIBLE and their explanation stays readable —
+   *  understanding what the AI flagged is part of reading the note honestly,
+   *  and it costs nothing on a note that can no longer change. Only the
+   *  popover's two MUTATING actions (Редактирай / Потвърди) are withdrawn.
+   *
+   *  This is courtesy, not a defence: the backend refuses a sealed /edit with
+   *  409 note_sealed regardless of what the client renders. */
+  readOnly?: boolean;
 }
 
 export default function EditableField({
@@ -33,6 +48,7 @@ export default function EditableField({
   onAcknowledge,
   uncertainSpans,
   onAcknowledgeUncertain,
+  readOnly = false,
 }: EditableFieldProps) {
   // Defensive coercion. Some callers pass `undefined` at runtime even though
   // the prop is typed `string` (e.g. an extracted field that came back
@@ -122,6 +138,7 @@ export default function EditableField({
   }
 
   function openEditAt(pos: number) {
+    if (readOnly) return;
     setPopover(null);
     setPendingCaret(pos);
     setEditing(true);
@@ -136,7 +153,12 @@ export default function EditableField({
     }
   }
 
-  if (editing) {
+  // `editing` can only be true when the field was editable at the time of the
+  // click, but re-check here: a note that seals while the doctor has a textarea
+  // open (the next visit started in another tab) must collapse back to the
+  // document view rather than leave a live caret over a note the server will
+  // now refuse to write.
+  if (editing && !readOnly) {
     return (
       <textarea
         ref={textareaRef}
@@ -165,9 +187,16 @@ export default function EditableField({
   return (
     <>
       <div
-        onClick={() => setEditing(true)}
-        title="Кликни за редакция"
-        className="px-3 py-2 rounded-md cursor-text leading-relaxed text-base hover:bg-[var(--color-brand-light)] transition-colors whitespace-pre-wrap"
+        onClick={readOnly ? undefined : () => setEditing(true)}
+        title={readOnly ? undefined : 'Кликни за редакция'}
+        className={
+          readOnly
+            // Document, not form: the padding/leading/wrapping stay identical so
+            // the лист looks exactly like the one the doctor approved — only the
+            // caret, the pointer and the hover wash go.
+            ? 'px-3 py-2 rounded-md leading-relaxed text-base whitespace-pre-wrap'
+            : 'px-3 py-2 rounded-md cursor-text leading-relaxed text-base hover:bg-[var(--color-brand-light)] transition-colors whitespace-pre-wrap'
+        }
         style={{
           color: hasContent ? 'var(--color-text)' : 'var(--color-text-muted)',
           minHeight: '38px',
@@ -190,6 +219,7 @@ export default function EditableField({
           onEdit={() => openEditAt(popover.match.start)}
           onAck={() => handleAcknowledge(popover.match)}
           onClose={() => setPopover(null)}
+          readOnly={readOnly}
         />
       )}
     </>
@@ -312,12 +342,16 @@ function HighlightPopover({
   onEdit,
   onAck,
   onClose,
+  readOnly = false,
 }: {
   match: HighlightMatch;
   rect: DOMRect;
   onEdit: () => void;
   onAck: () => void;
   onClose: () => void;
+  /** Sealed note: keep the explanation (reading), drop the two actions
+   *  (Редактирай / Потвърди), both of which imply the note can still change. */
+  readOnly?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -404,30 +438,39 @@ function HighlightPopover({
             Предложение: <span style={{ fontWeight: 600 }}>{match.suggestion}</span>
           </div>
         )}
-        <div className="flex gap-2">
-          <button
-            onClick={onEdit}
-            className="flex-1 py-2 rounded text-sm font-medium text-white transition hover:opacity-90"
-            style={{ background: 'var(--color-brand)' }}
+        {readOnly ? (
+          <div
+            className="text-xs leading-snug pt-1"
+            style={{ color: 'var(--color-text-muted)' }}
           >
-            <span className="inline-flex items-center justify-center gap-1.5">
-              <Icon name="pencil" /> Редактирай
-            </span>
-          </button>
-          <button
-            onClick={onAck}
-            className="flex-1 py-2 rounded text-sm font-medium border transition hover:bg-[var(--color-bg)]"
-            style={{
-              borderColor: 'var(--color-border-mid)',
-              color: 'var(--color-text-muted)',
-            }}
-            title="Маркирай като нормално за този пациент"
-          >
-            <span className="inline-flex items-center justify-center gap-1.5">
-              <Icon name="check" /> Потвърди
-            </span>
-          </button>
-        </div>
+            Листът е приключен — само за преглед.
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              onClick={onEdit}
+              className="flex-1 py-2 rounded text-sm font-medium text-white transition hover:opacity-90"
+              style={{ background: 'var(--color-brand)' }}
+            >
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <Icon name="pencil" /> Редактирай
+              </span>
+            </button>
+            <button
+              onClick={onAck}
+              className="flex-1 py-2 rounded text-sm font-medium border transition hover:bg-[var(--color-bg)]"
+              style={{
+                borderColor: 'var(--color-border-mid)',
+                color: 'var(--color-text-muted)',
+              }}
+              title="Маркирай като нормално за този пациент"
+            >
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <Icon name="check" /> Потвърди
+              </span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
