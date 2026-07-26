@@ -18,7 +18,7 @@ interface MedsPanelProps {
   /** True when the doctor hasn't confirmed the review yet — gates the
    *  copy-all button. The row click → edit flow stays available either way. */
   isLocked: boolean;
-  /** SEALED note (backend migration 025): the visit is over and the лист is
+  /** SEALED note (backend migration 024): the visit is over and the лист is
    *  closed for editing, permanently.
    *
    *  Orthogonal to `isLocked`, which gates COPY on review approval. A sealed

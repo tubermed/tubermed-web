@@ -21,7 +21,7 @@ interface EchoNoteViewProps {
   // консултация note). `path` is the template field path (∈ ECHO_EDIT_FIELDS).
   onEditText: (path: string, value: string) => void;
   onEditMeasurement: (path: string, next: EchoMeasurement) => void;
-  /** SEALED readout (backend migration 025): the visit is over and the лист is
+  /** SEALED readout (backend migration 024): the visit is over and the лист is
    *  closed for editing, permanently. Every row renders its value as text
    *  instead of an input — see MeasurementRow/TextRow for why this is a third
    *  state and not just a stronger `isLocked`. */

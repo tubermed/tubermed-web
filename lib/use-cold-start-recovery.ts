@@ -42,7 +42,7 @@ export type ColdStartRecovery =
       // into an unlocked state by editing.
       //
       // sealedAt: non-null = closed for editing, permanently (backend /edit
-      // answers 409 note_sealed). null on a server without migration 025.
+      // answers 409 note_sealed). null on a server without migration 024.
       //
       // erasedAt: non-null = the content was scrubbed under Article 17, which
       // is why `note` is empty — distinct from a visit that never generated one.

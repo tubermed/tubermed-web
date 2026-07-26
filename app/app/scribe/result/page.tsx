@@ -308,7 +308,7 @@ function ResultPageInner() {
   // Guards the export signal — fire exactly once per consultation session
   // so multiple format clicks (PDF then Word) don't double-count.
   const exportSignalledRef = useRef(false);
-  // ── The visit-over seal (backend migration 025) ──────────────────────────
+  // ── The visit-over seal (backend migration 024) ──────────────────────────
   // Non-null = the лист is closed for editing, permanently. Corrections after
   // this happen in Хипократ, which is the practice's real record.
   //

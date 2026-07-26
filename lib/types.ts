@@ -245,10 +245,10 @@ export interface ConsultationDetail {
   // A sealed note must stay usable, which makes this load-bearing.
   note_approved: boolean;
   note_approved_at: string | null;
-  // The visit-over seal (backend migration 025). Non-null = the лист is closed
+  // The visit-over seal (backend migration 024). Non-null = the лист is closed
   // for editing, permanently: POST /:id/edit answers 409 note_sealed. It stays
   // fully usable — copy / print / PDF / export are deliberately NOT gated —
-  // and fully erasable. `null` on any server without 025 applied (the backend
+  // and fully erasable. `null` on any server without 024 applied (the backend
   // reads it fail-soft), so the UI must treat null as „still open".
   sealed_at: string | null;
   // Article-17 erasure marker (backend migration 022). Non-null = the clinical

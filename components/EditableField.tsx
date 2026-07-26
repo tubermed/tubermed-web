@@ -21,7 +21,7 @@ interface EditableFieldProps {
   uncertainSpans?: ResolvedUncertainSpan[];
   /** Acknowledge an uncertain span (keyed `unc::${field}::${original}` upstream). */
   onAcknowledgeUncertain?: (original: string) => void;
-  /** SEALED note (backend migration 025): the visit is over and the лист is
+  /** SEALED note (backend migration 024): the visit is over and the лист is
    *  closed for editing, permanently. Render it as a DOCUMENT, not as a form —
    *  no click-to-edit, no caret, no hover wash, no "Кликни за редакция" hint.
    *

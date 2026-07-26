@@ -39,7 +39,7 @@ interface InvestigationBlockCardProps {
   // the caller prefixes `izsledvania_blocks.${i}.fields.` for /edit.
   onEditText?: (path: string, value: string) => void;
   onEditMeasurement?: (path: string, next: EchoMeasurement) => void;
-  /** SEALED note (backend migration 025) — the лист is closed for editing,
+  /** SEALED note (backend migration 024) — the лист is closed for editing,
    *  permanently. Rows render their values as text (see EchoNoteView's
    *  MeasurementRow/TextRow) and the paragraph block's „Редактирай" toggle is
    *  withdrawn: on a sealed note there is nothing to expand into. */
