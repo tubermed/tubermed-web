@@ -1,0 +1,292 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Soniox realtime (stt-rt-v5) live transcription — browser side.
+// ─────────────────────────────────────────────────────────────────────────────
+// Wraps ONE websocket to Soniox for ONE visit. It accumulates final tokens,
+// pushes live text to the UI, and — the part that actually matters — fails in a
+// way that can never cost the visit.
+//
+// THE SAFETY MODEL
+//
+// The recorder keeps its local MediaRecorder buffer for the WHOLE visit, in
+// parallel with streaming. This controller therefore never has to be reliable;
+// it only has to be HONEST about having failed, promptly, so the caller can
+// fall back to the async upload path with a complete recording.
+//
+// A drop is TERMINAL: `degraded` is a one-way latch and there is no mid-visit
+// resume. That is deliberate. Reconnecting would mean either a hole in the
+// transcript (whatever the doctor said while the socket was down) or a
+// duplicated boundary — and a silent hole in a medical note is far worse than
+// losing the latency win on a single visit. Because the local buffer is
+// complete, degrading costs only speed, never content.
+//
+// Every failure mode converges on the same observable: `isDegraded === true`
+// and `onDegraded(reason)` fired exactly once. The caller needs no per-reason
+// handling — the reason exists for telemetry, not control flow.
+//
+// The raw websocket is used rather than @soniox/speech-to-text-web: the SDK
+// owns microphone capture and its own MediaRecorder, which would give us two
+// independent captures of the same visit and no guarantee the buffered blob
+// matches what was streamed. The fallback blob has to be the same audio, so the
+// recorder stays ours and only the transport is Soniox's. The wire protocol is
+// three messages wide (config, binary audio, empty-string flush), which is not
+// enough surface to justify the loss of control.
+
+/** The slice of the browser WebSocket API this controller uses. Shaped so the
+ *  real `WebSocket` can be handed over unchanged, and tests can inject a fake. */
+export interface LiveSocket {
+  readyState: number;
+  send(data: string | ArrayBufferLike | Blob): void;
+  close(): void;
+  onopen: ((ev?: unknown) => void) | null;
+  onmessage: ((ev: { data: unknown }) => void) | null;
+  onerror: ((ev?: unknown) => void) | null;
+  onclose: ((ev?: { code?: number }) => void) | null;
+}
+
+export type DegradeReason =
+  | 'open_timeout'      // the socket never opened
+  | 'socket_error'      // transport error mid-visit
+  | 'socket_closed'     // closed under us mid-visit
+  | 'server_error'      // Soniox sent an error frame
+  | 'finalize_timeout'; // flushed at the end, `finished` never arrived
+
+export type FinalizeResult =
+  | { ok: true;  transcript: string }
+  | { ok: false; reason: DegradeReason };
+
+export interface LiveStreamCallbacks {
+  /** Fires on every batch of FINAL tokens, with the full transcript so far. */
+  onText?: (fullText: string) => void;
+  /** Fires exactly once, the first time the stream fails. */
+  onDegraded?: (reason: DegradeReason) => void;
+}
+
+export interface SonioxLiveStreamOptions {
+  wsUrl: string;
+  apiKey: string;
+  /** Server-authored session config (model, language hints, specialty terms). */
+  config: Record<string, unknown>;
+  createSocket?: (url: string) => LiveSocket;
+  callbacks?: LiveStreamCallbacks;
+  openTimeoutMs?: number;
+  finalizeTimeoutMs?: number;
+}
+
+const SOCKET_OPEN = 1;
+
+/** Soniox is generous here in practice (the handshake is sub-second on a healthy
+ *  line); this only has to beat the doctor's patience. */
+const DEFAULT_OPEN_TIMEOUT_MS = 8_000;
+
+/** Measured finalize tail is ~0.1–0.4s. 15s is ~40× headroom and still far
+ *  inside the "note appears right after the visit" promise — past it we stop
+ *  waiting and take the complete local recording instead. */
+const DEFAULT_FINALIZE_TIMEOUT_MS = 15_000;
+
+interface SonioxToken { text?: string; is_final?: boolean }
+
+export class SonioxLiveStream {
+  private readonly opts: SonioxLiveStreamOptions;
+  private socket: LiveSocket | null = null;
+  private finals: string[] = [];
+  private degraded = false;
+  private configSent = false;
+  /** Chunks recorded before the socket finished opening. NOT an optimisation:
+   *  the recorder starts the instant the doctor taps record, while the key mint
+   *  is still in flight, and the FIRST chunk carries the WebM/EBML header. Drop
+   *  it and Soniox receives headerless clusters it cannot decode. Bounded so a
+   *  socket that never opens cannot grow this for the length of a visit; the
+   *  open deadline (8s ≈ 16 chunks) fires long before the cap is reached. */
+  private pending: Array<ArrayBufferLike | Blob> = [];
+  private static readonly MAX_PENDING_CHUNKS = 120;
+
+  private openTimer: ReturnType<typeof setTimeout> | null = null;
+  private finalizeTimer: ReturnType<typeof setTimeout> | null = null;
+  private settleFinalize: ((r: FinalizeResult) => void) | null = null;
+
+  constructor(opts: SonioxLiveStreamOptions) {
+    this.opts = opts;
+  }
+
+  get isDegraded(): boolean { return this.degraded; }
+
+  /** The transcript so far: FINAL tokens only, joined with nothing.
+   *  Byte-identical to what the async leg persists — any separator here would
+   *  desynchronise every downstream offset (field_sources, block.source). */
+  get text(): string { return this.finals.join(''); }
+
+  start(): void {
+    if (this.socket || this.degraded) return;
+
+    const create = this.opts.createSocket ?? ((url: string) => new WebSocket(url) as unknown as LiveSocket);
+    let sock: LiveSocket;
+    try {
+      sock = create(this.opts.wsUrl);
+    } catch {
+      this.degrade('socket_error');
+      return;
+    }
+    this.socket = sock;
+
+    this.openTimer = setTimeout(() => this.degrade('open_timeout'), this.opts.openTimeoutMs ?? DEFAULT_OPEN_TIMEOUT_MS);
+
+    sock.onopen = () => {
+      if (this.degraded || this.configSent) return;
+      this.clearOpenTimer();
+      this.configSent = true;
+      try {
+        // The key is merged in only here — it is never stored on the config
+        // object the server handed us.
+        sock.send(JSON.stringify({ ...this.opts.config, api_key: this.opts.apiKey }));
+        // Then the backlog, in order, before any live chunk can overtake it.
+        const backlog = this.pending;
+        this.pending = [];
+        for (const c of backlog) sock.send(c);
+      } catch {
+        this.degrade('socket_error');
+      }
+    };
+
+    sock.onmessage = (ev) => this.handleMessage(ev);
+    sock.onerror   = () => this.degrade('socket_error');
+    sock.onclose   = () => this.degrade('socket_closed');
+  }
+
+  /** Push one recorder chunk. Inert once degraded or before the socket opens —
+   *  this runs inside MediaRecorder.ondataavailable, where a throw would take
+   *  the recording down with it. */
+  sendAudio(data: ArrayBufferLike | Blob): void {
+    if (this.degraded) return;
+
+    const sock = this.socket;
+    if (!this.configSent || !sock || sock.readyState !== SOCKET_OPEN) {
+      // Still connecting — hold it, header and all. Past the cap we stop
+      // growing rather than consume the tab's memory; the open deadline will
+      // degrade this stream to the async path shortly anyway.
+      if (this.pending.length < SonioxLiveStream.MAX_PENDING_CHUNKS) this.pending.push(data);
+      return;
+    }
+    try {
+      sock.send(data);
+    } catch {
+      this.degrade('socket_error');
+    }
+  }
+
+  /** Flush and wait for Soniox's `finished`. Resolves {ok:false} rather than
+   *  rejecting — the caller's next step is the same either way (fall back), and
+   *  a rejected promise in a stop handler is one more way to strand a visit. */
+  finalize(): Promise<FinalizeResult> {
+    if (this.degraded) {
+      return Promise.resolve({ ok: false, reason: this.lastReason ?? 'socket_closed' });
+    }
+    const sock = this.socket;
+    if (!sock || sock.readyState !== SOCKET_OPEN) {
+      return Promise.resolve({ ok: false, reason: 'socket_closed' });
+    }
+
+    return new Promise<FinalizeResult>((resolve) => {
+      this.settleFinalize = resolve;
+      this.finalizeTimer = setTimeout(
+        () => this.degrade('finalize_timeout'),
+        this.opts.finalizeTimeoutMs ?? DEFAULT_FINALIZE_TIMEOUT_MS,
+      );
+      try {
+        sock.send(''); // Soniox's end-of-audio marker
+      } catch {
+        this.degrade('socket_error');
+      }
+    });
+  }
+
+  /** Deliberate teardown (the doctor cancelled). Not a failure — no degrade. */
+  abort(): void {
+    this.clearOpenTimer();
+    this.clearFinalizeTimer();
+    const sock = this.socket;
+    this.socket = null;
+    if (sock) {
+      sock.onopen = sock.onmessage = sock.onerror = sock.onclose = null;
+      try { sock.close(); } catch { /* already gone */ }
+    }
+  }
+
+  // ── internals ─────────────────────────────────────────────────────────────
+
+  private lastReason: DegradeReason | null = null;
+
+  private handleMessage(ev: { data: unknown }): void {
+    // A late frame on a dead stream is exactly what "no resume" must refuse:
+    // splicing it in would join text across an audio gap. degrade() already
+    // detaches every handler, so this is the second of two independent guards,
+    // not the primary one — it covers a caller holding its own socket reference.
+    // (Verified by mutation: removing either alone keeps the behaviour;
+    // removing both fails the "can NEVER recover" test.)
+    if (this.degraded) return;
+
+    let msg: { tokens?: SonioxToken[]; finished?: boolean; error_code?: string; error_message?: string };
+    try {
+      msg = JSON.parse(String(ev.data));
+    } catch {
+      return; // junk frame — ignore, never fatal
+    }
+    if (!msg || typeof msg !== 'object') return;
+
+    if (msg.error_code || msg.error_message) {
+      this.degrade('server_error');
+      return;
+    }
+
+    if (Array.isArray(msg.tokens)) {
+      let appended = false;
+      for (const t of msg.tokens) {
+        if (t && t.is_final && typeof t.text === 'string') {
+          this.finals.push(t.text);
+          appended = true;
+        }
+      }
+      if (appended) this.opts.callbacks?.onText?.(this.text);
+    }
+
+    if (msg.finished) {
+      this.clearFinalizeTimer();
+      const settle = this.settleFinalize;
+      this.settleFinalize = null;
+      settle?.({ ok: true, transcript: this.text });
+      this.abort();
+    }
+  }
+
+  /** One-way latch. Every failure path lands here; it fires the callback at
+   *  most once, settles a pending finalize, and tears the socket down. */
+  private degrade(reason: DegradeReason): void {
+    if (this.degraded) return;
+    this.degraded = true;
+    this.lastReason = reason;
+    this.pending = [];   // the local buffer is the fallback; this copy is dead weight
+
+    this.clearOpenTimer();
+    this.clearFinalizeTimer();
+
+    const settle = this.settleFinalize;
+    this.settleFinalize = null;
+
+    // Detach handlers before closing so our own close() cannot re-enter here.
+    const sock = this.socket;
+    this.socket = null;
+    if (sock) {
+      sock.onopen = sock.onmessage = sock.onerror = sock.onclose = null;
+      try { sock.close(); } catch { /* already gone */ }
+    }
+
+    settle?.({ ok: false, reason });
+    this.opts.callbacks?.onDegraded?.(reason);
+  }
+
+  private clearOpenTimer(): void {
+    if (this.openTimer) { clearTimeout(this.openTimer); this.openTimer = null; }
+  }
+  private clearFinalizeTimer(): void {
+    if (this.finalizeTimer) { clearTimeout(this.finalizeTimer); this.finalizeTimer = null; }
+  }
+}

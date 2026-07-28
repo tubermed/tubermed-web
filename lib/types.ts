@@ -147,6 +147,20 @@ export interface TranscribeResult {
   fields: TranscribeFields;
 }
 
+/** POST /api/consultations/:id/stream-key — the browser's ticket to Soniox.
+ *
+ *  `ws_url` and `config` are SERVER-AUTHORED on purpose: the EU endpoint and
+ *  the specialty vocabulary payload must be identical to the async leg's and
+ *  must not be reconstructible (or driftable) in frontend code. The client
+ *  merges `api_key` into `config` as the websocket's first frame and otherwise
+ *  treats both as opaque. */
+export interface StreamKeyResponse {
+  api_key: string;
+  expires_at: string | null;
+  ws_url: string;
+  config: Record<string, unknown>;
+}
+
 export interface SessionInit {
   sessionId: string;
   mobileUrl: string;

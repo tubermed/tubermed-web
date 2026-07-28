@@ -26,6 +26,7 @@ import type {
   ConsentResponse,
 } from '@/lib/types';
 import ConsentModal from '@/components/ConsentModal';
+import { SonioxLiveStream } from '@/lib/stt-stream';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import { useColdStartRecovery } from '@/lib/use-cold-start-recovery';
 import { Icon } from '@/components/ui/Icon';
@@ -1483,6 +1484,24 @@ function PcMode({
   const [seconds, setSeconds] = useState(0);
   const [tooQuiet, setTooQuiet] = useState(false);
 
+  // ── Live streaming (stt-rt-v5) ────────────────────────────────────────────
+  // Runs BESIDE the MediaRecorder buffer, never instead of it. Every failure
+  // here is silent to the doctor except one status line: the local recording is
+  // still complete, so the visit falls back to the async upload and produces
+  // exactly the same note, just later.
+  //   'off'        — not streaming (flag off, mint refused, or unsupported)
+  //   'connecting' — key minted / socket opening
+  //   'live'       — final tokens arriving
+  //   'fallback'   — the stream died; the async upload will carry this visit
+  const [streamState, setStreamState] = useState<'off' | 'connecting' | 'live' | 'fallback'>('off');
+  const [liveText, setLiveText] = useState('');
+  const liveStreamRef = useRef<SonioxLiveStream | null>(null);
+  const liveScrollRef = useRef<HTMLDivElement | null>(null);
+  // stopRecording is a stable callback, so it cannot read `seconds` from state
+  // without going stale. This mirror is the recorded AUDIO length (it only
+  // advances while unpaused), which is what audio_seconds means on the row.
+  const secondsRef = useRef(0);
+
   const mrRef = useRef<MediaRecorder | null>(null);
   // Live mic stream retained across pause so resume can restart the waveform
   // without a new getUserMedia (tracks stay open — MediaRecorder.pause() only
@@ -1613,21 +1632,69 @@ function PcMode({
     }
   }, []);
 
+  // Open the live stream. Deliberately fire-and-forget: recording must never
+  // wait on the network, and every failure path here is a silent fall back to
+  // the async upload the recorder is already buffering for.
+  const beginStreaming = useCallback(async () => {
+    if (!consultationId) return;
+    setStreamState('connecting');
+    setLiveText('');
+
+    let ticket;
+    try {
+      // THE CONSENT GATE. A 403 here means consent is not on file and no audio
+      // may leave the browser — so does every other non-200 (409 when the org
+      // is not on the streaming path, 502 when Soniox is down, 429 throttled).
+      // All of them mean the same thing to us: take the async path.
+      ticket = await api.streamKey(consultationId);
+    } catch {
+      setStreamState('off');
+      return;
+    }
+
+    const live = new SonioxLiveStream({
+      wsUrl:  ticket.ws_url,      // server-authored: EU endpoint, never built here
+      apiKey: ticket.api_key,
+      config: ticket.config,      // server-authored: same specialty terms as async
+      callbacks: {
+        onText: (full) => setLiveText(full),
+        // One-way. The visit continues recording; only the live view stops.
+        onDegraded: () => setStreamState('fallback'),
+      },
+    });
+    liveStreamRef.current = live;
+    live.start();
+    setStreamState((s) => (s === 'connecting' ? 'live' : s));
+  }, [consultationId]);
+
   const startRecording = useCallback(async () => {
     try {
       const stream = await getTunedStream();
       const mr = makeRecorder(stream);
       chunksRef.current = [];
       mr.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
+        if (e.data.size > 0) {
+          // THE NON-NEGOTIABLE: the local buffer accumulates for the WHOLE
+          // visit regardless of what the websocket is doing. It is what makes
+          // a dropped connection cost latency instead of the visit.
+          chunksRef.current.push(e.data);
+          // Inert once the stream degrades, and queued (header included) until
+          // the socket opens — see lib/stt-stream.ts. Never throws: this runs
+          // inside ondataavailable, where a throw would take the recording down.
+          liveStreamRef.current?.sendAudio(e.data);
+        }
       };
       mr.start(500);
+      // Started AFTER the recorder so the opening words are captured locally
+      // and queued for the socket rather than lost to the mint round trip.
+      void beginStreaming();
       mrRef.current = mr;
       streamRef.current = stream;
       setRecording(true);
       setPaused(false);
       onRecordingChange(true);
       setSeconds(0);
+      secondsRef.current = 0;
       // Re-arm the too-quiet warning for this recording.
       tqDismissedRef.current = false;
       lowSinceRef.current = 0;
@@ -1636,6 +1703,7 @@ function PcMode({
       setTooQuiet(false);
       startWaveform(stream);
       timerRef.current = setInterval(() => {
+        secondsRef.current += 1;
         setSeconds((s) => s + 1);
       }, 1000);
     } catch (e) {
@@ -1673,6 +1741,7 @@ function PcMode({
     if (streamRef.current) startWaveform(streamRef.current);
     if (!timerRef.current) {
       timerRef.current = setInterval(() => {
+        secondsRef.current += 1;
         setSeconds((s) => s + 1);
       }, 1000);
     }
@@ -1708,6 +1777,8 @@ function PcMode({
     // Gate 2 (pre-submit): await consent BEFORE the audio leaves the browser.
     // If consent is already on file this resolves immediately; otherwise it
     // opens the ConsentModal and resolves once the doctor confirms.
+    // (On the streaming path consent was already required to mint the key, so
+    // this is a no-op there — it still guards the async fallback.)
     await requestConsent();
 
     const submit = (): Promise<TranscribeResult> =>
@@ -1717,8 +1788,74 @@ function PcMode({
         consultationId ? { consultationId } : undefined,
       );
 
+    // ── Streaming path ────────────────────────────────────────────────────
+    // If the stream survived the visit, the transcript is ALREADY in this tab
+    // and the whole Soniox leg (upload + processing) is behind us. Submit it
+    // and the wait is the Claude chain alone.
+    //
+    // Anything that goes wrong here — a stream that degraded mid-visit, a
+    // finalize that never returned, an empty result, a rejected submission —
+    // falls through to the async upload below with the COMPLETE local blob. The
+    // buffer is only released once the transcript is confirmed persisted.
+    const live = liveStreamRef.current;
+    liveStreamRef.current = null;
+    onProcessing();
+
+    if (live && !live.isDegraded && consultationId) {
+      // finalize() resolves rather than rejects, but a thrown surprise here
+      // must still land on the async path, never escape this handler.
+      let finished: Awaited<ReturnType<typeof live.finalize>>;
+      try {
+        finished = await live.finalize();
+      } catch {
+        finished = { ok: false, reason: 'socket_closed' };
+      }
+
+      if (finished.ok && finished.transcript.trim()) {
+        try {
+          const result = await api.submitStreamedTranscript(
+            consultationId,
+            finished.transcript,
+            { audioSeconds: secondsRef.current || undefined },
+          );
+          // Persisted server-side — only NOW is the local recording redundant.
+          blobRef.current = null;
+          onResult(result);
+          return;
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 401) {
+            onAuthError();
+            return;
+          }
+          setStreamState('fallback');
+
+          // WHICH failures may still fall back to the audio upload?
+          //
+          // A 400 is our own shape validation, which runs BEFORE the server
+          // claims the row — the visit is untouched, so the async upload is
+          // still open to us and the buffered blob saves it.
+          //
+          // Any OTHER server response means the row has already advanced past
+          // 'pending': re-uploading the audio would just 409 and dead-end the
+          // doctor. On a 502 the transcript is already persisted (extraction
+          // failed after the write), so the recovery panel — which offers
+          // retry-extraction — is the truthful thing to show. That is what
+          // reachedServer >= 500 selects.
+          if (err instanceof ApiError && err.status !== 400) {
+            onBackToIdle();
+            onError('Грешка: ' + err.message, { reachedServer: err.status >= 500 });
+            return;
+          }
+          // No response at all (network drop / abort): the request most likely
+          // never landed, and the blob is still in hand — fall through.
+        }
+      } else {
+        setStreamState('fallback');
+      }
+    }
+    live?.abort();
+
     try {
-      onProcessing();
       const result = await submit();
       onResult(result);
     } catch (err) {
@@ -1778,10 +1915,20 @@ function PcMode({
     }
   }, [stopWaveform, consultationId, onProcessing, onResult, onAuthError, onBackToIdle, onError, onRetainableFailure, blobRef, onRecordingChange, requestConsent]);
 
+  // Auto-scroll the live transcript as finals land.
+  useEffect(() => {
+    const el = liveScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [liveText]);
+
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       stopWaveform();
+      // Close the websocket on unmount. abort() (not degrade) — an unmount is
+      // not a failure, and there is nothing left to fall back for.
+      liveStreamRef.current?.abort();
+      liveStreamRef.current = null;
       if (mrRef.current && mrRef.current.state !== 'inactive') {
         mrRef.current.stop();
         mrRef.current.stream.getTracks().forEach((t) => t.stop());
@@ -1903,6 +2050,62 @@ function PcMode({
             >
               ×
             </button>
+          </div>
+        )}
+
+        {/* Live transcript — final tokens only, appended as they arrive. Kept
+            deliberately plain in this batch: text, auto-scroll, no styling
+            ambition. It is a confidence signal ("it is hearing me"), never the
+            note — the лист still comes from the pipeline after the visit. */}
+        {recording && streamState === 'live' && (
+          <div className="mt-6 w-full max-w-sm text-left">
+            <div
+              className="flex items-center gap-2 mb-2 text-xs font-medium uppercase tracking-wide"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              <span
+                aria-hidden
+                className="inline-block w-1.5 h-1.5 rounded-full"
+                style={{ background: 'var(--color-ok)' }}
+              />
+              Транскрипция на живо
+            </div>
+            <div
+              ref={liveScrollRef}
+              aria-live="polite"
+              aria-label="Транскрипция на живо"
+              className="px-3 py-2 rounded-xl text-sm leading-relaxed overflow-y-auto"
+              style={{
+                maxHeight: '11rem',
+                background: 'var(--color-bg-subtle)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text)',
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {liveText || (
+                <span style={{ color: 'var(--color-text-muted)' }}>Слуша…</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Stream lost — a STATUS line, never an error. The recording is still
+            running and complete locally; the visit will be transcribed on the
+            upload path when the doctor stops. Nothing is required of them. */}
+        {recording && streamState === 'fallback' && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mt-4 w-full max-w-sm px-3 py-2 rounded-xl text-sm"
+            style={{
+              background: 'var(--color-bg-subtle)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-text-muted)',
+            }}
+          >
+            Връзката на живо прекъсна. Записът продължава — бележката ще се
+            обработи след прегледа.
           </div>
         )}
 

@@ -16,6 +16,7 @@ import type {
   PatientSummaryResponse,
   RetryExtractionResponse,
   FailedTranscriptResponse,
+  StreamKeyResponse,
 } from './types';
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL!;
@@ -300,6 +301,43 @@ export const api = {
       signal: controller.signal,
     }).finally(() => clearTimeout(timer));
   },
+
+  // ── Streaming transcription (stt-rt-v5) ───────────────────────────────────
+  /** Mints a short-lived Soniox key so the browser can stream straight to the
+   *  EU websocket. THIS CALL IS THE CONSENT GATE — the backend refuses it
+   *  without a recorded consent, so a 403 here means no audio may leave.
+   *
+   *  Every non-200 is a fall-back-to-async signal, not an error to surface:
+   *  409 `stt_rt_disabled` (the org isn't on the streaming path), 502 (Soniox
+   *  unreachable), 429 (throttled). The caller treats them uniformly. */
+  streamKey: (consultationId: string) =>
+    request<StreamKeyResponse>(`/api/consultations/${consultationId}/stream-key`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+
+  /** Submits the final tokens the browser accumulated while streaming, and
+   *  runs the SAME extraction pipeline the async upload runs. The response
+   *  shape is identical to api.transcribe()'s, so the caller's success path is
+   *  shared. Deliberately NOT flag-gated server-side: a transcript the browser
+   *  is already holding must always have somewhere to go. */
+  submitStreamedTranscript: (
+    consultationId: string,
+    transcript: string,
+    opts?: { audioSeconds?: number },
+  ) => {
+    // Extraction runs inside this request, so it needs the same generous
+    // deadline the blob upload gets — the streaming win is that the SONIOX
+    // leg is gone, not that Claude got faster.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+    return request<TranscribeResult>(`/api/consultations/${consultationId}/stream-transcript`, {
+      method: 'POST',
+      body: JSON.stringify({ transcript, audio_seconds: opts?.audioSeconds }),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
+  },
+
   editConsultation: (
     consultationId: string,
     field?: string,
