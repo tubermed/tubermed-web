@@ -59,10 +59,12 @@ use **cmd**/`git` without PowerShell redirection (e.g. `git cat-file blob HEAD:p
 # Verification gates (before every commit)
 
 `npm run build` · `npx tsc --noEmit` clean · `npm run lint` introduces **zero new**
-findings vs the pre-existing baseline (don't chase pre-existing ones). No unit-test
-runner in this repo — verify interactive behavior in a live local browser (preview
-tools freeze CSS transitions/rAF — don't trust them for animated state; say what you
-couldn't exercise headlessly).
+findings vs the pre-existing baseline (don't chase pre-existing ones). `npm test`
+(added 2026-07-28) is plain `node --test scripts/*.test.ts` — **no runner, no loader,
+no test dependency**: Node 24 strips the types natively. It covers only DOM-free logic
+modules (today `lib/stt-stream.ts`); anything touching React or the DOM still has to be
+verified in a live local browser (preview tools freeze CSS transitions/rAF — don't trust
+them for animated state; say what you couldn't exercise headlessly).
 
 # Identity-free visit start + notes library
 
@@ -95,6 +97,29 @@ page + its nav entry) was **removed** (W1–W3, `45b0dac`→`9eda9cb`). Do NOT r
 - **Sentry:** Replay OFF, tracing OFF: rates 0, no `replayIntegration`; `instrumentation-client.ts` runtime-strips `browserTracingIntegration` (tree-shake no-ops on Turbopack). `sendDefaultPii: false`; `lib/sentry-scrub.ts` `scrubEvent` as `beforeSend` at every init site; EU ingest only. Never `@sentry/wizard`.
 - **CSP:** `contentSecurityPolicy()` in `next.config.ts` `headers()` (prod-only; rebuild). `Permissions-Policy: microphone=(self)` MANDATORY — the scribe records; removing it breaks recording. `connect-src` DERIVED, never hardcoded — `backendConnectOrigins()` (`NEXT_PUBLIC_BACKEND_URL`); `sentryConnectOrigins()` (`lib/sentry-csp.ts`) EU-guarded (`*.ingest.de.sentry.io`). Cross-origin = EU backend + EU Sentry ONLY — never US/Google/non-EU.
 - **Colours:** tokens in `globals.css` `@theme` (that file is the source of truth); never hardcode. No gradients on clinical surfaces; only auth/brand panels may use `--brand-panel-*`. Scribe QR `fgColor` stays literal `#1C2B44` synced to `--brand-panel-base` (vars break export).
+
+# Live transcription (stt-rt-v5) — the scribe streams while recording
+
+`lib/stt-stream.ts` wraps ONE websocket per visit; `PcMode` in `app/app/scribe/page.tsx`
+drives it. Three rules, all load-bearing:
+
+- **The MediaRecorder buffer is never sacrificed.** `ondataavailable` pushes every chunk
+  to `chunksRef` exactly as before AND hands it to the socket. `blobRef` is released at
+  exactly one point in the file: after the server confirms the transcript is persisted.
+  A dropped connection must cost latency, never the visit.
+- **A drop is TERMINAL — never add a mid-visit resume.** Reconnecting means either a hole
+  in the transcript (what was said while the socket was down) or a duplicated boundary;
+  a silent hole in a medical note is worse than losing the latency win on one visit.
+  `degraded` is a one-way latch guarded twice (handler detachment + an in-handler check);
+  the "can NEVER recover" test fails only if BOTH are removed.
+- **Chunks recorded before the socket opens are QUEUED, not dropped.** Chunk 1 carries the
+  WebM/EBML header — drop it and Soniox gets headerless clusters it cannot decode at all.
+- Falling back to the audio upload is allowed ONLY on a 400 from the submit (our own shape
+  validation, which runs before the server claims the row). Any other server response means
+  the row already advanced and re-uploading would 409 into a dead end.
+
+`ws_url` and `config` are **server-authored** (`StreamKeyResponse`) — never rebuild the EU
+endpoint or the specialty vocabulary payload client-side.
 
 # Known gotchas
 
