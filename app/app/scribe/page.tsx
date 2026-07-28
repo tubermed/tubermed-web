@@ -535,6 +535,16 @@ type RecoveryPhase =
   | { kind: 'temporary'; message: string }
   | { kind: 'no-transcript'; message: string };
 
+// The escape hatch's own state. Independent of RecoveryPhase because the two
+// are orthogonal: the doctor may want to read the words whether or not another
+// retry is worth attempting, and MOST of all in the terminal state where the
+// only other option is „започни нов преглед" for a visit that already happened.
+type TranscriptPhase =
+  | { kind: 'hidden' }
+  | { kind: 'loading' }
+  | { kind: 'shown'; text: string }
+  | { kind: 'unavailable'; message: string };
+
 function RecoveryPanel({
   visitId,
   onSuccess,
@@ -569,6 +579,44 @@ function RecoveryPanel({
       });
     }
   }, [visitId, onSuccess]);
+
+  const [transcriptPhase, setTranscriptPhase] = useState<TranscriptPhase>({ kind: 'hidden' });
+  const [copied, setCopied] = useState(false);
+
+  // Fetch the raw text of the failed visit. Never logged — it is clinical
+  // content, and the „no PII in logs" rule applies on the client too.
+  const showTranscript = useCallback(async () => {
+    setTranscriptPhase({ kind: 'loading' });
+    try {
+      const res = await api.failedTranscript(visitId);
+      const text = (res.transcript || '').trim();
+      setTranscriptPhase(
+        text
+          ? { kind: 'shown', text }
+          : { kind: 'unavailable', message: 'Няма запазен текст от този преглед.' },
+      );
+    } catch (err) {
+      // 409 = nothing to show (never had a transcript, or the visit was erased).
+      // Anything else = the text may still exist; say so without promising it.
+      const message =
+        err instanceof ApiError && err.status === 409
+          ? 'Няма запазен текст от този преглед.'
+          : 'Текстът не може да бъде зареден в момента. Опитайте отново след малко.';
+      setTranscriptPhase({ kind: 'unavailable', message });
+    }
+  }, [visitId]);
+
+  const copyTranscript = useCallback(async () => {
+    if (transcriptPhase.kind !== 'shown') return;
+    try {
+      await navigator.clipboard.writeText(transcriptPhase.text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard blocked (permissions / insecure context) — the text is on
+      // screen and selectable, so this is a convenience failure, not a dead end.
+    }
+  }, [transcriptPhase]);
 
   const retrying = phase.kind === 'retrying';
   const blocked = phase.kind === 'no-transcript';
@@ -615,6 +663,67 @@ function RecoveryPanel({
         <Button variant="secondary" onClick={onRestart} disabled={retrying}>
           Започни нов преглед
         </Button>
+      </div>
+
+      {/* THE ESCAPE HATCH. The лист could not be built, but the visit happened
+          and its words are on the server. The worst case must be „copy the text
+          in by hand", never „the visit is gone" — so this stays available in
+          BOTH states, and especially in the terminal one where the only other
+          offer is starting over. Not shown until asked for: the doctor's
+          default view of a failure shouldn't be a wall of raw text. */}
+      <div className="w-full mt-6 pt-6 border-t" style={{ borderColor: 'var(--color-border)' }}>
+        {transcriptPhase.kind === 'hidden' && (
+          <button
+            type="button"
+            onClick={showTranscript}
+            className="text-sm underline underline-offset-4"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            Виж текста на прегледа
+          </button>
+        )}
+
+        {transcriptPhase.kind === 'loading' && (
+          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+            Зарежда се…
+          </p>
+        )}
+
+        {transcriptPhase.kind === 'unavailable' && (
+          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+            {transcriptPhase.message}
+          </p>
+        )}
+
+        {transcriptPhase.kind === 'shown' && (
+          <div className="text-left">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <span className="text-sm font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                Текст на прегледа
+              </span>
+              <Button variant="secondary" onClick={copyTranscript}>
+                {copied ? 'Копирано ✓' : 'Копирай текста'}
+              </Button>
+            </div>
+            {/* readOnly textarea, not a <pre>: selectable, scrollable, and
+                keyboard-accessible for a manual copy when the clipboard API is
+                blocked (insecure context / denied permission). */}
+            <textarea
+              readOnly
+              value={transcriptPhase.text}
+              rows={10}
+              className="w-full rounded-md border p-3 text-sm font-mono resize-y"
+              style={{
+                borderColor: 'var(--color-border)',
+                color: 'var(--color-text)',
+                background: 'var(--color-surface-muted, #fff)',
+              }}
+            />
+            <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>
+              Копирайте текста в листа ръчно, ако автоматичното извличане продължава да е неуспешно.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

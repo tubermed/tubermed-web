@@ -372,3 +372,15 @@ export interface RetryExtractionResponse {
   ok: true;
   fields: TranscribeFields;
 }
+
+// Response from GET /api/consultations/:id/transcript — the failed-extraction
+// escape hatch. Returned ONLY while the row is stuck in status='error'; a
+// healthy note answers 409, as does a visit whose transcript is absent or was
+// erased (Article 17 outranks recovery). The body carries the raw transcript
+// and nothing else — no extracted_fields, no ai_original_fields. This is the
+// SAME text the browser already receives on the happy path via
+// TranscribeResponse.transcript, so it is not a new exposure class.
+export interface FailedTranscriptResponse {
+  status: 'error';
+  transcript: string;
+}

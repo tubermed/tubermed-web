@@ -15,6 +15,7 @@ import type {
   ConsultationListResponse,
   PatientSummaryResponse,
   RetryExtractionResponse,
+  FailedTranscriptResponse,
 } from './types';
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL!;
@@ -464,6 +465,23 @@ export const api = {
     request<RetryExtractionResponse>(
       `/api/consultations/${consultationId}/retry-extraction`,
       { method: 'POST' },
+    ),
+
+  // ── Failed-visit transcript (the escape hatch) ─────────────────────────────
+  // The words of a visit that HAPPENED must never be hostage to an extraction
+  // that cannot be made to work. When retry-extraction is exhausted, this is
+  // what stands between the doctor and „започнете нов преглед" for a
+  // consultation that already took place: they can read the raw text and copy
+  // it into the лист by hand.
+  //
+  // Backend gates (GET /api/consultations/:id/transcript): org+doctor-scoped
+  // exactly like retry-extraction (404 cross-org), 409 unless status='error'
+  // (it is an escape hatch, not a general transcript read), 409 when the
+  // transcript is absent — which is also how an ERASED visit answers, so
+  // Article 17 keeps outranking recovery.
+  failedTranscript: (consultationId: string) =>
+    request<FailedTranscriptResponse>(
+      `/api/consultations/${consultationId}/transcript`,
     ),
 };
 
