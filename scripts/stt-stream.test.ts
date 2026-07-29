@@ -186,6 +186,36 @@ test('finalize() that never gets `finished` gives up and falls back', async () =
   assert.deepStrictEqual(degradedWith, ['finalize_timeout']);
 });
 
+test('a connection killed BEFORE open reports the connect_* class, not socket_*', () => {
+  // The 2026-07-29 prod incident: a CSP connect-src miss had the browser
+  // refuse the websocket at open on EVERY visit. From 'socket_error' alone
+  // that was indistinguishable from a flaky line — the pre-open class is what
+  // lets analytics say "the environment is blocking the connection".
+  const err = makeStream();
+  err.s.start();
+  err.sock.fail();               // error event, socket never opened
+  assert.deepStrictEqual(err.degradedWith, ['connect_error']);
+
+  const closed = makeStream();
+  closed.s.start();
+  closed.sock.drop(1006);        // close event, socket never opened
+  assert.deepStrictEqual(closed.degradedWith, ['connect_closed']);
+});
+
+test('a WebSocket constructor throw (CSP-style synchronous block) degrades as connect_error', () => {
+  const degradedWith: DegradeReason[] = [];
+  const s = new SonioxLiveStream({
+    wsUrl: 'wss://stt-rt.eu.soniox.com/transcribe-websocket',
+    apiKey: 'tempkey_test',
+    config: {},
+    createSocket: () => { throw new Error('SecurityError'); },
+    callbacks: { onDegraded: (r) => degradedWith.push(r) },
+  });
+  s.start();
+  assert.strictEqual(s.isDegraded, true);
+  assert.deepStrictEqual(degradedWith, ['connect_error']);
+});
+
 test('a socket that never opens degrades on the open deadline', async () => {
   const { s, degradedWith } = makeStream({ openTimeoutMs: 30 });
   s.start();

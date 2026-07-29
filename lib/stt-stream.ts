@@ -44,11 +44,19 @@ export interface LiveSocket {
 }
 
 export type DegradeReason =
-  | 'open_timeout'      // the socket never opened
-  | 'socket_error'      // transport error mid-visit
-  | 'socket_closed'     // closed under us mid-visit
+  | 'connect_error'     // killed BEFORE open — the CSP-block / DNS / TLS / firewall class
+  | 'connect_closed'    // closed BEFORE open without an error event
+  | 'open_timeout'      // the socket never opened and never errored
+  | 'socket_error'      // transport error mid-visit (socket had opened)
+  | 'socket_closed'     // closed under us mid-visit (socket had opened)
   | 'server_error'      // Soniox sent an error frame
   | 'finalize_timeout'; // flushed at the end, `finished` never arrived
+// The connect_* / socket_* split exists for telemetry, not control flow: a
+// stream that dies before open on EVERY visit is an environment blocking the
+// connection (a CSP tightening, a clinic firewall), not a flaky line — and
+// that diagnosis must be readable from analytics, because the failure only
+// reproduces in a live browser (2026-07-29: a missing CSP connect-src origin
+// degraded every prod visit while every offline gate stayed green).
 
 export type FinalizeResult =
   | { ok: true;  transcript: string }
@@ -137,7 +145,9 @@ export class SonioxLiveStream {
     try {
       sock = create(this.opts.wsUrl);
     } catch {
-      this.degrade('socket_error');
+      // Some browsers surface a blocked connection (CSP, malformed URL) as a
+      // synchronous constructor throw rather than an error event — same class.
+      this.degrade('connect_error');
       return;
     }
     this.socket = sock;
@@ -162,8 +172,12 @@ export class SonioxLiveStream {
     };
 
     sock.onmessage = (ev) => this.handleMessage(ev);
-    sock.onerror   = () => this.degrade('socket_error');
-    sock.onclose   = () => this.degrade('socket_closed');
+    // configSent doubles as "the socket reached open": a failure before it is
+    // the connection being refused (connect_*), after it a mid-visit drop
+    // (socket_*). The distinction is telemetry-only — every path degrades the
+    // same way.
+    sock.onerror   = () => this.degrade(this.configSent ? 'socket_error' : 'connect_error');
+    sock.onclose   = () => this.degrade(this.configSent ? 'socket_closed' : 'connect_closed');
   }
 
   /** Push one recorder chunk. Inert once degraded or before the socket opens —

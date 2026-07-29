@@ -284,11 +284,24 @@ export const api = {
     }),
   getSessionStatus: (id: string) =>
     request<SessionStatus>(`/api/sessions/${id}/status`),
-  transcribe: (audio: Blob, filename = 'audio.webm', opts?: { consultationId?: string }) => {
+  transcribe: (
+    audio: Blob,
+    filename = 'audio.webm',
+    opts?: {
+      consultationId?: string;
+      /** Present ONLY when this visit tried to stream (stt-rt) and fell back:
+       *  a fixed-vocabulary failure class (DegradeReason or mint_http_<status>
+       *  / mint_network) — never free text. The backend folds it into the
+       *  consultation_started event so a systemic streaming failure (e.g. an
+       *  environment blocking the websocket) is diagnosable from analytics. */
+      streamDegraded?: string;
+    },
+  ) => {
     const fd = new FormData();
     fd.append('audio', audio, filename);
     const headers: Record<string, string> = {};
     if (opts?.consultationId) headers['X-Consultation-Id'] = opts.consultationId;
+    if (opts?.streamDegraded) headers['X-Stream-Degraded'] = opts.streamDegraded;
     // Bound the single upload+transcribe+extract request. On timeout the fetch
     // aborts (AbortError → the scribe flow's retainable-failure path); `signal`
     // rides through request()'s option spread into fetch — no wrapper change.

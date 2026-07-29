@@ -1499,6 +1499,14 @@ function PcMode({
   const [streamState, setStreamState] = useState<'off' | 'connecting' | 'live' | 'fallback'>('off');
   const [liveText, setLiveText] = useState('');
   const liveStreamRef = useRef<SonioxLiveStream | null>(null);
+  // WHY the stream failed, as a fixed-vocabulary class (DegradeReason, or
+  // mint_http_<status> / mint_network when the key mint itself failed) — rides
+  // the fallback upload as X-Stream-Degraded so the backend's consultation_started
+  // event records it. Telemetry only, enum/numbers only, never content: the
+  // failure class is what lets us diagnose "blocked at open on every visit"
+  // (a CSP/firewall environment) from analytics instead of needing a human
+  // with DevTools open in the clinic (2026-07-29 incident).
+  const streamDegradeRef = useRef<string | null>(null);
   const liveScrollRef = useRef<HTMLDivElement | null>(null);
   // stopRecording is a stable callback, so it cannot read `seconds` from state
   // without going stale. This mirror is the recorded AUDIO length (it only
@@ -1642,6 +1650,7 @@ function PcMode({
     if (!consultationId) return;
     setStreamState('connecting');
     setLiveText('');
+    streamDegradeRef.current = null; // re-armed per recording
 
     let ticket;
     try {
@@ -1650,7 +1659,11 @@ function PcMode({
       // is not on the streaming path, 502 when Soniox is down, 429 throttled).
       // All of them mean the same thing to us: take the async path.
       ticket = await api.streamKey(consultationId);
-    } catch {
+    } catch (err) {
+      // Status code only — mint_http_409 (org not on rt) reads very differently
+      // from mint_http_502 (Soniox down) in the aggregate.
+      streamDegradeRef.current =
+        err instanceof ApiError ? `mint_http_${err.status}` : 'mint_network';
       setStreamState('off');
       return;
     }
@@ -1664,7 +1677,11 @@ function PcMode({
         // arrives once, from finalize(), at submit.
         onText: (tail) => setLiveText(tail),
         // One-way. The visit continues recording; only the live view stops.
-        onDegraded: () => setStreamState('fallback'),
+        // The reason is telemetry, not control flow (lib/stt-stream.ts).
+        onDegraded: (reason) => {
+          streamDegradeRef.current = reason;
+          setStreamState('fallback');
+        },
       },
     });
     liveStreamRef.current = live;
@@ -1787,11 +1804,14 @@ function PcMode({
     await requestConsent();
 
     const submit = (): Promise<TranscribeResult> =>
-      api.transcribe(
-        blob,
-        'audio.webm',
-        consultationId ? { consultationId } : undefined,
-      );
+      api.transcribe(blob, 'audio.webm', {
+        ...(consultationId ? { consultationId } : {}),
+        // When this visit SHOULD have streamed but fell back, say why — the
+        // class rides the consultation_started event server-side.
+        ...(streamDegradeRef.current
+          ? { streamDegraded: streamDegradeRef.current }
+          : {}),
+      });
 
     // ── Streaming path ────────────────────────────────────────────────────
     // If the stream survived the visit, the transcript is ALREADY in this tab
