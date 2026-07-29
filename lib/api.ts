@@ -337,7 +337,17 @@ export const api = {
   submitStreamedTranscript: (
     consultationId: string,
     transcript: string,
-    opts?: { audioSeconds?: number },
+    opts?: {
+      audioSeconds?: number;
+      /** Client-measured stage durations (ms), telemetry only — they ride the
+       *  consultation_started event so "how long did the doctor wait after
+       *  stop, and on what?" is answerable from analytics instead of guessed.
+       *  finalizeMs = the Soniox flush→finished wait; stopToSubmitMs = tap of
+       *  stop → this request leaving. Numbers only, ignored server-side if
+       *  malformed. */
+      finalizeMs?: number;
+      stopToSubmitMs?: number;
+    },
   ) => {
     // Extraction runs inside this request, so it needs the same generous
     // deadline the blob upload gets — the streaming win is that the SONIOX
@@ -346,7 +356,12 @@ export const api = {
     const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
     return request<TranscribeResult>(`/api/consultations/${consultationId}/stream-transcript`, {
       method: 'POST',
-      body: JSON.stringify({ transcript, audio_seconds: opts?.audioSeconds }),
+      body: JSON.stringify({
+        transcript,
+        audio_seconds: opts?.audioSeconds,
+        finalize_ms: opts?.finalizeMs,
+        stop_to_submit_ms: opts?.stopToSubmitMs,
+      }),
       signal: controller.signal,
     }).finally(() => clearTimeout(timer));
   },

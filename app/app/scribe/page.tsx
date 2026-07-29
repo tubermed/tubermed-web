@@ -1779,6 +1779,10 @@ function PcMode({
 
   const stopRecording = useCallback(async () => {
     if (!mrRef.current) return;
+    // Telemetry anchor: everything between this tap and the transcript
+    // request leaving is wait the doctor FEELS but the backend cannot see.
+    // Client-measured, numbers only, rides the submit body.
+    const stopTappedAt = Date.now();
     setRecording(false);
     setPaused(false);
     onRecordingChange(false);
@@ -1838,18 +1842,24 @@ function PcMode({
       // finalize() resolves rather than rejects, but a thrown surprise here
       // must still land on the async path, never escape this handler.
       let finished: Awaited<ReturnType<typeof live.finalize>>;
+      const finalizeStartedAt = Date.now();
       try {
         finished = await live.finalize();
       } catch {
         finished = { ok: false, reason: 'socket_closed' };
       }
+      const finalizeMs = Date.now() - finalizeStartedAt;
 
       if (finished.ok && finished.transcript.trim()) {
         try {
           const result = await api.submitStreamedTranscript(
             consultationId,
             finished.transcript,
-            { audioSeconds: secondsRef.current || undefined },
+            {
+              audioSeconds: secondsRef.current || undefined,
+              finalizeMs,
+              stopToSubmitMs: Date.now() - stopTappedAt,
+            },
           );
           // Persisted server-side — only NOW is the local recording redundant.
           blobRef.current = null;
