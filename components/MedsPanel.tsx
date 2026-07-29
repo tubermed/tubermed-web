@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { Medication } from '@/lib/types';
-import type { SafetyAlert } from '@/lib/drug-safety';
+import { groupAlerts, type SafetyAlert } from '@/lib/drug-safety';
 import { getIalDataSync, loadIal } from '@/lib/ial-meds';
 import MedsPicker from './MedsPicker';
 import { copyToClipboard } from '@/lib/exporters';
@@ -157,10 +157,12 @@ export default function MedsPanel({
           )}
         </div>
 
-        {/* Inline critical alerts */}
+        {/* Inline critical alerts — grouped like the top banner (#47): one
+            chip per distinct issue, „×N" when identical entries collapsed.
+            Row flags below keep reading the RAW inlineCriticals. */}
         {inlineCriticals.length > 0 && (
           <div className="mb-3 space-y-1">
-            {inlineCriticals.map((a, i) => (
+            {groupAlerts(inlineCriticals).map(({ alert: a, count }, i) => (
               <div
                 key={i}
                 className="flex items-start gap-2 px-2 py-1.5 rounded-md text-[11px] leading-tight"
@@ -168,8 +170,18 @@ export default function MedsPanel({
               >
                 <Icon name="alert-octagon" className="flex-shrink-0" />
                 <div>
-                  <div className="font-semibold uppercase tracking-wide text-[10px]">
-                    Внимание
+                  <div className="flex items-center gap-2">
+                    <div className="font-semibold uppercase tracking-wide text-[10px]">
+                      Внимание
+                    </div>
+                    {count > 1 && (
+                      <span
+                        className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full border leading-none"
+                        title={`${count} еднакви записа, показани веднъж`}
+                      >
+                        ×{count}
+                      </span>
+                    )}
                   </div>
                   <div className="mt-0.5">{a.message}</div>
                   {a.action && (

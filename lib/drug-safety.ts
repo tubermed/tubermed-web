@@ -461,11 +461,15 @@ function adaptBackendAlert(a: BackendAlert): SafetyAlert | null {
  * (preferred) with frontend regex alerts (safety net for typos / cases
  * Claude missed).
  *
- * Dedup rule: a frontend alert is suppressed only when its trigger drug
- * already appears (case-insensitive substring match either direction) in
- * a backend alert's triggers. Different drugs from the same rule still
- * surface — never silently swallow a frontend hit on a drug the backend
- * didn't mention.
+ * Dedup rule (#47): a frontend alert is suppressed only when EVERY drug it
+ * fired on is already named in what the doctor sees from the backend — its
+ * triggers (case-insensitive substring match either direction) or the
+ * reason/action text itself. Backend triggers are usually ONE normalized
+ * drug string while the reason routinely names the partner drug of an
+ * interaction ("антикоагулантна терапия с варфарин..."); checking triggers
+ * alone let the regex net re-state an issue already on screen as an extra
+ * chip. Partial coverage still surfaces — never silently swallow a frontend
+ * hit on a drug the backend didn't mention anywhere.
  */
 export function mergeBackendAlerts(
   backendAlerts: unknown,
@@ -482,20 +486,56 @@ export function mergeBackendAlerts(
   const backendDrugs = new Set(
     backend.flatMap((a) => a.triggers).map((t) => t.toLowerCase())
   );
+  const backendText = backend
+    .map((a) => a.message + ' ' + (a.action || ''))
+    .join(' ')
+    .toLowerCase();
 
   const frontendDeduped = frontend.filter((fa) => {
     // Suppress only if EVERY trigger of this frontend alert is already
-    // covered by some backend trigger (or its substring). Conservative —
-    // partial overlap still surfaces.
+    // covered by some backend trigger (or its substring) or named in the
+    // backend alert text. Conservative — partial overlap still surfaces.
     if (fa.triggers.length === 0) return true;
     return !fa.triggers.every((t) => {
       const lt = t.toLowerCase();
       for (const bt of backendDrugs) {
         if (bt.includes(lt) || lt.includes(bt)) return true;
       }
-      return false;
+      return backendText.includes(lt);
     });
   });
 
   return [...backend, ...frontendDeduped];
+}
+
+// ── Presentation grouping (#47) ─────────────────────────────────────────────
+// Collapse alerts whose (severity, message, action) are IDENTICAL into one
+// entry with an occurrence count, so the rails render one chip per distinct
+// issue („×N" badge when N > 1). Purely presentational: content is never
+// rewritten, order is first-seen, and triggers are unioned so the meds-panel
+// row flags keep firing for every drug of every collapsed occurrence.
+
+export interface GroupedAlert {
+  alert: SafetyAlert;
+  count: number;
+}
+
+export function groupAlerts(alerts: SafetyAlert[]): GroupedAlert[] {
+  const out: GroupedAlert[] = [];
+  const byKey = new Map<string, GroupedAlert>();
+  for (const a of alerts) {
+    const key = JSON.stringify([a.severity, a.message, a.action || '']);
+    const seen = byKey.get(key);
+    if (!seen) {
+      const group = { alert: { ...a, triggers: [...a.triggers] }, count: 1 };
+      byKey.set(key, group);
+      out.push(group);
+    } else {
+      seen.count += 1;
+      for (const t of a.triggers) {
+        if (!seen.alert.triggers.includes(t)) seen.alert.triggers.push(t);
+      }
+    }
+  }
+  return out;
 }

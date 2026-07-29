@@ -34,7 +34,7 @@ import type {
 import EchoNoteView from '@/components/EchoNoteView';
 import InvestigationBlockCard from '@/components/InvestigationBlockCard';
 import { setEchoPath } from '@/lib/echo-template';
-import { mergeBackendAlerts, type SafetyAlert } from '@/lib/drug-safety';
+import { mergeBackendAlerts, groupAlerts, type SafetyAlert } from '@/lib/drug-safety';
 import { loadMkb, getMkbDataSync, resolveMkb } from '@/lib/mkb10';
 import { filedMainTerm, filedComorbidityTerm, spokenDivergesFromOfficial } from '@/lib/diagnosis';
 import { loadIal } from '@/lib/ial-meds';
@@ -849,6 +849,10 @@ function ResultPageInner() {
     () => safetyAlerts.filter((a) => a.severity === 'warning'),
     [safetyAlerts]
   );
+  // #47 — one chip per distinct issue: identical entries collapse with a „×N"
+  // badge. The raw arrays above keep feeding the meds-panel row flags.
+  const criticalGroups = useMemo(() => groupAlerts(criticals), [criticals]);
+  const warningGroups = useMemo(() => groupAlerts(warnings), [warnings]);
 
   // ── Vital-sign review counter ─────────────────────────────────
   // Scan the free-text clinical fields for highlights (vitals out of range
@@ -1521,8 +1525,8 @@ function ResultPageInner() {
               <Icon name="alert-octagon" /> Внимание — Проверка за безопасност
             </div>
             <div className="space-y-2">
-              {criticals.map((a, i) => (
-                <CriticalChip key={i} alert={a} />
+              {criticalGroups.map((g, i) => (
+                <CriticalChip key={i} alert={g.alert} count={g.count} />
               ))}
             </div>
           </div>
@@ -2183,8 +2187,8 @@ function ResultPageInner() {
                   <Icon name="alert-triangle" /> Предупреждения
                 </div>
                 <div className="space-y-2">
-                  {warnings.map((a, i) => (
-                    <WarningChip key={i} alert={a} />
+                  {warningGroups.map((g, i) => (
+                    <WarningChip key={i} alert={g.alert} count={g.count} />
                   ))}
                 </div>
               </div>
@@ -2307,7 +2311,23 @@ function ResultPageInner() {
 
 /* ──────────────────────────────────────────────────────────────── */
 
-function CriticalChip({ alert }: { alert: SafetyAlert }) {
+// „×N" badge (#47) — identical alert entries collapse to one chip via
+// groupAlerts; the badge says how many entries the chip stands for. Purely
+// presentational — content, severity, and card-flag behavior are untouched.
+function AlertCountBadge({ count, color }: { count: number; color: string }) {
+  if (count <= 1) return null;
+  return (
+    <span
+      className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full border leading-none"
+      style={{ color, borderColor: color }}
+      title={`${count} еднакви записа, показани веднъж`}
+    >
+      ×{count}
+    </span>
+  );
+}
+
+function CriticalChip({ alert, count = 1 }: { alert: SafetyAlert; count?: number }) {
   return (
     <div
       className="flex items-start gap-3 px-3 py-2 rounded-md"
@@ -2324,11 +2344,14 @@ function CriticalChip({ alert }: { alert: SafetyAlert }) {
         style={{ color: 'var(--color-red)' }}
       />
       <div className="flex-1 min-w-0">
-        <div
-          className="text-xs font-bold uppercase tracking-wider"
-          style={{ color: 'var(--color-red)' }}
-        >
-          Внимание!
+        <div className="flex items-center gap-2">
+          <div
+            className="text-xs font-bold uppercase tracking-wider"
+            style={{ color: 'var(--color-red)' }}
+          >
+            Внимание!
+          </div>
+          <AlertCountBadge count={count} color="var(--color-red)" />
         </div>
         <div
           className="text-sm mt-0.5"
@@ -2341,7 +2364,7 @@ function CriticalChip({ alert }: { alert: SafetyAlert }) {
   );
 }
 
-function WarningChip({ alert }: { alert: SafetyAlert }) {
+function WarningChip({ alert, count = 1 }: { alert: SafetyAlert; count?: number }) {
   return (
     <div
       className="flex items-start gap-2 px-2.5 py-2 rounded-md"
@@ -2360,11 +2383,14 @@ function WarningChip({ alert }: { alert: SafetyAlert }) {
         className="text-xs leading-snug"
         style={{ color: 'var(--color-text)' }}
       >
-        <div
-          className="font-semibold uppercase tracking-wide text-[10px] mb-0.5"
-          style={{ color: 'var(--color-gold)' }}
-        >
-          Предупреждение
+        <div className="flex items-center gap-2 mb-0.5">
+          <div
+            className="font-semibold uppercase tracking-wide text-[10px]"
+            style={{ color: 'var(--color-gold)' }}
+          >
+            Предупреждение
+          </div>
+          <AlertCountBadge count={count} color="var(--color-gold)" />
         </div>
         {alert.message}
         {alert.action && (
