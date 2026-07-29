@@ -16,7 +16,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { resolveResultBootstrap } from '../lib/result-identity.ts';
+import { resolveResultBootstrap, resolveScribeGate } from '../lib/result-identity.ts';
 
 const A = 'aaaaaaaa-1111-2222-3333-444444444444';
 const S = 'ssssssss-1111-2222-3333-444444444444';
@@ -107,4 +107,48 @@ test('blob + no URL id → paint with no reconcile (screen and writes share the 
   if (d.mode !== 'paint') return;
   assert.strictEqual(d.result.consultationId, A);
   assert.strictEqual(d.reconcileVisitId, null);
+});
+
+// ── The scribe gate: a spent recording ticket must never record again ────────
+// The stale-pending-visit trap (follow-up chip to the P0): tuber_pending_visit
+// survives a finished visit, and a matching consultation_id used to be the
+// scribe's ONLY check — browser-back to /app/scribe?visit=A after visit A
+// generated its note started a second recording into a `generated` row, whose
+// submit 409s into a dead end. The same-id result blob IS the client-side
+// proof the note exists (it is written at exactly one place: transcription
+// submit), so pending+blob for the same visit = spent ticket → recover, and
+// cold-start recovery's status matrix routes the doctor to the result page.
+
+test('THE TRAP: pending A + result blob A + URL A → recover, never record', () => {
+  const d = resolveScribeGate(pvFor(A), blobFor(A), A);
+  assert.deepStrictEqual(d, { mode: 'recover' });
+});
+
+test('fresh staging records: pending B + stale blob from visit A + URL B', () => {
+  const d = resolveScribeGate(pvFor(S), blobFor(A), S);
+  assert.strictEqual(d.mode, 'record');
+  if (d.mode !== 'record') return;
+  assert.strictEqual(d.pendingVisit.consultation_id, S);
+});
+
+test('mid-visit refresh records: pending A + no blob yet + URL A', () => {
+  const d = resolveScribeGate(pvFor(A), null, A);
+  assert.strictEqual(d.mode, 'record');
+});
+
+test('a malformed blob is no proof of a note — the ticket still records', () => {
+  const d = resolveScribeGate(pvFor(A), '{broken', A);
+  assert.strictEqual(d.mode, 'record');
+});
+
+test('absent pending → recover (cold start, existing behavior)', () => {
+  assert.deepStrictEqual(resolveScribeGate(null, null, A), { mode: 'recover' });
+});
+
+test('pending for another visit → recover (existing behavior)', () => {
+  assert.deepStrictEqual(resolveScribeGate(pvFor(S), null, A), { mode: 'recover' });
+});
+
+test('malformed pending → recover, never a throw', () => {
+  assert.deepStrictEqual(resolveScribeGate('{not json', null, A), { mode: 'recover' });
 });

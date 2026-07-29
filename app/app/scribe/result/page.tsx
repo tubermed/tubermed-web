@@ -2211,7 +2211,13 @@ function ResultPageInner() {
                 className="block text-center py-2.5 rounded-md text-white font-medium text-sm transition hover:opacity-90 mb-2"
                 style={{ background: 'var(--gradient-brand)' }}
                 onClick={() => {
+                  // The visit's per-visit context dies with the visit: blob AND
+                  // pending-visit ticket. Leaving the ticket behind let a
+                  // browser-back to /app/scribe?visit=<this id> start a second
+                  // recording into this already-generated row (409 dead end) —
+                  // see resolveScribeGate, the belt to this braces.
                   sessionStorage.removeItem(RESULT_STORAGE_KEY);
+                  sessionStorage.removeItem(PENDING_VISIT_KEY);
                   // The doctor is deliberately leaving this visit — close the
                   // лист now rather than waiting for a backstop. Best-effort
                   // ONLY: the enforceable triggers are the next

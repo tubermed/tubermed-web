@@ -26,6 +26,7 @@ import type {
   ConsentResponse,
 } from '@/lib/types';
 import ConsentModal from '@/components/ConsentModal';
+import { resolveScribeGate } from '@/lib/result-identity';
 import { SonioxLiveStream } from '@/lib/stt-stream';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import { useColdStartRecovery } from '@/lib/use-cold-start-recovery';
@@ -121,21 +122,23 @@ function ScribePageInner() {
       return;
     }
 
-    let pending: PendingVisit | null = null;
-    try {
-      const raw = sessionStorage.getItem(PENDING_VISIT_KEY);
-      if (raw) pending = JSON.parse(raw) as PendingVisit;
-    } catch {
-      /* malformed — treat as absent */
-    }
-    if (!pending || pending.consultation_id !== visitId) {
-      // Cold start (hard refresh / new tab / laptop sleep): the PendingVisit is
-      // gone but the URL still carries ?visit=<id>. Recover from the backend
-      // (useColdStartRecovery) instead of bouncing to /app/new-visit.
+    // resolveScribeGate (lib/result-identity.ts) applies the one-identity rule
+    // to STARTING a recording: absent/foreign/malformed pending → recover
+    // (cold start, as before), and — the stale-ticket trap — pending PLUS a
+    // result blob for this same visit → recover too, because the note already
+    // exists and a second recording could only 409 at submit. Recovery's
+    // status matrix then routes a `generated` row to the result page.
+    const gate = resolveScribeGate(
+      sessionStorage.getItem(PENDING_VISIT_KEY),
+      sessionStorage.getItem(RESULT_STORAGE_KEY),
+      visitId,
+    );
+    if (gate.mode === 'recover') {
       sessionStorage.removeItem(PENDING_VISIT_KEY);
       setRecoverVisitId(visitId);
       return;
     }
+    const pending = gate.pendingVisit;
 
     setConsultationId(visitId);
     setPendingVisit(pending);   // ← persist patient context so the strip can render

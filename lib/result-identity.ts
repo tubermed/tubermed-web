@@ -82,3 +82,51 @@ export function resolveResultBootstrap(
 
   return { mode: 'paint', result: blob, pendingVisit, reconcileVisitId: visitId };
 }
+
+// ── Scribe entry gate ────────────────────────────────────────────────────────
+// The same identity rule, applied to STARTING a recording. tuber_pending_visit
+// is the staging handoff from /app/new-visit — a ticket to record into ONE
+// consultation row. The trap (follow-up to the P0 above): the ticket outlives
+// the visit, and a matching consultation_id was the scribe's only check, so
+// browser-back to /app/scribe?visit=<finished id> started a second recording
+// into an already-`generated` row — whose submit can only 409 into a dead end.
+//
+// The client-side proof that a visit already has its note is the result blob:
+// it is written at exactly one place (transcription submit) and carries the
+// consultationId it belongs to. Pending + blob for the SAME id = spent ticket
+// → recover; cold-start recovery's status matrix then routes the doctor to
+// the result page. A missing, foreign, or malformed blob proves nothing and
+// must not block the recording (mid-visit refresh, fresh staging over an old
+// blob) — when in doubt, the server's status is the arbiter via recovery.
+
+export type ScribeGateDecision =
+  /** Valid staging ticket for this URL row — proceed to record. */
+  | { mode: 'record'; pendingVisit: PendingVisit }
+  /** No usable ticket (absent, foreign, malformed, or already spent) —
+   *  clear it and let cold-start recovery route by server status. */
+  | { mode: 'recover' };
+
+export function resolveScribeGate(
+  rawPendingVisit: string | null,
+  rawBlob: string | null,
+  visitId: string,
+): ScribeGateDecision {
+  let pending: PendingVisit | null = null;
+  if (rawPendingVisit) {
+    try {
+      pending = JSON.parse(rawPendingVisit) as PendingVisit;
+    } catch {
+      /* malformed — treat as absent */
+    }
+  }
+  if (!pending || pending.consultation_id !== visitId) {
+    return { mode: 'recover' };
+  }
+
+  const blob = rawBlob ? parseBlob(rawBlob) : null;
+  if (blob && blob.consultationId === visitId) {
+    return { mode: 'recover' };
+  }
+
+  return { mode: 'record', pendingVisit: pending };
+}
