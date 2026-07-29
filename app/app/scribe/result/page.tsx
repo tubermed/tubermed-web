@@ -19,6 +19,7 @@ import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
 import { api, ApiError, getSession } from '@/lib/api';
 import type { DoctorInfo } from '@/lib/api';
 import { useColdStartRecovery } from '@/lib/use-cold-start-recovery';
+import { resolveResultBootstrap } from '@/lib/result-identity';
 import type {
   TranscribeResult,
   TranscribeFields,
@@ -354,49 +355,69 @@ function ResultPageInner() {
     }
     setDoctor(session.doctor);
 
-    const raw = sessionStorage.getItem(RESULT_STORAGE_KEY);
-    if (!raw) {
-      // Cold start (hard refresh / new tab / laptop sleep): tuber_last_result is
-      // gone. If the URL carries ?visit=<id>, recover the filed note + patient
-      // header from the backend instead of bouncing. Otherwise there's nothing
-      // to recover — back to scribe.
-      const visitId = searchParams.get('visit');
-      if (visitId) {
-        setRecoverVisitId(visitId);
-        return;
-      }
+    // ONE identity per view of this page: the URL names the consultation, and
+    // stored context (blob + pending visit) is adopted ONLY when it provably
+    // belongs to it — decision table + tests in lib/result-identity.ts.
+    // (P0 2026-07-29: both outlive their visit in sessionStorage, so opening
+    // another consultation by URL painted the previous visit's header and
+    // transcript under THIS row's sealed+approved lifecycle — and aimed every
+    // mutating call, /edit /approve /seal /erase /export, at the PREVIOUS row.)
+    const visitId = searchParams.get('visit');
+
+    // This effect re-runs on a same-route ?visit= change with NO remount —
+    // every piece of per-consultation state must reset here, or the previous
+    // consultation's approved/sealed/erased presentation and edit tracking
+    // carry over into the one being opened. The reconcile/recovery below
+    // re-derives the real lifecycle from the server.
+    //
+    // (A still-debounced edit from the previous identity is flushed against
+    // the OLD row by the visitParam-keyed cleanup next to the unmount flush —
+    // cleanups run before this body, while `original`/fieldsRef still hold the
+    // old visit.)
+    editedFieldsRef.current = new Map();
+    pendingCharsChangedRef.current = 0;
+    exportSignalledRef.current = false;
+    setReviewStatus('pending');
+    setSealedAt(null);
+    setErasedAt(null);
+    setPendingVisit(null);
+    setRecoverVisitId(null);
+    setReconcileVisitId(null);
+
+    const decision = resolveResultBootstrap(
+      sessionStorage.getItem(RESULT_STORAGE_KEY),
+      sessionStorage.getItem(PENDING_VISIT_KEY),
+      visitId,
+    );
+    if (decision.mode === 'bounce') {
+      // No blob and no URL id — nothing to show; back to the scribe.
       router.replace('/app/scribe');
       return;
     }
-    try {
-      const parsed = JSON.parse(raw) as TranscribeResult;
-      setOriginal(parsed);
-      setFields({
-        ...parsed.fields,
-        medications_list: normalizeMedications(
-          parsed.fields.medications_list
-        ),
-      });
-      // The blob is the AI output frozen at generation — it never carries the
-      // doctor's later edits. Whenever ?visit= is present the server's
-      // extracted_fields is the source of truth: we just painted the blob for an
-      // instant first render; arm the reconcile effect to overwrite the rendered
-      // fields with the server copy. (Fixes same-tab F5 / duplicated-tab showing
-      // pre-edit text — sessionStorage survives those, so recovery never fires.)
-      const visitId = searchParams.get('visit');
-      if (visitId) setReconcileVisitId(visitId);
-    } catch {
-      router.replace('/app/scribe');
+    if (decision.mode === 'recover') {
+      // Cold start (hard refresh / new tab), a malformed blob, or a blob that
+      // belongs to a DIFFERENT consultation: rebuild everything — note, header,
+      // lifecycle AND the write-target identity — from the backend row alone.
+      setRecoverVisitId(decision.visitId);
+      return;
     }
-
-    // Optional patient context (present when the recording came from /app/new-visit).
-    // Legacy recordings won't have it — render falls back gracefully.
-    try {
-      const pv = sessionStorage.getItem(PENDING_VISIT_KEY);
-      if (pv) setPendingVisit(JSON.parse(pv) as PendingVisit);
-    } catch {
-      /* malformed — render without patient header */
-    }
+    setOriginal(decision.result);
+    setFields({
+      ...decision.result.fields,
+      medications_list: normalizeMedications(
+        decision.result.fields.medications_list
+      ),
+    });
+    // Visit-header context rides along only when it belongs to the same
+    // consultation as the blob (null otherwise — render without the header).
+    setPendingVisit(decision.pendingVisit);
+    // The blob is the AI output frozen at generation — it never carries the
+    // doctor's later edits. Whenever ?visit= is present the server's
+    // extracted_fields is the source of truth: we just painted the blob for an
+    // instant first render; arm the reconcile effect to overwrite the rendered
+    // fields with the server copy. (Fixes same-tab F5 / duplicated-tab showing
+    // pre-edit text — sessionStorage survives those, so recovery never fires.)
+    setReconcileVisitId(decision.reconcileVisitId);
   }, [router, searchParams]);
 
   // ── Export identity (practice/doctor header) ───────────────────────────
@@ -462,7 +483,11 @@ function ResultPageInner() {
       // the seal: a sealed note can never be edited-and-approved back into an
       // unlocked state, so if the approval didn't survive recovery, a closed
       // лист would be permanently un-exportable.
-      if (recovery.noteApproved) setReviewStatus('confirmed');
+      //
+      // BOTH directions on purpose (P0 2026-07-29): restoring only the approved
+      // case let a previous consultation's 'confirmed' presentation survive a
+      // same-route ?visit= change onto an UNAPPROVED note.
+      setReviewStatus(recovery.noteApproved ? 'confirmed' : 'pending');
       setSealedAt(recovery.sealedAt);
       setErasedAt(recovery.erasedAt);
     }
@@ -501,7 +526,9 @@ function ResultPageInner() {
         // ?visit=<other id> with tuber_last_result present) — miss it and a
         // sealed лист renders fully editable, or an erased one renders the
         // stale blob as if its content were still there.
-        if (consultation.note_approved) setReviewStatus('confirmed');
+        // Both directions, like the recovery path: the server is the authority
+        // on the approval presentation in EITHER state.
+        setReviewStatus(consultation.note_approved ? 'confirmed' : 'pending');
         setSealedAt(consultation.sealed_at ?? null);
         setErasedAt(consultation.erased_at ?? null);
 
@@ -660,6 +687,26 @@ function ResultPageInner() {
   useEffect(() => {
     flushEditRef.current = flushEdit;
   }, [flushEdit]);
+
+  // The no-unmount twin of the unmount flush below: a same-route ?visit=
+  // navigation (notes-library → another note, back/forward between visits)
+  // re-keys this page to ANOTHER consultation without unmounting it. This
+  // cleanup runs BEFORE the bootstrap effect resets any state, so `original`
+  // and fieldsRef still hold the visit the pending edit belongs to and the
+  // flush targets the right row. Same double-flush guard as the unmount path.
+  const visitParam = searchParams.get('visit');
+  useEffect(() => {
+    void visitParam; // the dep IS the trigger: flush when the identity changes
+    return () => {
+      if (editTimerRef.current) {
+        clearTimeout(editTimerRef.current);
+        editTimerRef.current = null;
+        if (pendingEditField.current !== null) {
+          flushEditRef.current();
+        }
+      }
+    };
+  }, [visitParam]);
 
   useEffect(() => {
     return () => {
