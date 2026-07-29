@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
-import { sentryConnectOrigins } from "./lib/sentry-csp";
+import { contentSecurityPolicy } from "./lib/csp";
 
 // ── Canonical app domain (2026-06-11) ────────────────────────────────────────
 // The Vercel project answers on www.tubermed.com / tubermed.com AND
@@ -27,58 +27,9 @@ const APP_PATHS = ["/signup", "/app/:path*"];
 // scribe flow. See AGENTS.md "Content-Security-Policy" for the policy + deferred
 // tightenings (script-src/style-src nonce via middleware; the phone /mobile-page
 // is served by the BACKEND and needs its own CSP there — not covered here).
+// The policy itself lives in lib/csp.ts (pure module) so `npm test` can pin the
+// connect-src contract — see scripts/csp.test.ts.
 const CSP_REPORT_ONLY = false; // ENFORCING. Set true to drop back to Report-Only.
-
-// connect-src origins, derived from the SAME value the app fetches / opens its
-// WebSocket with (lib/api.ts: BACKEND = NEXT_PUBLIC_BACKEND_URL; wsUrl() swaps
-// https->wss / http->ws). EU-ONLY INVARIANT: the backend origin is the only
-// permitted cross-origin destination — never a US / Google origin. NEXT_PUBLIC_*
-// is build-time inlined, so this self-adjusts per environment (localhost in dev,
-// the Railway EU origin on Vercel prod; preview deployments inherit the same env
-// value). Derived, never hardcoded, so it can't drift from the real fetch origin.
-function backendConnectOrigins(): string[] {
-  const raw = process.env.NEXT_PUBLIC_BACKEND_URL;
-  if (!raw) return [];
-  try {
-    const httpOrigin = new URL(raw).origin; // strips any path → scheme://host[:port]
-    const wsOrigin = httpOrigin
-      .replace(/^https:\/\//, "wss://")
-      .replace(/^http:\/\//, "ws://"); // mirrors lib/api.ts wsUrl()
-    return [httpOrigin, wsOrigin];
-  } catch {
-    return [];
-  }
-}
-
-function contentSecurityPolicy(): string {
-  // connect-src = same-origin + the EU backend (https + wss) + (when configured) the EU Sentry
-  // ingest origin. sentryConnectOrigins() (lib/sentry-csp.ts) is DSN-derived + EU-GUARDED — it
-  // returns nothing unless NEXT_PUBLIC_SENTRY_DSN points at *.ingest.de.sentry.io, so an unset or
-  // non-EU DSN adds NO origin. Same "derived, never hardcoded, never a non-EU origin" rule as the
-  // backend. See AGENTS.md "Content-Security-Policy" — EU-invariant note.
-  const connectSrc = ["'self'", ...backendConnectOrigins(), ...sentryConnectOrigins()].join(" ");
-  return [
-    "default-src 'self'",
-    // 'unsafe-inline': Next App Router streams hydration via inline <script> with
-    // NO nonce, and lib/exporters.ts' PDF print window injects an inline
-    // close-script (the about:blank window inherits this CSP). There are NO
-    // external script origins (verified). Tightening to a nonce needs middleware
-    // wiring — deferred (AGENTS.md "Content-Security-Policy").
-    "script-src 'self' 'unsafe-inline'",
-    // Inline styles throughout: the hero's large inline style string, style=
-    // attributes across components, and the export print/Word HTML.
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
-    "font-src 'self'", // next/font self-hosts the woff2 at build time — no runtime Google Fonts
-    `connect-src ${connectSrc}`, // same-origin + EU backend (https + wss) + EU Sentry ingest (when set)
-    "media-src 'self' blob:", // MediaRecorder audio capture
-    "frame-ancestors 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "object-src 'none'",
-    "upgrade-insecure-requests",
-  ].join("; ");
-}
 
 const securityHeaders = [
   {
