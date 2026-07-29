@@ -1498,6 +1498,9 @@ function PcMode({
   //   'fallback'   — the stream died; the async upload will carry this visit
   const [streamState, setStreamState] = useState<'off' | 'connecting' | 'live' | 'fallback'>('off');
   const [liveText, setLiveText] = useState('');
+  // Soniox's non-final hypothesis — the words still forming, rendered muted
+  // and replaced in place as finals arrive. Display only, never submitted.
+  const [livePending, setLivePending] = useState('');
   const liveStreamRef = useRef<SonioxLiveStream | null>(null);
   // WHY the stream failed, as a fixed-vocabulary class (DegradeReason, or
   // mint_http_<status> / mint_network when the key mint itself failed) — rides
@@ -1508,6 +1511,9 @@ function PcMode({
   // with DevTools open in the clinic (2026-07-29 incident).
   const streamDegradeRef = useRef<string | null>(null);
   const liveScrollRef = useRef<HTMLDivElement | null>(null);
+  // Auto-scroll stays pinned to the newest words UNLESS the doctor scrolled up
+  // to re-read — then we leave the view alone until they return to the bottom.
+  const livePinnedRef = useRef(true);
   // stopRecording is a stable callback, so it cannot read `seconds` from state
   // without going stale. This mirror is the recorded AUDIO length (it only
   // advances while unpaused), which is what audio_seconds means on the row.
@@ -1650,6 +1656,8 @@ function PcMode({
     if (!consultationId) return;
     setStreamState('connecting');
     setLiveText('');
+    setLivePending('');
+    livePinnedRef.current = true;
     streamDegradeRef.current = null; // re-armed per recording
 
     let ticket;
@@ -1673,9 +1681,9 @@ function PcMode({
       apiKey: ticket.api_key,
       config: ticket.config,      // server-authored: same specialty terms as async
       callbacks: {
-        // Display-only bounded tail (LIVE_TAIL_CHARS) — the full transcript
-        // arrives once, from finalize(), at submit.
-        onText: (tail) => setLiveText(tail),
+        // Display-only bounded pair (LIVE_TAIL_CHARS covers both together) —
+        // the full transcript arrives once, from finalize(), at submit.
+        onText: (tail, pending) => { setLiveText(tail); setLivePending(pending); },
         // One-way. The visit continues recording; only the live view stops.
         // The reason is telemetry, not control flow (lib/stt-stream.ts).
         onDegraded: (reason) => {
@@ -1940,11 +1948,12 @@ function PcMode({
     }
   }, [stopWaveform, consultationId, onProcessing, onResult, onAuthError, onBackToIdle, onError, onRetainableFailure, blobRef, onRecordingChange, requestConsent]);
 
-  // Auto-scroll the live transcript as finals land.
+  // Auto-scroll the live transcript as text lands — but only while the doctor
+  // is pinned to the bottom; scrolling up to re-read holds the view still.
   useEffect(() => {
     const el = liveScrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [liveText]);
+    if (el && livePinnedRef.current) el.scrollTop = el.scrollHeight;
+  }, [liveText, livePending]);
 
   useEffect(() => {
     return () => {
@@ -2078,12 +2087,14 @@ function PcMode({
           </div>
         )}
 
-        {/* Live transcript — final tokens only, appended as they arrive. Kept
-            deliberately plain in this batch: text, auto-scroll, no styling
-            ambition. It is a confidence signal ("it is hearing me"), never the
-            note — the лист still comes from the pipeline after the visit. */}
+        {/* Live transcript — the centerpiece of the recording screen: it is
+            what tells the doctor "it is hearing me" during the first
+            impression. Finals render in ink; the still-forming Soniox
+            hypothesis renders muted right behind them and is replaced in
+            place as it firms up. Display only, never the note — the лист
+            still comes from the pipeline after the visit. */}
         {recording && streamState === 'live' && (
-          <div className="mt-6 w-full max-w-sm text-left">
+          <div className="mt-6 w-full max-w-xl text-left">
             <div
               className="flex items-center gap-2 mb-2 text-xs font-medium uppercase tracking-wide"
               style={{ color: 'var(--color-text-muted)' }}
@@ -2099,16 +2110,33 @@ function PcMode({
               ref={liveScrollRef}
               aria-live="polite"
               aria-label="Транскрипция на живо"
-              className="px-3 py-2 rounded-xl text-sm leading-relaxed overflow-y-auto"
+              className="px-4 py-3 rounded-xl text-base overflow-y-auto"
+              onScroll={() => {
+                const el = liveScrollRef.current;
+                if (!el) return;
+                // "Near bottom" (not exact): fractional scroll heights and the
+                // last line's own height would otherwise unpin on every append.
+                livePinnedRef.current =
+                  el.scrollTop + el.clientHeight >= el.scrollHeight - 32;
+              }}
               style={{
-                maxHeight: '11rem',
+                maxHeight: '20rem',
+                minHeight: '8rem',
+                lineHeight: 1.7,
                 background: 'var(--color-bg-subtle)',
                 border: '1px solid var(--color-border)',
                 color: 'var(--color-text)',
                 whiteSpace: 'pre-wrap',
               }}
             >
-              {liveText || (
+              {liveText || livePending ? (
+                <>
+                  {liveText}
+                  {livePending && (
+                    <span style={{ color: 'var(--color-text-muted)' }}>{livePending}</span>
+                  )}
+                </>
+              ) : (
                 <span style={{ color: 'var(--color-text-muted)' }}>Слуша…</span>
               )}
             </div>
