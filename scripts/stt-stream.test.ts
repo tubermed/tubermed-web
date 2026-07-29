@@ -60,6 +60,7 @@ function makeStream(over: Partial<{ openTimeoutMs: number; finalizeTimeoutMs: nu
   const sock = new FakeSocket();
   const degradedWith: DegradeReason[] = [];
   const texts: string[] = [];
+  const renders: Array<{ tail: string; pending: string }> = [];
   const s = new SonioxLiveStream({
     wsUrl: 'wss://stt-rt.eu.soniox.com/transcribe-websocket',
     apiKey: 'tempkey_test',
@@ -69,10 +70,10 @@ function makeStream(over: Partial<{ openTimeoutMs: number; finalizeTimeoutMs: nu
     finalizeTimeoutMs: over.finalizeTimeoutMs ?? 10_000,
     callbacks: {
       onDegraded: (r) => degradedWith.push(r),
-      onText: (t) => texts.push(t),
+      onText: (t, pending) => { texts.push(t); renders.push({ tail: t, pending }); },
     },
   });
-  return { s, sock, degradedWith, texts };
+  return { s, sock, degradedWith, texts, renders };
 }
 
 const chunk = () => new Uint8Array([1, 2, 3]).buffer;
@@ -326,8 +327,93 @@ test('the live-text callback fires as finals land, for the on-screen transcript'
   sock.tokens([{ text: 'Едно ', is_final: true }]);
   sock.tokens([{ text: 'две', is_final: false }]);
   sock.tokens([{ text: 'две ', is_final: true }]);
-  assert.deepStrictEqual(texts, ['Едно ', 'Едно две '],
-    'the display updates on finals only — a non-final must not repaint the transcript');
+  assert.deepStrictEqual(texts, ['Едно ', 'Едно ', 'Едно две '],
+    'finals extend the tail; the non-final frame repaints with the tail unchanged');
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// NON-FINAL TOKENS — the sub-second hypothesis the panel shows in grey
+// ════════════════════════════════════════════════════════════════════════════
+// Soniox emits a rolling non-final hypothesis and RE-SENDS it on every frame
+// until the words finalize. Rendering it kills the perceived ~10s "is it
+// hearing me?" lag. The hypothesis is DISPLAY-ONLY: it rides the second onText
+// argument, is replaced wholesale per frame, and must never touch `finals` /
+// `.text` / finalize() — the submission contract stays finals-only.
+
+test('a non-final hypothesis renders immediately, separate from the final tail', () => {
+  const { s, sock, renders } = makeStream();
+  s.start();
+  sock.open();
+  sock.tokens([{ text: 'Пациентът ', is_final: true }]);
+  sock.tokens([{ text: 'се оплаква', is_final: false }]);
+
+  const last = renders[renders.length - 1];
+  assert.deepStrictEqual(last, { tail: 'Пациентът ', pending: 'се оплаква' },
+    'the hypothesis must reach the display the moment it arrives, distinct from finals');
+});
+
+test('the hypothesis is REPLACED in place as it grows, never appended', () => {
+  const { s, sock, renders } = makeStream();
+  s.start();
+  sock.open();
+  sock.tokens([{ text: 'Кашлицата ', is_final: true }]);
+  sock.tokens([{ text: 'е су', is_final: false }]);
+  sock.tokens([{ text: 'е суха', is_final: false }]);
+
+  const pendings = renders.map((r) => r.pending);
+  assert.deepStrictEqual(pendings, ['', 'е су', 'е суха'],
+    'each frame re-sends the whole hypothesis — the display swaps it, never concatenates');
+});
+
+test('when the hypothesis finalizes, it moves into the tail and leaves the pending slot', () => {
+  const { s, sock, renders } = makeStream();
+  s.start();
+  sock.open();
+  sock.tokens([{ text: 'Едно ', is_final: true }]);
+  sock.tokens([{ text: 'две', is_final: false }]);
+  sock.tokens([{ text: 'две ', is_final: true }]);
+
+  const last = renders[renders.length - 1];
+  assert.deepStrictEqual(last, { tail: 'Едно две ', pending: '' },
+    'a finalized hypothesis must not linger as grey text next to its final copy');
+});
+
+test('a mixed frame (finals + non-finals) applies both sides at once', () => {
+  const { s, sock, renders } = makeStream();
+  s.start();
+  sock.open();
+  sock.tokens([
+    { text: 'От три дни ', is_final: true },
+    { text: 'има тем', is_final: false },
+  ]);
+
+  const last = renders[renders.length - 1];
+  assert.deepStrictEqual(last, { tail: 'От три дни ', pending: 'има тем' });
+});
+
+test('the COMBINED display payload respects the render bound', () => {
+  const { s, sock, renders } = makeStream();
+  s.start();
+  sock.open();
+  const full = feedLongVisit(sock);
+
+  // A pathological hypothesis larger than the whole bound must not blow the
+  // display either — the bound covers tail + pending TOGETHER.
+  const hugeHypothesis = 'дълга хипотеза '.repeat(400); // ≈ 2× LIVE_TAIL_CHARS
+  sock.tokens([{ text: hugeHypothesis, is_final: false }]);
+
+  for (const r of renders) {
+    assert.ok(
+      r.tail.length + r.pending.length <= LIVE_TAIL_CHARS,
+      `combined display must never exceed the render bound (got ${r.tail.length + r.pending.length})`,
+    );
+  }
+  const last = renders[renders.length - 1];
+  assert.strictEqual(
+    last.tail + last.pending,
+    (full + hugeHypothesis).slice(-LIVE_TAIL_CHARS),
+    'the display is the most recent speech across finals AND the hypothesis',
+  );
 });
 
 test('abort() closes the socket without degrading (the doctor cancelled)', () => {
@@ -351,13 +437,18 @@ test('abort() closes the socket without degrading (the doctor cancelled)', () =>
 //     incrementally so per-batch cost is O(tail), for display only.
 
 // Feed well past the render bound: ~500 finals ≈ 9× LIVE_TAIL_CHARS of text.
+// Every final rides in with a non-final hypothesis frame around it, the way a
+// live visit actually arrives — the hypothesis must never leak into `finals`.
 function feedLongVisit(sock: FakeSocket): string {
   const parts: string[] = [];
   for (let i = 0; i < 500; i++) {
     const t = `Изречение ${i} от прегледа, с достатъчно текст за обем. `;
+    sock.tokens([{ text: `хипотеза ${i}`, is_final: false }]);
     parts.push(t);
-    sock.tokens([{ text: t, is_final: true }]);
+    sock.tokens([{ text: t, is_final: true }, { text: 'опашка', is_final: false }]);
   }
+  // Settle the trailing hypothesis so display-side assertions end finals-only.
+  sock.tokens([]);
   return parts.join('');
 }
 

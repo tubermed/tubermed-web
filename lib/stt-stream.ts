@@ -63,12 +63,22 @@ export type FinalizeResult =
   | { ok: false; reason: DegradeReason };
 
 export interface LiveStreamCallbacks {
-  /** Fires on every batch of FINAL tokens, with the last LIVE_TAIL_CHARS of
-   *  the transcript — DISPLAY ONLY. The live panel shows ~6 lines, so handing
-   *  it the full transcript per batch was O(n²) over a long visit (join +
-   *  re-render of an ever-growing string). The full transcript — the
-   *  submission contract — stays on `.text` and in finalize()'s result. */
-  onText?: (tailText: string) => void;
+  /** Fires whenever the display changes — a batch of FINAL tokens landed, the
+   *  non-final hypothesis moved, or both. DISPLAY ONLY, both arguments.
+   *
+   *  `tailText` is the last LIVE_TAIL_CHARS of the finalized transcript. The
+   *  live panel shows a handful of lines, so handing it the full transcript
+   *  per batch was O(n²) over a long visit (join + re-render of an
+   *  ever-growing string). The full transcript — the submission contract —
+   *  stays on `.text` and in finalize()'s result.
+   *
+   *  `pendingText` is Soniox's current NON-FINAL hypothesis — the sub-second
+   *  "it is hearing me" text the panel renders muted. Soniox re-sends the
+   *  whole hypothesis on every frame until it finalizes, so this is replaced
+   *  wholesale per frame, never accumulated. It NEVER reaches `finals`.
+   *  The render bound covers the two TOGETHER:
+   *  tailText.length + pendingText.length <= LIVE_TAIL_CHARS. */
+  onText?: (tailText: string, pendingText: string) => void;
   /** Fires exactly once, the first time the stream fails. */
   onDegraded?: (reason: DegradeReason) => void;
 }
@@ -86,11 +96,12 @@ export interface SonioxLiveStreamOptions {
 
 const SOCKET_OPEN = 1;
 
-/** Render bound for the live panel (see LiveStreamCallbacks.onText). ~3k chars
- *  is dozens of on-screen lines of Bulgarian speech — far more than the ~6 the
- *  box shows — while keeping the per-batch cost O(tail), not O(visit). The
- *  slice may open mid-word at its leading edge; the panel is bottom-anchored,
- *  so that edge is never the line the doctor is reading. */
+/** Render bound for the live panel (see LiveStreamCallbacks.onText) — it
+ *  covers the finalized tail and the non-final hypothesis COMBINED. ~3k chars
+ *  is dozens of on-screen lines of Bulgarian speech — far more than the box
+ *  shows — while keeping the per-batch cost O(tail), not O(visit). The slice
+ *  may open mid-word at its leading edge; the panel is bottom-anchored, so
+ *  that edge is never the line the doctor is reading. */
 export const LIVE_TAIL_CHARS = 3_000;
 
 /** Soniox is generous here in practice (the handshake is sub-second on a healthy
@@ -111,6 +122,10 @@ export class SonioxLiveStream {
   /** The last LIVE_TAIL_CHARS of the transcript, maintained incrementally for
    *  the onText callback. NEVER a source for submission — that is `finals`. */
   private liveTail = '';
+  /** Soniox's current non-final hypothesis, replaced wholesale on every
+   *  tokens frame (the protocol re-sends it until the words finalize).
+   *  DISPLAY ONLY — it never touches `finals`, `.text`, or finalize(). */
+  private hypothesis = '';
   private degraded = false;
   private configSent = false;
   /** Chunks recorded before the socket finished opening. NOT an optimisation:
@@ -267,14 +282,23 @@ export class SonioxLiveStream {
 
     if (Array.isArray(msg.tokens)) {
       let appended = false;
+      // Rebuilt from THIS frame alone: Soniox re-sends the entire outstanding
+      // hypothesis every frame, so an empty frame legitimately means "nothing
+      // pending" (it just finalized, or there is silence).
+      let hyp = '';
       for (const t of msg.tokens) {
-        if (t && t.is_final && typeof t.text === 'string') {
+        if (!t || typeof t.text !== 'string') continue;
+        if (t.is_final) {
           this.finals.push(t.text);
           this.liveTail = (this.liveTail + t.text).slice(-LIVE_TAIL_CHARS);
           appended = true;
+        } else {
+          hyp += t.text;
         }
       }
-      if (appended) this.opts.callbacks?.onText?.(this.liveTail);
+      const hypothesisMoved = hyp !== this.hypothesis;
+      this.hypothesis = hyp;
+      if (appended || hypothesisMoved) this.emitDisplay();
     }
 
     if (msg.finished) {
@@ -284,6 +308,22 @@ export class SonioxLiveStream {
       settle?.({ ok: true, transcript: this.text });
       this.abort();
     }
+  }
+
+  /** Hand the panel its two display halves under ONE combined bound: the
+   *  hypothesis (which the doctor is watching form) keeps its full clamped
+   *  length, and the finalized tail yields whatever room is left, so
+   *  tail + pending is always exactly the last LIVE_TAIL_CHARS of
+   *  (transcript + hypothesis). */
+  private emitDisplay(): void {
+    const cb = this.opts.callbacks?.onText;
+    if (!cb) return;
+    const pending = this.hypothesis.length > LIVE_TAIL_CHARS
+      ? this.hypothesis.slice(-LIVE_TAIL_CHARS)
+      : this.hypothesis;
+    const room = LIVE_TAIL_CHARS - pending.length;
+    const tail = this.liveTail.length > room ? this.liveTail.slice(this.liveTail.length - room) : this.liveTail;
+    cb(tail, pending);
   }
 
   /** One-way latch. Every failure path lands here; it fires the callback at
