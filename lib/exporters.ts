@@ -88,30 +88,13 @@ export function formatPlainText(f: TranscribeFields): string {
   section('АНАМНЕЗА', f.anamneza);
   section('ОБЕКТИВНО СЪСТОЯНИЕ', f.obektivno);
 
-  // Изследвания — embedded blocks (izsledvania_blocks) first, mirroring the
-  // on-screen card order, then results (izsledvania) + ordered tests
-  // (naznacheni). No blocks → byte-identical to the pre-block output.
-  const izs = fieldText(f.izsledvania);
-  const naz = fieldText(f.naznacheni);
-  const blockTexts = serializableBlocks(f.izsledvania_blocks)
-    .map(blockPlainText)
-    .filter(Boolean);
-  if (izs || naz || blockTexts.length > 0) {
+  // Изследвания — the shared section body (izsledvaniaSectionText below), so
+  // the full-document copy and the per-section copy button cannot drift.
+  const izsBody = izsledvaniaSectionText(f);
+  if (izsBody) {
     lines.push('ИЗСЛЕДВАНИЯ');
-    for (const bt of blockTexts) {
-      lines.push('');
-      lines.push(bt);
-    }
-    if (izs) {
-      lines.push('');
-      lines.push('Резултати от изследвания:');
-      lines.push(izs);
-    }
-    if (naz) {
-      lines.push('');
-      lines.push('Назначени изследвания:');
-      lines.push(naz);
-    }
+    lines.push('');
+    lines.push(izsBody);
     lines.push('');
   }
 
@@ -126,16 +109,42 @@ export function formatPlainText(f: TranscribeFields): string {
     lines.push('');
   }
 
-  const nap = fieldText(f.napravlenia);
-  if (nap) {
+  const izdBody = izdadeniSectionText(f);
+  if (izdBody) {
     lines.push('ИЗДАДЕНИ ДОКУМЕНТИ');
     lines.push('');
-    lines.push('Направления:');
-    lines.push(nap);
+    lines.push(izdBody);
     lines.push('');
   }
 
   return lines.join('\n').trim();
+}
+
+// ─── Per-section copy bodies (Изследвания / Издадени документи) ──────────────
+// The result page's per-section CopyButtons for the two composite sections put
+// EXACTLY these strings on the clipboard, and formatPlainText composes the
+// full document from the SAME functions — one source of truth, so the section
+// copy, the full copy, and (via blockPlainText → blockParagraph) the on-screen
+// block cards can never drift apart. Empty section → '' (button copies
+// nothing-worthy, exporter omits the header).
+
+export function izsledvaniaSectionText(f: TranscribeFields): string {
+  // Embedded blocks first, mirroring the on-screen card order, then results
+  // (izsledvania) + ordered tests (naznacheni). No blocks → byte-identical to
+  // the pre-block output.
+  const segments = serializableBlocks(f.izsledvania_blocks)
+    .map(blockPlainText)
+    .filter(Boolean);
+  const izs = fieldText(f.izsledvania);
+  if (izs) segments.push('Резултати от изследвания:\n' + izs);
+  const naz = fieldText(f.naznacheni);
+  if (naz) segments.push('Назначени изследвания:\n' + naz);
+  return segments.join('\n\n');
+}
+
+export function izdadeniSectionText(f: TranscribeFields): string {
+  const nap = fieldText(f.napravlenia);
+  return nap ? 'Направления:\n' + nap : '';
 }
 
 // ─── ECHO paste block (Изследвания → Резултати) ───────────────

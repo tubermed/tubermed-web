@@ -57,6 +57,8 @@ import {
   downloadWord,
   formatEchoPlainText,
   generateEchoHtml,
+  izsledvaniaSectionText,
+  izdadeniSectionText,
   type ExportIdentity,
 } from '@/lib/exporters';
 import CopyButton from '@/components/CopyButton';
@@ -1948,7 +1950,17 @@ function ResultPageInner() {
             />
             {visibleSections['sec-izsledvania'] && (
               <div id="sec-izsledvania" className="scroll-mt-24">
-                <SectionHead title="Изследвания" icon="flask" />
+                <SectionHead
+                  title="Изследвания"
+                  icon="flask"
+                  actions={
+                    <CopyButton
+                      text={izsledvaniaSectionText(fields)}
+                      disabled={isLocked}
+                      onResult={notifyCopy}
+                    />
+                  }
+                />
 
                 {/* Embedded investigation blocks (izsledvania_blocks) — one
                     titled card per block, ahead of the free-text remainder.
@@ -2071,7 +2083,17 @@ function ResultPageInner() {
 
             {visibleSections['sec-izdadeni'] && (
               <div id="sec-izdadeni" className="scroll-mt-24">
-                <SectionHead title="Издадени документи" icon="file-text" />
+                <SectionHead
+                  title="Издадени документи"
+                  icon="file-text"
+                  actions={
+                    <CopyButton
+                      text={izdadeniSectionText(fields)}
+                      disabled={isLocked}
+                      onResult={notifyCopy}
+                    />
+                  }
+                />
 
                 {visibleSections['sec-napravlenia'] && (
                   <div id="sec-napravlenia" className="scroll-mt-24">
