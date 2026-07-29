@@ -55,8 +55,12 @@ export type FinalizeResult =
   | { ok: false; reason: DegradeReason };
 
 export interface LiveStreamCallbacks {
-  /** Fires on every batch of FINAL tokens, with the full transcript so far. */
-  onText?: (fullText: string) => void;
+  /** Fires on every batch of FINAL tokens, with the last LIVE_TAIL_CHARS of
+   *  the transcript — DISPLAY ONLY. The live panel shows ~6 lines, so handing
+   *  it the full transcript per batch was O(n²) over a long visit (join +
+   *  re-render of an ever-growing string). The full transcript — the
+   *  submission contract — stays on `.text` and in finalize()'s result. */
+  onText?: (tailText: string) => void;
   /** Fires exactly once, the first time the stream fails. */
   onDegraded?: (reason: DegradeReason) => void;
 }
@@ -74,6 +78,13 @@ export interface SonioxLiveStreamOptions {
 
 const SOCKET_OPEN = 1;
 
+/** Render bound for the live panel (see LiveStreamCallbacks.onText). ~3k chars
+ *  is dozens of on-screen lines of Bulgarian speech — far more than the ~6 the
+ *  box shows — while keeping the per-batch cost O(tail), not O(visit). The
+ *  slice may open mid-word at its leading edge; the panel is bottom-anchored,
+ *  so that edge is never the line the doctor is reading. */
+export const LIVE_TAIL_CHARS = 3_000;
+
 /** Soniox is generous here in practice (the handshake is sub-second on a healthy
  *  line); this only has to beat the doctor's patience. */
 const DEFAULT_OPEN_TIMEOUT_MS = 8_000;
@@ -89,6 +100,9 @@ export class SonioxLiveStream {
   private readonly opts: SonioxLiveStreamOptions;
   private socket: LiveSocket | null = null;
   private finals: string[] = [];
+  /** The last LIVE_TAIL_CHARS of the transcript, maintained incrementally for
+   *  the onText callback. NEVER a source for submission — that is `finals`. */
+  private liveTail = '';
   private degraded = false;
   private configSent = false;
   /** Chunks recorded before the socket finished opening. NOT an optimisation:
@@ -242,10 +256,11 @@ export class SonioxLiveStream {
       for (const t of msg.tokens) {
         if (t && t.is_final && typeof t.text === 'string') {
           this.finals.push(t.text);
+          this.liveTail = (this.liveTail + t.text).slice(-LIVE_TAIL_CHARS);
           appended = true;
         }
       }
-      if (appended) this.opts.callbacks?.onText?.(this.text);
+      if (appended) this.opts.callbacks?.onText?.(this.liveTail);
     }
 
     if (msg.finished) {

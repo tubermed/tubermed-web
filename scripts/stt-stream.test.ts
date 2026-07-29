@@ -20,7 +20,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { SonioxLiveStream, type LiveSocket, type DegradeReason } from '../lib/stt-stream.ts';
+import {
+  SonioxLiveStream,
+  LIVE_TAIL_CHARS,
+  type LiveSocket,
+  type DegradeReason,
+} from '../lib/stt-stream.ts';
 
 // ── A fake WebSocket shaped exactly like the browser's ──────────────────────
 class FakeSocket implements LiveSocket {
@@ -302,4 +307,74 @@ test('abort() closes the socket without degrading (the doctor cancelled)', () =>
   s.abort();
   assert.strictEqual(sock.closed, true);
   assert.deepStrictEqual(degradedWith, [], 'a deliberate abort is not a failure');
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// THE RENDER BOUND (pre-pilot O(n²) fix)
+// ════════════════════════════════════════════════════════════════════════════
+// The live panel shows ~6 lines, but every final-token batch used to re-join
+// and re-render the ENTIRE transcript — O(n²) over a long visit. The fix keeps
+// TWO representations with different contracts:
+//   • `finals` / `text` / finalize(): the FULL transcript, byte-identical to
+//     what the async leg would persist — the submission contract, untouchable;
+//   • the onText payload: a bounded tail (LIVE_TAIL_CHARS), maintained
+//     incrementally so per-batch cost is O(tail), for display only.
+
+// Feed well past the render bound: ~500 finals ≈ 9× LIVE_TAIL_CHARS of text.
+function feedLongVisit(sock: FakeSocket): string {
+  const parts: string[] = [];
+  for (let i = 0; i < 500; i++) {
+    const t = `Изречение ${i} от прегледа, с достатъчно текст за обем. `;
+    parts.push(t);
+    sock.tokens([{ text: t, is_final: true }]);
+  }
+  return parts.join('');
+}
+
+test('the submitted transcript is byte-identical to the unbounded token stream', async () => {
+  const { s, sock } = makeStream();
+  s.start();
+  sock.open();
+  const full = feedLongVisit(sock);
+  assert.ok(full.length > LIVE_TAIL_CHARS * 3, 'fixture must dwarf the render bound');
+
+  const p = s.finalize();
+  sock.finished();
+  const r = await p;
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(
+    (r as { transcript: string }).transcript,
+    full,
+    'the render bound must never leak into the submission contract',
+  );
+  assert.strictEqual(s.text, full, '.text stays the full transcript too');
+});
+
+test('the live-panel payload is bounded and is exactly the tail of the transcript', () => {
+  const { s, sock, texts } = makeStream();
+  s.start();
+  sock.open();
+  const full = feedLongVisit(sock);
+
+  assert.ok(texts.length > 0);
+  for (const t of texts) {
+    assert.ok(
+      t.length <= LIVE_TAIL_CHARS,
+      `onText payload must never exceed the render bound (got ${t.length})`,
+    );
+  }
+  assert.strictEqual(
+    texts[texts.length - 1],
+    full.slice(-LIVE_TAIL_CHARS),
+    'the panel shows the most recent speech, not an arbitrary window',
+  );
+});
+
+test('a short visit renders in full — the bound is invisible below it', () => {
+  const { s, sock, texts } = makeStream();
+  s.start();
+  sock.open();
+  sock.tokens([{ text: 'Кратък преглед. ', is_final: true }]);
+  sock.tokens([{ text: 'Без оплаквания.', is_final: true }]);
+  assert.deepStrictEqual(texts, ['Кратък преглед. ', 'Кратък преглед. Без оплаквания.']);
 });

@@ -1660,7 +1660,9 @@ function PcMode({
       apiKey: ticket.api_key,
       config: ticket.config,      // server-authored: same specialty terms as async
       callbacks: {
-        onText: (full) => setLiveText(full),
+        // Display-only bounded tail (LIVE_TAIL_CHARS) — the full transcript
+        // arrives once, from finalize(), at submit.
+        onText: (tail) => setLiveText(tail),
         // One-way. The visit continues recording; only the live view stops.
         onDegraded: () => setStreamState('fallback'),
       },
