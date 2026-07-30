@@ -121,6 +121,19 @@ drives it. Three rules, all load-bearing:
 `ws_url` and `config` are **server-authored** (`StreamKeyResponse`) — never rebuild the EU
 endpoint or the specialty vocabulary payload client-side.
 
+- **The non-final hypothesis is DISPLAY ONLY.** Soniox sends its current hypothesis
+  (replaced wholesale each frame) alongside finalized text; we were already receiving and
+  discarding it, which was the whole ~10 s of apparent lag in the live panel. It is rendered
+  greyed beside the finalized tail on BOTH the PC panel and the phone strip, and never
+  contributes to the submitted transcript — only finalized text does.
+- **Degrade + timing telemetry is a cross-repo contract.** When a visit that tried to stream
+  lands on the async upload, the fallback request carries the failure CLASS in
+  `X-Stream-Degraded`; on the `rt` path the submit reports `finalize_ms` and
+  `stop_to_submit_ms`. The backend validates the header against a strict slug pattern and
+  clamps the client timings (`clampClientMs`), so both are **untrusted input by design** —
+  they may only ever be short enums and numbers, never free text. Header name and field names
+  must change in BOTH repos together (backend `routes/transcribe.js` + `lib/analytics`).
+
 # Known gotchas
 
 - **The five `/app/*` shells are `force-dynamic` ON PURPOSE (edge-cache poisoning, 2026-07-28/29):** a corrupted Vercel edge-cache object made `/app/scribe/result` unloadable at the browser level twice in 48h with the code provably clean. The config lives in two server pass-through layouts — `app/app/layout.tsx` and `app/(workspace)/app/layout.tsx` — do NOT delete them to "restore static optimization" (the shells are auth-gated; the prerender bought ~tens of ms), and do NOT move the export into the pages: segment config in `'use client'` files is **silently ignored** (routes stay ○ Static — that near-miss happened in this very change; only the build's ○→ƒ flip proves it took). `headers()` Cache-Control can't do this either (Vercel overrides it on prerendered output). Post-deploy check: `node scripts/probe-shell-cache.mjs` must show every shell uncached (exit 0).
