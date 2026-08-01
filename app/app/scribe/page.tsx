@@ -908,7 +908,12 @@ function RecordCardShell({
 }
 
 // U5 — processing loader: an INDETERMINATE indicator paired with staged step
-// labels reflecting the real pipeline (Soniox → extraction → drug-safety).
+// labels reflecting the real pipeline (Soniox → extraction → provenance).
+// The third stage was „Проверка за безопасност…" until 2026-08-01; the
+// drug-safety pass it named is no longer called (CLINICAL_ALERTS off), and a
+// progress step is a capability claim like any other string. What genuinely runs
+// in that window now is the provenance pass — resolving each extracted value
+// back to its place in the recording — so the label says that instead.
 // Deliberately NO fake percentage and NO live ETA — LLM extraction has no
 // reliable %/time estimate, and a countdown stalling at "0 сек" erodes trust
 // more than none. The stages advance on a typical-timing schedule and the last
@@ -917,7 +922,7 @@ function RecordCardShell({
 const PROCESSING_STEPS = [
   'Транскрибиране…',
   'Структуриране…',
-  'Проверка за безопасност…',
+  'Свързване с източника…',
 ];
 
 function ProcessingView() {
