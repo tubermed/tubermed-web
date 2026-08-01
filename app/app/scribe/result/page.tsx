@@ -35,6 +35,7 @@ import EchoNoteView from '@/components/EchoNoteView';
 import InvestigationBlockCard from '@/components/InvestigationBlockCard';
 import { setEchoPath } from '@/lib/echo-template';
 import { mergeBackendAlerts, groupAlerts, type SafetyAlert } from '@/lib/drug-safety';
+import { CLINICAL_ALERTS_ENABLED } from '@/lib/clinical-alerts';
 import { loadMkb, getMkbDataSync, resolveMkb } from '@/lib/mkb10';
 import { filedMainTerm, filedComorbidityTerm, spokenDivergesFromOfficial } from '@/lib/diagnosis';
 import { loadIal } from '@/lib/ial-meds';
@@ -837,8 +838,15 @@ function ResultPageInner() {
   // Merge backend Claude-generated alerts (preferred — context-aware, with
   // reason + action) with frontend regex alerts (safety net for cases the
   // backend missed, e.g. drug-name typos). See lib/drug-safety.ts.
+  //
+  // GATED OFF BY DEFAULT (2026-08-01, MDR — see lib/clinical-alerts.ts). Note
+  // that gating the BACKEND alone would not be enough: mergeBackendAlerts calls
+  // the frontend engine `checkDrugSafety(fields)` unconditionally, so with the
+  // backend returning [] the browser would still generate its own clinical
+  // alerts from the extracted fields. With the flag off the merge is never
+  // called, so neither engine runs and there is no alert surface to render.
   const safetyAlerts = useMemo(
-    () => mergeBackendAlerts(fields.med_alerts, fields),
+    () => (CLINICAL_ALERTS_ENABLED ? mergeBackendAlerts(fields.med_alerts, fields) : []),
     [fields]
   );
   const criticals = useMemo(
