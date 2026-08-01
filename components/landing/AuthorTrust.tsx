@@ -32,7 +32,7 @@ export function AuthorTrust() {
 // identifiable case (per the brand compliance guardrails).
 function NoteMock() {
   return (
-    <div role="img" aria-label="Примерен структуриран амбулаторен лист с редактируеми полета и предупреждение за лекарствено взаимодействие (илюстративни данни)." className="relative">
+    <div role="img" aria-label="Примерен структуриран амбулаторен лист с редактируеми полета и отбелязано място за проверка (илюстративни данни)." className="relative">
       <div
         className="rounded-2xl bg-white p-6"
         style={{ border: '1px solid var(--lp-border)', boxShadow: '0 24px 50px -28px rgba(20,39,64,0.35)' }}
@@ -75,10 +75,10 @@ function NoteMock() {
           </span>
           <div>
             <p className="text-xs font-bold" style={{ color: '#C0392B' }}>
-              Лекарствено взаимодействие
+              За проверка · несигурно разчитане
             </p>
             <p className="mt-1 text-xs leading-snug" style={{ color: 'var(--lp-text)' }}>
-              НСПВС при пациент с хипертония - обмислете алтернатива на ибупрофен.
+              Дозата на ибупрофен не се потвърждава от записа на прегледа.
             </p>
           </div>
         </div>

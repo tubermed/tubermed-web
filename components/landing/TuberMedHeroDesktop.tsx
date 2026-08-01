@@ -414,9 +414,9 @@ export default function TuberMedHeroDesktop() {
                               <div className="tmd-warn" ref={alertRef} style={{ animationDelay: '1450ms' }}>
                                 <div className="tmd-warnico">!</div>
                                 <div>
-                                  <div className="tmd-warnh">КРИТИЧНО · лекарствено взаимодействие</div>
-                                  <div className="tmd-warnt">Пациентът приема <b>Варфарин</b>. НСПВС повишават риска от кървене.</div>
-                                  <div className="tmd-warna">→ Обмисли парацетамол вместо диклофенак.</div>
+                                  <div className="tmd-warnh">За проверка · несигурно разчитане</div>
+                                  <div className="tmd-warnt">Дозата на <b>диклофенак</b> не се потвърждава от записа на прегледа.</div>
+                                  <div className="tmd-warna">→ Прегледай и потвърди преди одобрение.</div>
                                 </div>
                               </div>
                             </Card>
@@ -464,7 +464,7 @@ function HeroStaticNote() {
   return (
     <div
       role="img"
-      aria-label="Готов амбулаторен лист с критично предупреждение за взаимодействие варфарин × НСПВС."
+      aria-label="Готов амбулаторен лист с отбелязано място за проверка, където казаното не е разчетено уверено."
       className="mx-auto w-full max-w-md rounded-2xl bg-white p-5"
       style={{ border: '1px solid var(--lp-border)', boxShadow: '0 24px 50px -28px rgba(20,39,64,.35)' }}
     >
@@ -484,14 +484,14 @@ function HeroStaticNote() {
           </div>
         ))}
       </dl>
-      <div className="mt-4 flex gap-3 rounded-[var(--lp-radius)] p-3.5" style={{ background: '#fdecec', border: '1px solid #f6c9c9' }} aria-hidden="true">
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-sm font-extrabold" style={{ background: '#C0392B', color: '#fff' }}>!</span>
+      <div className="mt-4 flex gap-3 rounded-[var(--lp-radius)] p-3.5" style={{ background: '#F7EDDA', border: '1px solid #E8D2A6' }} aria-hidden="true">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-sm font-extrabold" style={{ background: '#B7791F', color: '#fff' }}>!</span>
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: '#C0392B' }}>Критично · лекарствено взаимодействие</div>
+          <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: '#B7791F' }}>За проверка · несигурно разчитане</div>
           <div className="mt-1 text-sm" style={{ color: 'var(--lp-text)' }}>
-            Пациентът приема <b style={{ color: '#C0392B' }}>Варфарин</b>. НСПВС повишават риска от кървене.
+            Дозата на <b style={{ color: '#B7791F' }}>диклофенак</b> не се потвърждава от записа на прегледа.
           </div>
-          <div className="mt-1.5 text-xs" style={{ color: '#9a3636' }}>→ Обмисли парацетамол вместо диклофенак.</div>
+          <div className="mt-1.5 text-xs" style={{ color: '#8a6316' }}>→ Прегледай и потвърди преди одобрение.</div>
         </div>
       </div>
     </div>
@@ -797,13 +797,13 @@ const CSS = `
 .tmd-medrow{ display:flex; align-items:center; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--s2); font-size:13px; }
 .tmd-medname{ font-weight:600; color:var(--ink); }
 .tmd-meddose{ color:var(--muted); font-size:12px; }
-.tmd-warn{ display:flex; gap:11px; margin-top:12px; padding:13px; border-radius:11px; background:#fdecec;
-  border:1px solid #f6c9c9; opacity:0; animation:tmd-al .55s cubic-bezier(.2,.8,.2,1) forwards; }
-.tmd-warnico{ flex:none; width:25px; height:25px; border-radius:50%; background:var(--crit); color:#fff;
+.tmd-warn{ display:flex; gap:11px; margin-top:12px; padding:13px; border-radius:11px; background:#F7EDDA;
+  border:1px solid #E8D2A6; opacity:0; animation:tmd-al .55s cubic-bezier(.2,.8,.2,1) forwards; }
+.tmd-warnico{ flex:none; width:25px; height:25px; border-radius:50%; background:var(--warn); color:#fff;
   font-weight:800; display:flex; align-items:center; justify-content:center; font-size:14px; animation:tmd-ap 1.1s ease-in-out 3; }
-.tmd-warnh{ font-size:10px; font-weight:700; letter-spacing:.5px; color:var(--crit); text-transform:uppercase; }
-.tmd-warnt{ font-size:13px; color:var(--ink); margin-top:3px; } .tmd-warnt b{ color:var(--crit); }
-.tmd-warna{ font-size:12px; color:#9a3636; margin-top:5px; font-weight:500; }
+.tmd-warnh{ font-size:10px; font-weight:700; letter-spacing:.5px; color:var(--warn); text-transform:uppercase; }
+.tmd-warnt{ font-size:13px; color:var(--ink); margin-top:3px; } .tmd-warnt b{ color:var(--warn); }
+.tmd-warna{ font-size:12px; color:#8a6316; margin-top:5px; font-weight:500; }
 .tmd-rconfirm{ display:flex; align-items:center; gap:10px; padding:4px 0 8px; opacity:0;
   animation:tmd-fu .5s ease 1950ms forwards; }
 .tmd-confirm{ background:var(--steel); color:#fff; border:none; border-radius:9px; padding:10px 18px;

@@ -342,7 +342,7 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
     });
 
     /* ----- processing pipeline (kept for fidelity; never visible in the loop) ----- */
-    const procLabels = ['Транскрибиране…', 'Структуриране…', 'Проверка за безопасност…'];
+    const procLabels = ['Транскрибиране…', 'Структуриране…', 'Проверка на пълнотата…'];
     const procSteps = procLabels.map((label, k) => ({
       label,
       rowStyle:
@@ -686,11 +686,11 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
 
                           {/* meds + safety rail */}
                           <div style={sx('width:208px;flex:none;background:#fff;border:1px solid #E7ECF2;border-radius:14px;padding:14px;box-shadow:0 1px 2px rgba(20,39,64,.04);align-self:flex-start;')}>
-                            <div style={sx('display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:#274C77;')}><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" /></svg> Медикаментозна безопасност</div>
+                            <div style={sx('display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:#274C77;')}><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" /></svg> Терапия и проверки</div>
                             <div style={sx('font-size:10.5px;color:#8893A1;margin:3px 0 12px;')}>Втора проверка</div>
                             {alert && (
                               <div style={sx('background:#F6E4E1;border:1px solid #E3B4AC;border-radius:11px;padding:11px;margin-bottom:11px;animation:tmd-slam .6s cubic-bezier(.4,0,.2,1);')}>
-                                <div style={sx('display:flex;align-items:center;gap:6px;margin-bottom:6px;')}><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#C0392B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={sx('flex:none;')}><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86" /><line x1="12" x2="12" y1="8" y2="12" /><line x1="12" x2="12.01" y1="16" y2="16" /></svg><span style={sx('font-size:11px;font-weight:800;letter-spacing:0.04em;color:#C0392B;text-transform:uppercase;')}>Критично · взаимодействие</span></div>
+                                <div style={sx('display:flex;align-items:center;gap:6px;margin-bottom:6px;')}><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#C0392B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={sx('flex:none;')}><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86" /><line x1="12" x2="12" y1="8" y2="12" /><line x1="12" x2="12.01" y1="16" y2="16" /></svg><span style={sx('font-size:11px;font-weight:800;letter-spacing:0.04em;color:#C0392B;text-transform:uppercase;')}>За проверка · разчитане</span></div>
                                 <div style={sx('font-size:13px;color:#1C2733;line-height:1.4;')}><b style={sx('color:#C0392B;')}>Варфарин × НСПВС</b> — повишен риск от кървене.</div>
                                 <div style={sx('display:flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;color:#9a3636;margin-top:7px;')}><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg> виж източника</div>
                               </div>
