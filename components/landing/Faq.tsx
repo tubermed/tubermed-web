@@ -1,5 +1,6 @@
 import { Container, SectionHeading } from './ui';
 import { Reveal } from './Reveal';
+import { FaqItem } from './FaqItem';
 
 const QA = [
   {
@@ -32,30 +33,10 @@ export function Faq() {
           <SectionHeading title="Често задавани въпроси" />
         </Reveal>
 
-        <div className="lp-faq mx-auto mt-12 max-w-3xl space-y-3">
+        <div className="mx-auto mt-12 max-w-3xl space-y-3">
           {QA.map((item, i) => (
             <Reveal key={item.q} delay={i * 60}>
-              <details
-                className="group rounded-[var(--lp-radius)] bg-white"
-                style={{ border: '1px solid var(--lp-border)' }}
-              >
-                <summary className="flex items-center justify-between gap-4 px-5 py-4">
-                  <span className="text-base font-semibold" style={{ color: 'var(--lp-heading)' }}>
-                    {item.q}
-                  </span>
-                  <span className="lp-faq-chev shrink-0" style={{ color: 'var(--lp-accent)' }} aria-hidden="true">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="m6 9 6 6 6-6" />
-                    </svg>
-                  </span>
-                </summary>
-                <p
-                  className="px-5 pb-5 text-base leading-relaxed"
-                  style={{ color: 'var(--lp-text-muted)' }}
-                >
-                  {item.a}
-                </p>
-              </details>
+              <FaqItem q={item.q} a={item.a} />
             </Reveal>
           ))}
         </div>

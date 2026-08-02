@@ -278,11 +278,12 @@
 .lp-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgba(79,143,191,.45); }
 .lp-range:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px rgba(79,143,191,.45); }
 
-/* FAQ (native <details> accordion) */
-.lp-faq summary { list-style: none; cursor: pointer; }
-.lp-faq summary::-webkit-details-marker { display: none; }
-.lp-faq-chev { transition: transform .2s ease; }
-.lp details[open] .lp-faq-chev { transform: rotate(180deg); }
+/* FAQ accordion (components/landing/FaqItem.tsx). The disclosure is a
+   button + framer-motion height/opacity pair — a native <details> cannot
+   animate its own open/close. Durations, easing and the chevron rotation all
+   live in the component (including the reduced-motion path), so there is
+   nothing to declare here; .lp-faq-chev / .lp-faq-panel exist only as hooks
+   for the <noscript> rule on the landing pages. */
 
 /* Access form */
 .lp-label { font-size: .875rem; font-weight: 600; color: var(--lp-text); }
@@ -303,9 +304,6 @@
 .lp-input[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px rgba(192,57,43,.16); }
 .lp-form-error { font-size: .8rem; color: var(--lp-danger); }
 
-@media (prefers-reduced-motion: reduce) {
-  .lp-faq-chev { transition: none; }
-}
 
 /* Lenis smooth-scroll (classes added to <html> only while a landing page is
    mounted; removed on unmount, so the workspace app is unaffected). */
