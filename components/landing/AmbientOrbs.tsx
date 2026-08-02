@@ -7,7 +7,7 @@ import { useEffect, useRef } from 'react';
 //  - paused when scrolled off-screen (IntersectionObserver) and when the tab
 //    is hidden (visibilitychange) → no CPU/GPU burn in the background.
 //  - prefers-reduced-motion disables the drift entirely (CSS @media).
-export function AmbientOrbs({ subtle = false, className = '' }: { subtle?: boolean; className?: string }) {
+export function AmbientOrbs({ className = '' }: { className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -35,7 +35,7 @@ export function AmbientOrbs({ subtle = false, className = '' }: { subtle?: boole
   }, []);
 
   return (
-    <div ref={ref} className={`lp-orbs ${subtle ? 'lp-orbs--subtle' : ''} ${className}`} aria-hidden="true">
+    <div ref={ref} className={`lp-orbs ${className}`} aria-hidden="true">
       <span className="lp-orb lp-orb--1" />
       <span className="lp-orb lp-orb--2" />
       <span className="lp-orb lp-orb--3" />

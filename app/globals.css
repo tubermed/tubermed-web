@@ -214,7 +214,6 @@
   background: radial-gradient(circle, rgba(143,192,232,.4) 0%, rgba(143,192,232,.15) 42%, rgba(143,192,232,0) 70%);
   animation: lp-orb3 36s ease-in-out infinite;
 }
-.lp-orbs--subtle .lp-orb { opacity: .3; }
 .lp-orbs[data-paused="true"] .lp-orb { animation-play-state: paused; }
 @keyframes lp-orb1 { 0%,100% { transform: translate3d(0,0,0) scale(1) } 50% { transform: translate3d(60px,42px,0) scale(1.12) } }
 @keyframes lp-orb2 { 0%,100% { transform: translate3d(0,0,0) scale(1) } 50% { transform: translate3d(-52px,30px,0) scale(1.08) } }
