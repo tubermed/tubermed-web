@@ -116,8 +116,18 @@ export default function AllergiesSection({ fields, serverFields, onChange, readO
                 style={
                   markedIndices.has(i)
                     ? {
-                        background: 'var(--color-warn-soft)',
-                        color: 'var(--color-warn)',
+                        // GOLD, not warn. The two are byte-identical today
+                        // (#B7791F / #F7EDDA), so this is invisible in QA — which
+                        // is exactly why it had to be fixed rather than left. The
+                        // day --color-warn is re-tuned as a warning colour, this
+                        // chip would silently leave the AI-uncertainty family and
+                        // join the warning family. Three review systems, never
+                        // conflate (AGENTS.md): vital-range warnings, amber
+                        // AI-uncertainty spans, source traceability. A field notice
+                        // is the second one — same token as every other uncertainty
+                        // surface (EditableField, MedsPanel, EchoNoteView).
+                        background: 'var(--color-gold-soft)',
+                        color: 'var(--color-gold)',
                         // A dotted underline, not a border or a badge: it reads as
                         // "look again", not as "danger".
                         textDecoration: 'underline dotted',
@@ -155,7 +165,7 @@ export default function AllergiesSection({ fields, serverFields, onChange, readO
               >
                 <span
                   className="mt-[2px] shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide"
-                  style={{ background: 'var(--color-warn-soft)', color: 'var(--color-warn)' }}
+                  style={{ background: 'var(--color-gold-soft)', color: 'var(--color-gold)' }}
                 >
                   {FAMILY_LABEL}
                 </span>

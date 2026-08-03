@@ -50,7 +50,14 @@
   --color-brand-soft:  #E1E9F3;
   --color-brand-light: #E8EFF7;
 
-  /* Gold → warn (sole consumer is the inline "review" highlight) */
+  /* Gold = the AI-UNCERTAINTY family: amber spans, the field-notice chip and
+     mark, the review pill, flagged echo/meds values. NOT an alias of convenience
+     — it is one of the three review systems AGENTS.md says never to conflate
+     (vital-range warnings / AI uncertainty / source traceability), and --warn is
+     a different one. They happen to share #B7791F today, which is precisely the
+     hazard: a chip written against --color-warn looks identical in QA and
+     silently changes families the day --warn is re-tuned. Uncertainty surfaces
+     use --color-gold[-soft]; warnings use --color-warn[-soft]. */
   --color-gold:      #B7791F;
   --color-gold-soft: #F7EDDA;
 
