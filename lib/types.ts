@@ -150,6 +150,27 @@ export interface FieldSource {
   end: number;
 }
 
+// ── Document-state notices (fields.field_notices) ───────────────────────────
+// A notice states a fact about the DOCUMENT, never about the PATIENT. The shape
+// is the guarantee: a closed-enum `code` plus a `{ field, index }` ref, and
+// nothing else — no severity, no message, no suggested value, no model-authored
+// string. The Bulgarian a doctor reads is rendered from the frozen label table
+// in lib/field-notices.ts, keyed by the enum.
+// ⚠ CROSS-REPO MIRROR of backend lib/field-notices.js — the enum and the label
+// table must change in BOTH repos together (same discipline as the investigation
+// templates and ial-inns.json/mkb10.json).
+export type FieldNoticeCode = 'allergen_no_anchor';
+
+export interface FieldNoticeRef {
+  field: 'alergii';
+  index: number;
+}
+
+export interface FieldNotice {
+  code: FieldNoticeCode;
+  ref: FieldNoticeRef;
+}
+
 export interface TranscribeFields {
   anamneza?: string;
   alergii?: string[];
@@ -171,6 +192,14 @@ export interface TranscribeFields {
   uncertain_spans?: UncertainSpan[];
   field_sources?: Record<string, FieldSource>;    // see FieldSource above; absent on legacy rows
   field_completeness?: FieldCompletenessEntry[];  // see the interface above; ABSENT when nothing is missing
+  // Document-state notices (2c). Unlike every other optional key here this one
+  // is ALWAYS PRESENT on a freshly-extracted or freshly-edited note — `[]` means
+  // „the check ran and found nothing", where absent would mean „unknown". It is
+  // still optional in the type because every legacy row predates it.
+  // ⚠ CROSS-REPO MIRROR: backend lib/field-notices.js. Read-only to the client:
+  // derived server-side, re-anchored server-side on /edit. Never author or
+  // mutate entries here, and never store acknowledgement state inside `fields`.
+  field_notices?: FieldNotice[];
   med_alerts?: MedAlert[];
   mkb_review?: MkbReview;                          // derived: code-validity gate state
   _disclaimer?: string;
