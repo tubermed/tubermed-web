@@ -17,6 +17,27 @@ export interface Medication {
   duration?: string;
 }
 
+// What happened to a code, whenever what we FILED differs from what the model
+// EMITTED. Written by the backend (validateMkbCodes / repairCmExtendedCodes /
+// correctUsOnlyCodes / G6); never by the browser.
+//
+// `rule` is a CLOSED enum, never a model-authored string — the Bulgarian a
+// doctor reads is rendered from the enum on this side, so no clinical judgement
+// can travel through this channel. Same posture as field_notices' NOTICE_CODES.
+export type MkbCorrectionRule =
+  | 'icd10cm_truncated'      // a US ICD-10-CM extended form reduced to МКБ-10 granularity
+  | 'us_only_mapped'         // Z87.891 / F17.210 / M54.50 → the international twin
+  | 'invalid_code_stripped'  // neither the code nor its rubric is in the register
+  | 'obstetric_no_context';  // O-chapter code with no pregnancy context in the transcript
+
+export interface MkbCorrection {
+  /** The code exactly as the model emitted it. The audit trail. */
+  from: string;
+  /** The code actually filed. ABSENT when nothing was filed (a strip). */
+  to?: string;
+  rule: MkbCorrectionRule;
+}
+
 export interface ComorbidDiagnosis {
   diagnoza: string;
   // OPTIONAL — the backend STRIPS an invalid comorbidity code by DELETING this
@@ -28,6 +49,8 @@ export interface ComorbidDiagnosis {
   // cosmetic slip.
   mkb?: string;
   mkb_term?: string;          // official label for a valid comorbidity code (derived)
+  /** Present only when this code was repaired or stripped. See MkbCorrection. */
+  mkb_correction?: MkbCorrection;
 }
 
 export interface MedAlert {
@@ -189,6 +212,8 @@ export interface TranscribeFields {
   osnovna_mkb?: string;
   osnovna_mkb_term?: string;                      // derived: canonical official label
   osnovna_mkb_term_source?: 'exact' | 'parent';   // derived: which form matched the register
+  /** Present only when the main code was repaired or rewritten. See MkbCorrection. */
+  osnovna_mkb_correction?: MkbCorrection;
   pridruzhavashti?: ComorbidDiagnosis[];
   napravlenia?: string;
   naznacheni?: string;

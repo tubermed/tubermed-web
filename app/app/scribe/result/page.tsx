@@ -28,6 +28,7 @@ import type {
   PendingVisit,
   ExportSignalPayload,
   MkbReview,
+  MkbCorrection,
   EchoFields,
   EchoMeasurement,
 } from '@/lib/types';
@@ -43,7 +44,7 @@ import { loadIal } from '@/lib/ial-meds';
 import { findHighlights } from '@/lib/vital-rules';
 import { findSourceSpan, type SourceSpan } from '@/lib/source-grounding';
 import { storedSpanFor } from '@/lib/field-sources';
-import { mkbReviewCopy } from '@/lib/mkb-review';
+import { mkbReviewCopy, mkbCorrectionCopy } from '@/lib/mkb-review';
 import {
   resolveUncertainSpans,
   UNCERTAIN_FIELDS,
@@ -1881,6 +1882,7 @@ function ResultPageInner() {
               osnovnaMkbTerm={fields.osnovna_mkb_term}
               termSource={fields.osnovna_mkb_term_source}
               mkbReview={fields.mkb_review}
+              mkbCorrection={fields.osnovna_mkb_correction}
               originalSpoken={original?.fields.osnovna_diagnoza}
               pridruzhavashti={fields.pridruzhavashti || []}
               onOsnovnaPick={(code, term) => applyMkbPick({ kind: 'osnovna' }, code, term)}
@@ -2941,12 +2943,38 @@ function DiagnosisLine({
   );
 }
 
+// A code the backend repaired or stripped, and why. Renders nothing when there
+// was no correction, and nothing for a rule this build does not recognise —
+// a newer backend must never put an unreviewed sentence on the note.
+//
+// GOLD, not warn: this is an AI-uncertainty surface, not a warning. Three review
+// systems, never conflate (AGENTS.md).
+function MkbCorrectionLine({ correction }: { correction?: MkbCorrection }) {
+  const text = mkbCorrectionCopy(correction);
+  if (!text) return null;
+  return (
+    <div
+      className="text-xs px-3 pt-1 leading-relaxed flex items-start gap-1.5"
+      style={{ color: 'var(--color-text-muted)' }}
+    >
+      <span
+        className="mt-[1px] shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide"
+        style={{ background: 'var(--color-gold-soft)', color: 'var(--color-gold)' }}
+      >
+        МКБ
+      </span>
+      <span className="flex-1">{text}</span>
+    </div>
+  );
+}
+
 function DiagnosesSection({
   osnovnaDiagnoza,
   osnovnaMkb,
   osnovnaMkbTerm,
   termSource,
   mkbReview,
+  mkbCorrection,
   originalSpoken,
   pridruzhavashti,
   onOsnovnaPick,
@@ -2967,6 +2995,8 @@ function DiagnosesSection({
   osnovnaMkbTerm?: string;
   termSource?: 'exact' | 'parent';
   mkbReview?: MkbReview;
+  /** Set when the MAIN code was repaired or stripped. See MkbCorrection. */
+  mkbCorrection?: MkbCorrection;
   originalSpoken?: string;
   pridruzhavashti: ComorbidDiagnosis[];
   onOsnovnaPick: (code: string, term: string) => void;
@@ -3057,6 +3087,7 @@ function DiagnosesSection({
             {mainDiag.parentRubricLine}
           </div>
         )}
+        <MkbCorrectionLine correction={mkbCorrection} />
         {needsReview && (
           <div
             role="alert"
@@ -3091,21 +3122,26 @@ function DiagnosesSection({
         )}
       </div>
       <div className="space-y-2">
-        {pridruzhavashti.map((d, i) =>
-          sealed ? (
-            <DiagnosisLine key={i} code={d.mkb} term={filedComorbidityTerm(d)} />
-          ) : (
-            <MkbTypeahead
-              key={i}
-              code={d.mkb}
-              term={filedComorbidityTerm(d)}
-              placeholder="Търсене на придружаващо заболяване…"
-              onPick={(code, term) => onComorbidityPick(i, code, term)}
-              onBrowse={() => onComorbidityBrowse(i)}
-              onRemove={() => onComorbidityRemove(i)}
-            />
-          ),
-        )}
+        {pridruzhavashti.map((d, i) => (
+          // The row and its correction line are one unit: a code that was
+          // repaired or stripped must never render without the sentence saying
+          // so, in either the sealed or the editable state.
+          <div key={i}>
+            {sealed ? (
+              <DiagnosisLine code={d.mkb} term={filedComorbidityTerm(d)} />
+            ) : (
+              <MkbTypeahead
+                code={d.mkb}
+                term={filedComorbidityTerm(d)}
+                placeholder="Търсене на придружаващо заболяване…"
+                onPick={(code, term) => onComorbidityPick(i, code, term)}
+                onBrowse={() => onComorbidityBrowse(i)}
+                onRemove={() => onComorbidityRemove(i)}
+              />
+            )}
+            <MkbCorrectionLine correction={d.mkb_correction} />
+          </div>
+        ))}
         {pridruzhavashti.length === 0 && (
           <div className="text-sm px-3 py-1" style={{ color: 'var(--color-text-muted)' }}>
             Няма придружаващи заболявания.

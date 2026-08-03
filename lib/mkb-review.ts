@@ -1,4 +1,4 @@
-import type { MkbReview } from './types';
+import type { MkbReview, MkbCorrection } from './types';
 
 // Single source of truth for the МКБ reconcile gate's reason→copy mapping.
 // The result page's approve toast, the 409 backstop, and the DiagnosesSection
@@ -49,4 +49,54 @@ export function mkbReviewCopy(review?: MkbReview | null, osnovnaMkb?: string): M
     bannerDetail: `Кодът „${bannerCode}“ не е в МКБ-10 регистъра. Изберете валиден (търсете или 🔍). Потвърждаването и експортът са блокирани.`,
     blockMessage: `Кодът по МКБ-10 ${blockCode} не е валиден. Коригирайте основната диагноза преди потвърждаване.`,
   };
+}
+
+// ── mkb_correction → the one line a doctor reads ────────────────────────────
+//
+// A code that was silently changed is a claim nobody can audit later. The
+// backend records `{ from, to?, rule }` whenever what it FILED differs from what
+// the model EMITTED; this turns that record into the sentence shown beside the
+// code, so the doctor can see that M17.11 became M17.1 — and why.
+//
+// THE LINE THIS MUST NOT CROSS. Every string below is a statement about the
+// RECORD, never about the PATIENT — the same rule field_notices is built on. No
+// severity, no risk colour, no recommendation, no ordering by importance. The
+// wording is rendered from the closed `rule` enum here, so the backend cannot
+// widen it and the model can never author a word of it.
+//
+// This is an AI-uncertainty surface, not a warning: render it with the gold
+// pair (--color-gold[-soft]), never --color-warn. Three review systems, never
+// conflate.
+export function mkbCorrectionCopy(c?: MkbCorrection | null): string | null {
+  if (!c || typeof c.from !== 'string' || !c.from.trim()) return null;
+
+  switch (c.rule) {
+    case 'icd10cm_truncated':
+      // The model reached for the US Clinical Modification. Say what was heard
+      // and what was filed — the doctor is the one who can tell whether the lost
+      // specificity mattered.
+      return c.to
+        ? `Кодът е приведен от „${c.from}“ към „${c.to}“ — „${c.from}“ е от американската класификация ICD-10-CM и не съществува в българската МКБ-10.`
+        : null;
+
+    case 'us_only_mapped':
+      return c.to
+        ? `Кодът е приведен от „${c.from}“ към „${c.to}“ — международен еквивалент на американски код.`
+        : null;
+
+    case 'invalid_code_stripped':
+      // No code was filed. Say so plainly rather than leaving a blank the doctor
+      // has to notice on their own.
+      return `Кодът „${c.from}“ не е в регистъра на МКБ-10 и не беше записан. Добавете код ръчно, ако е нужен.`;
+
+    case 'obstetric_no_context':
+      return c.to
+        ? `Кодът е приведен от „${c.from}“ към „${c.to}“ — „${c.from}“ е от акушерската глава, а разговорът не споменава бременност.`
+        : `Кодът „${c.from}“ е от акушерската глава, а разговорът не споменава бременност — не беше записан.`;
+
+    default:
+      // An unrecognised rule renders NOTHING rather than guessing. A newer
+      // backend must never be able to put an unreviewed sentence on the note.
+      return null;
+  }
 }
