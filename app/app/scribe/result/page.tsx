@@ -2909,13 +2909,18 @@ function DiagnosisLine({
   term,
   invalid = false,
 }: {
-  code: string;
+  /** Absent when the diagnosis carries no code — a stripped comorbidity has no
+   *  `mkb` key at all (backend `delete entry.mkb`). This is the SEALED, read-only
+   *  rendering of a filed лист, so an unguarded `code.trim()` here would throw on
+   *  exactly the document that must never fail to render. */
+  code?: string;
   term: string;
   /** Keeps a filed-but-invalid code visually flagged — the note is closed, but
    *  the reader still deserves to see that its code never validated. */
   invalid?: boolean;
 }) {
-  const hasCode = code.trim().length > 0;
+  const codeText = (code || '').trim();
+  const hasCode = codeText.length > 0;
   return (
     <div className="flex-1 min-w-0 px-3 py-2 text-sm flex items-baseline gap-2">
       {hasCode && (
@@ -2923,7 +2928,7 @@ function DiagnosisLine({
           className="font-semibold flex-shrink-0"
           style={{ color: invalid ? 'var(--color-red)' : 'var(--color-brand)' }}
         >
-          {code.trim()}
+          {codeText}
         </span>
       )}
       <span

@@ -11,8 +11,10 @@ import { loadMkb, getMkbDataSync, searchMkb, type MkbRow } from '@/lib/mkb10';
 import { Icon } from '@/components/ui/Icon';
 
 interface MkbTypeaheadProps {
-  /** Current code ('' when none yet). */
-  code: string;
+  /** Current code — '' when none yet, ABSENT when the backend stripped an
+   *  invalid comorbidity code (`delete entry.mkb`). Both mean "no code"; every
+   *  read below is truthiness-based, so neither needs a separate branch. */
+  code?: string;
   /** Current resolved term to show when not searching (official term or fallback). */
   term: string;
   /** Reconcile styling — the current code is invalid/missing. */

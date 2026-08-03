@@ -19,7 +19,14 @@ export interface Medication {
 
 export interface ComorbidDiagnosis {
   diagnoza: string;
-  mkb: string;
+  // OPTIONAL — the backend STRIPS an invalid comorbidity code by DELETING this
+  // key (validateMkbCodes / G6, `delete entry.mkb`), never by blanking it to ''.
+  // Absent means "this comorbidity has no code"; an empty string would mean "a
+  // code field that is blank", and only the first is true. Readers must treat
+  // absence as no-code and must not dereference this unguarded — a filed лист
+  // carries legal weight, so `undefined` reaching a render is a defect, not a
+  // cosmetic slip.
+  mkb?: string;
   mkb_term?: string;          // official label for a valid comorbidity code (derived)
 }
 
