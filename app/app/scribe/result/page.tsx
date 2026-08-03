@@ -37,7 +37,7 @@ import { setEchoPath } from '@/lib/echo-template';
 import { mergeBackendAlerts, groupAlerts, type SafetyAlert } from '@/lib/drug-safety';
 import { CLINICAL_ALERTS_ENABLED } from '@/lib/clinical-alerts';
 import { loadMkb, getMkbDataSync, resolveMkb } from '@/lib/mkb10';
-import { filedMainTerm, filedComorbidityTerm, spokenDivergesFromOfficial } from '@/lib/diagnosis';
+import { mainDiagnosisPresentation, filedComorbidityTerm } from '@/lib/diagnosis';
 import { loadIal } from '@/lib/ial-meds';
 import { findHighlights } from '@/lib/vital-rules';
 import { findSourceSpan, type SourceSpan } from '@/lib/source-grounding';
@@ -2969,15 +2969,21 @@ function DiagnosesSection({
   const needsReview = !!mkbReview?.needs_review;
   const atMaxComorbidities = pridruzhavashti.length >= 4; // backend STEP 2 contract caps at 4
 
-  // Displayed term = official МКБ term for a valid code, spoken fallback otherwise.
-  const mainTerm = filedMainTerm({
-    osnovna_mkb: osnovnaMkb,
-    osnovna_mkb_term: osnovnaMkbTerm,
-    osnovna_diagnoza: osnovnaDiagnoza,
-  });
-  // "доктор каза" cue — only when the spoken phrasing meaningfully diverges from
-  // the official term (and the code is valid, so there IS an official term).
-  const showCue = !needsReview && spokenDivergesFromOfficial(originalSpoken, osnovnaMkbTerm);
+  // The filed diagnosis block — term + code primary, provenance beneath. One
+  // helper feeds this, the PDF, the Word doc and the clipboard, so the лист
+  // reads the same everywhere. The attribution is UNCONDITIONAL (see
+  // lib/diagnosis.ts): a cue that disappears when the strings coincide teaches
+  // a reader to distrust its absence.
+  const mainDiag = mainDiagnosisPresentation(
+    {
+      osnovna_mkb: osnovnaMkb,
+      osnovna_mkb_term: osnovnaMkbTerm,
+      osnovna_mkb_term_source: termSource,
+      osnovna_diagnoza: osnovnaDiagnoza, // live field — this is what gets filed
+    } as TranscribeFields,
+    originalSpoken, // immutable snapshot — this is what „доктор каза" quotes
+  );
+  const mainTerm = mainDiag.term;
 
   return (
     <div id="sec-diag" className="scroll-mt-24">
@@ -3018,14 +3024,18 @@ function DiagnosesSection({
             />
           )}
         </div>
-        {showCue && (
+        {/* Provenance, always present — never suppressed because the filed term
+            and the dictation happen to coincide. The no-official-code case is
+            its own line (structural branch in mainDiagnosisPresentation), not a
+            duplicate of the term above it. */}
+        {mainDiag.attributionLine && (
           <div className="mt-1.5 text-xs px-1" style={{ color: 'var(--color-text-muted)' }}>
-            доктор каза: {originalSpoken}
+            {mainDiag.attributionLine}
           </div>
         )}
-        {!needsReview && termSource === 'parent' && osnovnaMkbTerm && (
+        {mainDiag.parentRubricLine && (
           <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--color-text-muted)' }}>
-            категория по МКБ-10 (3-знача рубрика)
+            {mainDiag.parentRubricLine}
           </div>
         )}
         {needsReview && (

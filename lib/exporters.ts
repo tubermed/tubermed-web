@@ -4,7 +4,8 @@
 // buttons that are hidden when actually printing.
 
 import type { TranscribeFields, EchoFields, InvestigationBlock } from './types';
-import { filedMainTerm, filedComorbidityTerm } from './diagnosis';
+import { mainDiagnosisPresentation, filedComorbidityTerm } from './diagnosis';
+import type { MainDiagnosisPresentation } from './diagnosis';
 import { ECHO_SECTIONS, readEchoPath, type EchoSectionDescriptor } from './echo-template';
 import { getInvestigationBlockDescriptor } from './investigation-blocks';
 
@@ -42,6 +43,17 @@ export interface ExportIdentity {
   uin?: string | null;
 }
 
+// The provenance lines under the filed diagnosis, as an inline-styled fragment.
+// Shared by the PDF and the Word doc (Word renders independently of the
+// document's own <style>, so the styling has to be inline in both).
+function diagNotesHtml(main: MainDiagnosisPresentation): string {
+  const notes = [main.attributionLine, main.parentRubricLine].filter(Boolean);
+  if (notes.length === 0) return '';
+  return `<div style="margin-top:3px;font-size:9pt;font-weight:400;color:#586472">${notes
+    .map((n) => escapeHtml(n))
+    .join('<br>')}</div>`;
+}
+
 function identityHasContent(id: ExportIdentity): boolean {
   return [
     id.practiceName, id.address, id.rziNumber, id.nzokContract,
@@ -55,10 +67,15 @@ export function formatPlainText(f: TranscribeFields): string {
   const lines: string[] = [];
 
   const diagLines: string[] = [];
-  const mainTerm = filedMainTerm(f); // official term for a valid code; spoken fallback
-  if (mainTerm) {
-    const mkb = f.osnovna_mkb ? ' (МКБ: ' + f.osnovna_mkb + ')' : '';
-    diagLines.push('Основна диагноза: ' + mainTerm + mkb);
+  // Filed term + code first (what an НЗОК reviewer anchors on), then the
+  // provenance line — the dictated wording, or the explicit no-code marker.
+  const main = mainDiagnosisPresentation(f);
+  if (main.hasContent) {
+    const mkb = main.code ? ' (МКБ: ' + main.code + ')' : '';
+    diagLines.push('Основна диагноза: ' + main.term + mkb);
+    for (const note of [main.attributionLine, main.parentRubricLine]) {
+      if (note) diagLines.push('  ' + note);
+    }
   }
   const co = (f.pridruzhavashti || []).filter(
     (d) => filedComorbidityTerm(d) || (d.mkb && d.mkb.trim())
@@ -452,10 +469,12 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string, identity?:
   const idSignature = hasId ? pdfSignatureLine(identity!) : '';
 
   let diagRows = '';
-  const pdfMainTerm = filedMainTerm(f);
-  if (pdfMainTerm) {
-    diagRows += `<tr><td><strong>${escapeHtml(pdfMainTerm)}</strong></td>
-       <td style="white-space:nowrap;font-family:monospace;color:#1F3A5F;font-weight:700">${escapeHtml(f.osnovna_mkb || '')}</td></tr>`;
+  // Filed term + code is the anchor row; the provenance line rides inside the
+  // same cell so the row border never separates a term from what explains it.
+  const pdfMain = mainDiagnosisPresentation(f);
+  if (pdfMain.hasContent) {
+    diagRows += `<tr><td><strong>${escapeHtml(pdfMain.term)}</strong>${diagNotesHtml(pdfMain)}</td>
+       <td style="white-space:nowrap;font-family:monospace;color:#1F3A5F;font-weight:700">${escapeHtml(pdfMain.code)}</td></tr>`;
   }
   (f.pridruzhavashti || []).forEach((d) => {
     const coTerm = filedComorbidityTerm(d);
@@ -674,7 +693,7 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string, identity?
     return `<h2>${escapeHtml(title)}</h2><p>${escapeHtml(v).replace(/\n/g, '<br>')}</p>`;
   };
 
-  const wordMainTerm = filedMainTerm(f); // official term for a valid code; spoken fallback
+  const wordMain = mainDiagnosisPresentation(f);
 
   // Embedded blocks — same inline-styled fragment as the PDF (Word renders it
   // independently of this document's global h2 css). '' when absent.
@@ -699,12 +718,12 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string, identity?
 <p class="meta">Дата: ${escapeHtml(dateStr)}</p>
 
 ${
-  wordMainTerm
+  wordMain.hasContent
     ? `<h2>Основна диагноза</h2>
 <table>
   <tr>
-    <td style="padding:6px 10px;border:1px solid #ccc">${escapeHtml(wordMainTerm)}</td>
-    <td style="padding:6px 10px;border:1px solid #ccc;font-family:Courier New;color:#1F3A5F;white-space:nowrap;width:80px">${escapeHtml(f.osnovna_mkb || '')}</td>
+    <td style="padding:6px 10px;border:1px solid #ccc">${escapeHtml(wordMain.term)}${diagNotesHtml(wordMain)}</td>
+    <td style="padding:6px 10px;border:1px solid #ccc;font-family:Courier New;color:#1F3A5F;white-space:nowrap;width:80px">${escapeHtml(wordMain.code)}</td>
   </tr>
 </table>`
     : ''
