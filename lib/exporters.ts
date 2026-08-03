@@ -9,8 +9,25 @@ import type { MainDiagnosisPresentation } from './diagnosis';
 import { ECHO_SECTIONS, readEchoPath, type EchoSectionDescriptor } from './echo-template';
 import { getInvestigationBlockDescriptor } from './investigation-blocks';
 
-export function escapeHtml(s: string): string {
-  return s
+// Accepts an absent value on purpose. Every caller is on an export path — the
+// PDF, the Word document, the sealed лист — and this function dereferences its
+// argument immediately, so an `undefined` here is not a rendering glitch, it is
+// a thrown TypeError on the one artefact that has no recovery path.
+//
+// The hazard is real but currently UNOBSERVED (2026-08-03): `Medication.inn` is
+// typed `string` REQUIRED in lib/types.ts while the backend never normalises it
+// — every backend reader type-guards `typeof m.inn === 'string'`, which is the
+// authors treating it as absent-able — and `escapeHtml(m.inn)` runs unguarded in
+// both generatePdfHtml and generateWordHtml. Measured across 348 artifacts: 0 of
+// 677 medication rows lack `inn`, and 0 of 259 comorbidity rows lack `diagnoza`.
+// So the type lies, but the model has never exercised the lie.
+//
+// Guarding HERE rather than at the two call sites is deliberate: the call sites
+// are the instance, this is the class. A widening costs nothing for defined
+// input and cannot be forgotten by the next person adding an export field.
+export function escapeHtml(s: string | null | undefined): string {
+  if (s == null) return '';
+  return String(s)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
