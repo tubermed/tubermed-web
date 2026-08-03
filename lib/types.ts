@@ -30,6 +30,40 @@ export interface MedAlert {
   action: string;
 }
 
+// ── Administrative completeness (2026-08-03) ─────────────────────────────────
+//
+// NOT a clinical alert, and the separation is STRUCTURAL so it cannot drift into
+// one. THE RULE: it may state WHAT IS MISSING, never WHAT IT SHOULD BE.
+//
+//   allowed (describes the DOCUMENT)   forbidden (describes the PATIENT)
+//   „Метформин — няма посочена доза"    „Обичайната доза е 500 mg"
+//   „Няма посочена честота"            „Дозата изглежда висока"
+//   a count of incomplete rows          any ordering by clinical importance
+//
+// An entry carries ONLY an index and an enum — deliberately no `severity`, no
+// `suggested_value`, no free-text `message` — so there is no channel through
+// which a dose or a risk judgement could ever reach the screen. The Bulgarian
+// text comes from FIELD_COMPLETENESS_LABELS below, never from the model, and
+// the backend guard (scripts/alert-guard.js `guardCompleteness`) fails the
+// harness if any other key ever appears. Mirrors backend
+// lib/field-completeness.js — change them together.
+//
+// RENDERING: the `AI несигурен` visual family — neutral, quiet, the same
+// treatment as the existing uncertainty marks. Never red, never a warning icon,
+// never `КРИТИЧНО`. A depiction is a claim.
+export type FieldCompletenessField = 'dose' | 'regimen' | 'duration';
+
+export interface FieldCompletenessEntry {
+  medication_index: number;          // index into medications_list
+  missing_field: FieldCompletenessField;
+}
+
+export const FIELD_COMPLETENESS_LABELS: Record<FieldCompletenessField, string> = {
+  dose:     'няма посочена доза',
+  regimen:  'няма посочена честота',
+  duration: 'няма посочена продължителност',
+};
+
 // МКБ code-validity gate state (Bug 1). NOTE: divergence_advisory is deliberately
 // NOT part of the client surface — it must never be shown to the doctor.
 export interface MkbReview {
@@ -136,6 +170,7 @@ export interface TranscribeFields {
   izsledvania_blocks?: InvestigationBlock[];
   uncertain_spans?: UncertainSpan[];
   field_sources?: Record<string, FieldSource>;    // see FieldSource above; absent on legacy rows
+  field_completeness?: FieldCompletenessEntry[];  // see the interface above; ABSENT when nothing is missing
   med_alerts?: MedAlert[];
   mkb_review?: MkbReview;                          // derived: code-validity gate state
   _disclaimer?: string;
