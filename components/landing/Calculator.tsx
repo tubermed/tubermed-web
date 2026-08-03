@@ -45,8 +45,15 @@ export function Calculator() {
   const weeklyShown = useCountUp(weekly, active, reduce);
   const monthlyShown = useCountUp(monthly, active, reduce);
 
+  // Leading hairline only. Problem and Calculator are both --lp-bg, the one
+  // accepted break in the light/soft alternation (see globals.css), so this
+  // seam has no tonal change to mark it — the rule does that instead.
+  // borderTop, not borderBlock: HowItWorks below already draws its own top
+  // hairline, and a full borderBlock here would stack two 1px lines at that
+  // seam. If Calculator ever flips to --lp-bg-soft this upgrades to
+  // borderBlock in place.
   return (
-    <section style={{ background: 'var(--lp-bg)' }}>
+    <section style={{ background: 'var(--lp-bg)', borderTop: '1px solid var(--lp-border)' }}>
       <Container className="py-20 md:py-28">
         <Reveal>
           <SectionHeading
