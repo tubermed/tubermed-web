@@ -65,6 +65,24 @@ export function noticeLabel(entry: FieldNotice, fields: TranscribeFields): strin
 const norm = (s: unknown): string => (typeof s === 'string' ? s.trim().toLowerCase() : '');
 
 /**
+ * Stable key for a doctor's dismissal of one notice.
+ *
+ * Keyed on the allergen TEXT, never on `ref.index`. An index moves the moment a
+ * row above it is deleted, so an index-keyed dismissal would silently transfer
+ * to a different allergen — hiding a notice the doctor never saw, on the field
+ * where a wrong value travels furthest. Text-keyed, a dismissal stays attached
+ * to the thing that was dismissed and nothing else.
+ *
+ * Returns '' when the row does not exist, which callers treat as un-dismissable
+ * (the notice would not render anyway — noticeLabel returns null there).
+ */
+export function noticeDismissKey(entry: FieldNotice, allergens: string[]): string {
+  const subject = norm(allergens[entry?.ref?.index]);
+  if (!subject || !isKnownCode(entry?.code)) return '';
+  return `${entry.code}::${subject}`;
+}
+
+/**
  * Re-point each surviving notice at wherever its allergen TEXT now sits.
  * A row that was deleted or corrected has no surviving notice — fixing the
  * field clears it. Pure: returns a new array, mutates nothing.

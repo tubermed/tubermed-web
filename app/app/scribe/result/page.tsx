@@ -32,6 +32,7 @@ import type {
   EchoMeasurement,
 } from '@/lib/types';
 import EchoNoteView from '@/components/EchoNoteView';
+import AllergiesSection from '@/components/AllergiesSection';
 import InvestigationBlockCard from '@/components/InvestigationBlockCard';
 import { setEchoPath } from '@/lib/echo-template';
 import { mergeBackendAlerts, groupAlerts, type SafetyAlert } from '@/lib/drug-safety';
@@ -1932,6 +1933,19 @@ function ResultPageInner() {
                 </>
               }
             />
+            {/* Алергии — first render surface this field has ever had. It sits
+                after Анамнеза because that is where an allergy history belongs
+                in an амбулаторен лист, and because field_notices key to it: a
+                notice with nothing on screen to point at is not a notice.
+                Advisory only — no approval gate, same standing as
+                uncertain_spans. */}
+            <AllergiesSection
+              fields={fields}
+              serverFields={original?.fields}
+              onChange={(next) => updateField('alergii', next)}
+              readOnly={bodyReadOnly}
+            />
+
             <TextSection
               id="sec-obektivno"
               title="Обективно състояние"

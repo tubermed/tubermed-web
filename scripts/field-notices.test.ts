@@ -28,6 +28,7 @@ import {
   NOTICE_CODES,
   noticeLabel,
   reanchorFieldNotices,
+  noticeDismissKey,
 } from '../lib/field-notices.ts';
 import type { TranscribeFields, FieldNotice } from '../lib/types.ts';
 
@@ -111,4 +112,40 @@ test('re-anchor returns a new array and does not mutate the note it is given', (
   const prev: TranscribeFields = { alergii: ['пеницилин'], field_notices: [notice(0)] };
   reanchorFieldNotices(prev, next);
   assert.equal(next.field_notices, undefined, 'reanchor must not write into fields');
+});
+
+// ── Dismissal keys (the render surface, 2026-08-03) ─────────────────────────
+//
+// A dismissal is keyed on the allergen TEXT, never on ref.index. This is the
+// one place the UI could quietly go wrong in a way nobody would report: delete
+// a row above a dismissed notice and an index-keyed dismissal slides onto a
+// DIFFERENT allergen, hiding a notice the doctor never saw — on the field where
+// a wrong value travels furthest.
+
+test('a dismissal key follows the allergen text, not its position', () => {
+  const before = ['пеницилин', 'сулфонамиди'];
+  const after  = ['сулфонамиди'];                       // first row deleted
+  // Same allergen, different index → same key.
+  assert.equal(
+    noticeDismissKey(notice(1), before),
+    noticeDismissKey(notice(0), after),
+  );
+});
+
+test('dismissing one allergen does not dismiss another', () => {
+  const allergens = ['пеницилин', 'сулфонамиди'];
+  assert.notEqual(noticeDismissKey(notice(0), allergens), noticeDismissKey(notice(1), allergens));
+});
+
+test('a dismissal key is case- and whitespace-insensitive', () => {
+  assert.equal(
+    noticeDismissKey(notice(0), ['  Пеницилин ']),
+    noticeDismissKey(notice(0), ['пеницилин']),
+  );
+});
+
+test('an unknown code or a missing row yields no key', () => {
+  assert.equal(noticeDismissKey(notice(9), ['пеницилин']), '');
+  const rogue = { code: 'patient_probably_fine', ref: { field: 'alergii', index: 0 } };
+  assert.equal(noticeDismissKey(rogue as unknown as FieldNotice, ['пеницилин']), '');
 });
