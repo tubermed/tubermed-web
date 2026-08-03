@@ -102,7 +102,7 @@ export function formatPlainText(f: TranscribeFields): string {
     lines.push('');
   };
 
-  section('АНАМНЕЗА', f.anamneza);
+  section('АНАМНЕЗА', anamnezaSectionText(f));
   section('ОБЕКТИВНО СЪСТОЯНИЕ', f.obektivno);
 
   // Изследвания — the shared section body (izsledvaniaSectionText below), so
@@ -135,6 +135,53 @@ export function formatPlainText(f: TranscribeFields): string {
   }
 
   return lines.join('\n').trim();
+}
+
+// ─── Анамнеза, with the allergy history folded in ────────────────────────────
+// The амбулаторен лист has NO allergy field. Three independent sources agree on
+// that (the НЗОК primary-document format, НЗИС nomenclature CL011, and the
+// filed листове we have seen), so the allergies could not simply become a
+// fourth section: adding a field the official form does not carry to a document
+// with материална доказателствена сила is a change to what the document claims
+// to be, not a formatting choice.
+//
+// Анамнеза is where an allergy history legally belongs, and it is already where
+// the on-screen section sits, so the лист and the screen agree.
+//
+// TWO RULES, both deliberate:
+//
+//   1. The narrative is never rewritten. The allergy line is APPENDED after the
+//      doctor's dictated text, never merged into it — the doctor is the legal
+//      author and their wording is what was reviewed and confirmed.
+//
+//   2. An EMPTY allergy list renders NOTHING. It does not render "Няма известни
+//      алергии". An empty array means nothing was extracted; it is not a
+//      recorded denial, and printing one on a filed document would assert a
+//      clinical fact the visit may never have established — the same reasoning
+//      that removed the "няма открити рискове" empty state from the alerts
+//      surface (2026-08-01). Absence of a line is honest; a manufactured denial
+//      is not.
+//
+// Field notices (AI-uncertainty marks on individual allergens) deliberately do
+// NOT travel here. They are a review aid, exactly like uncertain_spans, and no
+// exporter has ever carried those onto the document.
+const ALLERGY_LABEL = 'Алергии';
+
+export function anamnezaSectionText(f: TranscribeFields): string {
+  const narrative = fieldText(f.anamneza);
+
+  const allergens = (Array.isArray(f.alergii) ? f.alergii : [])
+    .map((a) => fieldText(typeof a === 'string' ? a : ''))
+    .filter(Boolean);
+
+  if (allergens.length === 0) return narrative;
+
+  const line = `${ALLERGY_LABEL}: ${allergens.join(', ')}`;
+  // Blank line between the dictated narrative and the appended line so the
+  // reader can see where the doctor's text ends. Allergies with no narrative
+  // still render — losing them because анамнеза happened to be empty would be
+  // the exact omission this change exists to close.
+  return narrative ? `${narrative}\n\n${line}` : line;
 }
 
 // ─── Per-section copy bodies (Изследвания / Издадени документи) ──────────────
@@ -568,7 +615,7 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string, identity?:
           : ''
       }
 
-      ${pdfSection('Анамнеза', f.anamneza || '')}
+      ${pdfSection('Анамнеза', anamnezaSectionText(f))}
       ${pdfSection('Обективно състояние', f.obektivno || '')}
       ${izsledvaniaHeader}${blocksHtml}
       ${pdfSection('Резултати от изследвания', f.izsledvania || '')}
@@ -731,7 +778,7 @@ ${
 
 ${pdRows ? `<h2>Придружаващи заболявания</h2><table>${pdRows}</table>` : ''}
 
-${para('Анамнеза', f.anamneza)}
+${para('Анамнеза', anamnezaSectionText(f))}
 ${para('Обективно състояние', f.obektivno)}
 
 ${fieldText(f.izsledvania) || fieldText(f.naznacheni) || blocksHtml ? '<h2>Изследвания</h2>' : ''}${blocksHtml}
