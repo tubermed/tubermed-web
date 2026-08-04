@@ -16,7 +16,7 @@ export const interTight = Inter_Tight({
 // In-mock body font for the hero product walkthrough (good Cyrillic).
 // Loaded via next/font so it is SELF-HOSTED at build time — NO runtime request
 // to Google Fonts (which would leak the visitor's IP to the US and contradict
-// the page's own EU/no-US-transfer promise). Landing-only.
+// the page's own EU data-residency promise). Landing-only.
 export const golosText = Golos_Text({
   subsets: ['latin', 'cyrillic'],
   weight: ['400', '500', '600', '700'],

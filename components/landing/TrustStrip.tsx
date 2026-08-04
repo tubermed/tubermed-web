@@ -1,7 +1,7 @@
 import { Container } from './ui';
 import { Reveal } from './Reveal';
 
-const BADGES = ['Данните не напускат ЕС', 'Български медицински език', 'Одобрявате преди всеки експорт'];
+const BADGES = ['Данните се съхраняват в ЕС', 'Български медицински език', 'Одобрявате преди всеки експорт'];
 
 function CheckIcon() {
   return (
