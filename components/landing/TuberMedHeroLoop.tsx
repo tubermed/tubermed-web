@@ -496,8 +496,8 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
                     <div style={sx('display:flex;align-items:center;gap:9px;padding:9px 8px;border-top:1px solid #243954;')}>
                       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#8FC0E8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" /></svg>
                       <div style={sx('line-height:1.15;')}>
-                        <div style={sx('font-size:11px;font-weight:600;color:#D7E0EC;')}>Обработка в ЕС</div>
-                        <div style={sx('font-size:9.5px;color:#7E8DA3;')}>Frankfurt · GDPR</div>
+                        <div style={sx('font-size:11px;font-weight:600;color:#D7E0EC;')}>Данните се съхраняват в ЕС</div>
+                        <div style={sx('font-size:9.5px;color:#7E8DA3;')}>GDPR</div>
                       </div>
                     </div>
                   </aside>
@@ -598,7 +598,7 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
                               </div>
                             ))}
                           </div>
-                          <div style={sx("margin-top:26px;padding-top:16px;border-top:1px solid #EEF2F7;font-size:12px;color:#8893A1;font-family:var(--font-inter,'Inter'),sans-serif;")}>Обикновено ~15–30 сек · данните не напускат ЕС</div>
+                          <div style={sx("margin-top:26px;padding-top:16px;border-top:1px solid #EEF2F7;font-size:12px;color:#8893A1;font-family:var(--font-inter,'Inter'),sans-serif;")}>Обикновено ~15–30 сек · данните се съхраняват в ЕС</div>
                         </div>
                       </div>
 
@@ -736,7 +736,7 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
                   </div>
                   <div style={sx('font-size:30px;font-weight:600;color:#EAF1F8;letter-spacing:-0.02em;margin-top:26px;max-width:680px;line-height:1.18;opacity:0;animation:tmd-kin .6s ease .5s forwards;')}>От разговор до амбулаторен лист за секунди.</div>
                   <div style={sx("font-family:var(--font-jetbrains,'JetBrains Mono'),monospace;font-size:14px;color:#8FC0E8;margin-top:20px;letter-spacing:0.02em;opacity:0;animation:tmd-kin .6s ease .85s forwards;")}>app.tubermed.com</div>
-                  <div style={sx("font-family:var(--font-inter,'Inter'),sans-serif;font-size:12.5px;color:#A9BBD0;margin-top:26px;opacity:0;animation:tmd-kin .6s ease 1.1s forwards;")}>GDPR · Обработка в ЕС · Лекарят остава авторът</div>
+                  <div style={sx("font-family:var(--font-inter,'Inter'),sans-serif;font-size:12.5px;color:#A9BBD0;margin-top:26px;opacity:0;animation:tmd-kin .6s ease 1.1s forwards;")}>GDPR · Данните се съхраняват в ЕС · Лекарят остава авторът</div>
                 </div>
               )}
 
