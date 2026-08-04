@@ -42,7 +42,7 @@ export function Hero() {
               </Cta>
             </div>
             <p className="mt-7 text-sm font-medium" style={{ color: 'var(--lp-text-muted)' }}>
-              GDPR-съвместим · Данните се съхраняват в ЕС · Лекарят остава авторът
+              GDPR-съвместим · Данните се съхраняват в ЕС · Лекарят остава автор
             </p>
           </div>
         </Reveal>

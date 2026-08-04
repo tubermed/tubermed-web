@@ -610,7 +610,7 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
                             <div style={sx('display:flex;align-items:center;justify-content:space-between;gap:14px;background:#F7EDDA;border:1px solid #E8D6AE;border-radius:10px;padding:10px 14px;')}>
                               <div style={sx('display:flex;align-items:center;gap:10px;min-width:0;')}>
                                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#B7791F" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={sx('flex:none;')}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
-                                <div style={sx('line-height:1.25;min-width:0;')}><div style={sx('font-size:12.5px;font-weight:700;color:#8A5A12;')}>AI чернова — прегледайте преди подпис.</div><div style={sx('font-size:11px;color:#A07B3A;')}>Лекарят остава авторът.</div></div>
+                                <div style={sx('line-height:1.25;min-width:0;')}><div style={sx('font-size:12.5px;font-weight:700;color:#8A5A12;')}>AI чернова — прегледайте преди подпис.</div><div style={sx('font-size:11px;color:#A07B3A;')}>Лекарят остава автор.</div></div>
                               </div>
                               <div style={sx('display:flex;align-items:center;gap:7px;flex:none;')}>
                                 <span style={sx('display:flex;align-items:center;gap:5px;font-size:11.5px;color:#9aa7b4;border:1px solid #DCE1E8;border-radius:7px;padding:6px 10px;background:#fff;')}><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect width="18" height="11" x="3" y="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> PDF</span>
@@ -736,7 +736,7 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
                   </div>
                   <div style={sx('font-size:30px;font-weight:600;color:#EAF1F8;letter-spacing:-0.02em;margin-top:26px;max-width:680px;line-height:1.18;opacity:0;animation:tmd-kin .6s ease .5s forwards;')}>От разговор до амбулаторен лист за секунди.</div>
                   <div style={sx("font-family:var(--font-jetbrains,'JetBrains Mono'),monospace;font-size:14px;color:#8FC0E8;margin-top:20px;letter-spacing:0.02em;opacity:0;animation:tmd-kin .6s ease .85s forwards;")}>app.tubermed.com</div>
-                  <div style={sx("font-family:var(--font-inter,'Inter'),sans-serif;font-size:12.5px;color:#A9BBD0;margin-top:26px;opacity:0;animation:tmd-kin .6s ease 1.1s forwards;")}>GDPR · Данните се съхраняват в ЕС · Лекарят остава авторът</div>
+                  <div style={sx("font-family:var(--font-inter,'Inter'),sans-serif;font-size:12.5px;color:#A9BBD0;margin-top:26px;opacity:0;animation:tmd-kin .6s ease 1.1s forwards;")}>GDPR · Данните се съхраняват в ЕС · Лекарят остава автор</div>
                 </div>
               )}
 
