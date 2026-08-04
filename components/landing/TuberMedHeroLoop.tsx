@@ -298,7 +298,7 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
       crumb =
         screen === 'newvisit' ? 'Нов преглед › Данни на пациента'
         : onResult ? 'Преглед › Амбулаторен лист (чернова)'
-        : screen === 'proc' ? 'Нов преглед › AI обработка'
+        : screen === 'proc' ? 'Нов преглед › Обработка с ИИ'
         : 'Нов преглед › Запис на консултацията';
       opNew = screen === 'newvisit' ? '1' : '0';
       opRec = screen === 'rec' ? '1' : '0';
@@ -584,7 +584,7 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
                         <div style={sx('width:460px;background:#fff;border:1px solid #E7ECF2;border-radius:16px;padding:34px 38px;box-shadow:0 1px 2px rgba(20,39,64,.04),0 10px 30px -16px rgba(20,39,64,.18);')}>
                           <div style={sx('display:flex;align-items:center;gap:10px;')}>
                             <span style={sx('display:inline-block;width:9px;height:9px;border-radius:50%;background:#274C77;animation:tmd-recdot 1.4s ease-in-out infinite;')} />
-                            <div style={sx("font-size:17px;font-weight:700;color:#274C77;font-family:var(--font-inter-tight,'Inter Tight'),sans-serif;")}>AI обработва консултацията</div>
+                            <div style={sx("font-size:17px;font-weight:700;color:#274C77;font-family:var(--font-inter-tight,'Inter Tight'),sans-serif;")}>ИИ обработва консултацията</div>
                           </div>
                           <div style={sx('display:flex;flex-direction:column;gap:15px;margin-top:24px;')}>
                             {procSteps.map((ps, k) => (
@@ -610,7 +610,7 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
                             <div style={sx('display:flex;align-items:center;justify-content:space-between;gap:14px;background:#F7EDDA;border:1px solid #E8D6AE;border-radius:10px;padding:10px 14px;')}>
                               <div style={sx('display:flex;align-items:center;gap:10px;min-width:0;')}>
                                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#B7791F" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={sx('flex:none;')}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
-                                <div style={sx('line-height:1.25;min-width:0;')}><div style={sx('font-size:12.5px;font-weight:700;color:#8A5A12;')}>AI чернова — прегледайте преди подпис.</div><div style={sx('font-size:11px;color:#A07B3A;')}>Лекарят остава автор.</div></div>
+                                <div style={sx('line-height:1.25;min-width:0;')}><div style={sx('font-size:12.5px;font-weight:700;color:#8A5A12;')}>ИИ чернова — прегледайте преди подпис.</div><div style={sx('font-size:11px;color:#A07B3A;')}>Лекарят остава автор.</div></div>
                               </div>
                               <div style={sx('display:flex;align-items:center;gap:7px;flex:none;')}>
                                 <span style={sx('display:flex;align-items:center;gap:5px;font-size:11.5px;color:#9aa7b4;border:1px solid #DCE1E8;border-radius:7px;padding:6px 10px;background:#fff;')}><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect width="18" height="11" x="3" y="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> PDF</span>
@@ -723,7 +723,7 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
                   </div>
                   <div style={sx('margin-top:14px;opacity:0;animation:tmd-kin .5s ease 1.35s forwards;')}><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#8FC0E8" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg></div>
                   <div style={sx('font-size:58px;font-weight:800;color:#274C77;letter-spacing:-0.03em;line-height:1.04;margin-top:10px;white-space:nowrap;opacity:0;animation:tmd-kinblur .7s cubic-bezier(.2,.7,.2,1) 1.55s forwards;')}>30 секунди преглед</div>
-                  <div style={sx("font-family:var(--font-inter,'Inter'),sans-serif;font-size:16px;color:#5C6B7A;margin-top:22px;opacity:0;animation:tmd-kin .6s ease 2.0s forwards;")}>Говорите. AI пише амбулаторния лист.</div>
+                  <div style={sx("font-family:var(--font-inter,'Inter'),sans-serif;font-size:16px;color:#5C6B7A;margin-top:22px;opacity:0;animation:tmd-kin .6s ease 2.0s forwards;")}>Говорите. ИИ пише амбулаторния лист.</div>
                 </div>
               )}
 

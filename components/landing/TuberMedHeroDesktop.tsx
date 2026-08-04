@@ -366,7 +366,7 @@ export default function TuberMedHeroDesktop() {
                       <HeaderStrip />
                       <div className="tmd-proc">
                         <span className="tmd-spin" />
-                        <div className="tmd-proct">AI анализира разговора…</div>
+                        <div className="tmd-proct">ИИ анализира разговора…</div>
                         <div className="tmd-procsub">структуриране · МКБ-10 · свързване с източника</div>
                       </div>
                     </Screen>
