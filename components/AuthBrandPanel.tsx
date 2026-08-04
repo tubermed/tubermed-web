@@ -150,7 +150,7 @@ export default function AuthBrandPanel() {
         style={{ color: "var(--color-nav-text)", fontSize: 12 }}
       >
         <ShieldGlyph />
-        <span>GDPR-съвместим · Данните се обработват в EU</span>
+        <span>GDPR-съвместим · Данните се съхраняват в ЕС</span>
       </p>
     </aside>
   );
