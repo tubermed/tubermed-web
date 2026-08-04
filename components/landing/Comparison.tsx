@@ -5,7 +5,15 @@ import { Reveal } from './Reveal';
 // competitors). It IS the brand's core positioning.
 const ROWS: { feature: string; us: string; tm: string }[] = [
   { feature: 'Език', us: 'Английски, с превод', tm: 'Роден български + МКБ-10 на български' },
-  { feature: 'Данни', us: 'Често обработка в САЩ', tm: 'Изцяло в ЕС (Франкфурт)' },
+  // NOTE (2026-08-04): the 'Данни' row was REMOVED, not rewritten. It set a
+  // claim about where competitors process data against a claim that ours was
+  // handled entirely inside the EU. Our own AI step runs at a US provider, so
+  // the contrast was false however our own cell is worded — swapping only our
+  // side to the true storage claim leaves the implicature intact, which is the
+  // same lie with deniability added. There is no honest version of this row
+  // that does not invent a competitor spec, which the comment above forbids.
+  // Do not restore it. (Deliberately paraphrased: quoting the old cells
+  // verbatim here would trip scripts/eu-claims.test.ts, correctly.)
   { feature: 'Авторство', us: '-', tm: 'Лекарят одобрява преди всеки износ' },
   { feature: 'Пригоден за', us: 'Общия пазар', tm: 'Натоварените лекари в България' },
 ];
