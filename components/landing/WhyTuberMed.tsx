@@ -24,9 +24,16 @@ const POINTS = [
   },
 ];
 
+// The leading hairline is a SEAM MARKER, not decoration: WaysToRecord directly
+// above is also --lp-bg, and the two sections answer different questions ("does
+// this fit how I work?" vs "why you?"), so they must not read as one beat. Same
+// remedy as the Problem|Calculator seam — see the surfaces note in globals.css.
+// Do NOT instead make WaysToRecord --lp-bg-soft: HowItWorks above IT is already
+// soft, so that merges those two, and it erases WaysToRecord's cards (they are
+// --lp-bg-soft on a white band).
 export function WhyTuberMed() {
   return (
-    <section id="why" style={{ background: 'var(--lp-bg)' }}>
+    <section id="why" style={{ background: 'var(--lp-bg)', borderTop: '1px solid var(--lp-border)' }}>
       <Container className="py-20 md:py-28">
         <Reveal>
           <SectionHeading title="Създаден за българския лекар, не просто преведен за него." />

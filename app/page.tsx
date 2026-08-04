@@ -8,6 +8,7 @@ import { TrustStrip } from '@/components/landing/TrustStrip';
 import { Problem } from '@/components/landing/Problem';
 import { Calculator } from '@/components/landing/Calculator';
 import { HowItWorks } from '@/components/landing/HowItWorks';
+import { WaysToRecord } from '@/components/landing/WaysToRecord';
 import { WhyTuberMed } from '@/components/landing/WhyTuberMed';
 import { Comparison } from '@/components/landing/Comparison';
 import { Marquee } from '@/components/landing/Marquee';
@@ -52,6 +53,7 @@ export default function Home() {
         <Problem />
         <Calculator />
         <HowItWorks />
+        <WaysToRecord />
         <WhyTuberMed />
         <Comparison />
         <Marquee />
