@@ -84,6 +84,30 @@ const BANNED: ReadonlyArray<readonly [string, string]> = [
   // so in the commit — do not quietly reintroduce it in copy.
   ['Франкфурт', 'unverified location claim'],
   ['Frankfurt', 'unverified location claim'],
+  // ── Proposed and REJECTED on 2026-08-04 ────────────────────────────────────
+  // None of these ever shipped. They are pinned because they are the plausible,
+  // reassuring sentences a future copy pass regenerates by default — each one
+  // was written, examined and thrown out the same day, and without a gate the
+  // next pass has no memory of that.
+  ['сертифициран доставчик', 'nobody certified the provider; a DPA and SCCs are contracts, not a certification'],
+  ['не се споделя с трети страни', 'FALSE — the provider IS a third party; it contradicts our own DPA sentence'],
+  ['изцяло в рамките на ЕС', 'the same banned absolute as "изцяло в ЕС", one synonym away'],
+  ['AI обработката', 'English noun-stacking calque; the Bulgarian is "Обработката с ИИ"'],
+];
+
+// Claims that only become false in COMBINATION, so a substring cannot express
+// them. Ownership of medical documentation is a contested legal question, and
+// "автор" is both stronger and true — but "собственик на практиката" is a
+// perfectly fine thing to write, so the ban has to be the pairing, not the noun.
+const BANNED_NEAR: ReadonlyArray<readonly [RegExp, string]> = [
+  [
+    // NOT \b after "на": JS word-boundaries are ASCII-only, so between Cyrillic
+    // "а" and a space there is no boundary at all and the rule matched NOTHING.
+    // It passed green against a file that literally contained the claim. Use an
+    // explicit Unicode-letter negative lookahead instead.
+    /собственик\s+на(?!\p{L})[^.!?]{0,60}документаци/iu,
+    'ownership of medical records is legally contested — say "автор", which is stronger and true',
+  ],
 ];
 
 // ── The approved replacements ────────────────────────────────────────────────
@@ -103,6 +127,13 @@ test('NEGATIVE: no banned residency or authorship claim appears in shipped sourc
       const lines = text.toLowerCase().split('\n');
       lines.forEach((line, i) => {
         if (line.includes(lower)) offenders.push(`${path}:${i + 1} — "${needle}" (${why})`);
+      });
+    }
+  }
+  for (const [re, why] of BANNED_NEAR) {
+    for (const [path, text] of CORPUS) {
+      text.split('\n').forEach((line, i) => {
+        if (re.test(line)) offenders.push(`${path}:${i + 1} — /${re.source}/ (${why})`);
       });
     }
   }
