@@ -112,11 +112,17 @@ const BANNED_NEAR: ReadonlyArray<readonly [RegExp, string]> = [
 
 // ── The approved replacements ────────────────────────────────────────────────
 const SHORT_FORM = 'Данните се съхраняват в ЕС';
+// Three scopes, three verbs, on purpose (2026-08-04). "съхранява" carried all
+// three clauses and read badly aloud: audio is NOT KEPT (не се запазва), data at
+// rest IS STORED in the EU (се съхраняват), and the provider does not RETAIN
+// content (не се задържа). The third also names доставчика explicitly — the bare
+// form could be misread as "nobody stores content", but WE store the note per the
+// retention schedule. Do not collapse these back to one verb.
 const LONG_FORM =
-  'Аудиото се обработва, но не се съхранява. Остава само текстът на транскрипта. ' +
+  'Аудиото се обработва, но не се запазва. Остава само текстът на транскрипта. ' +
   'Данните се съхраняват в ЕС. Обработката с ИИ се извършва от доставчик ' +
-  'по договор за обработване на данни (DPA) и Стандартни договорни клаузи (SCC); съдържанието не ' +
-  'се съхранява и не се използва за обучение на модели.';
+  'по договор за обработване на данни (DPA) и Стандартни договорни клаузи (SCC). ' +
+  'Съдържанието не се задържа от доставчика и не се използва за обучение на модели.';
 const AUTHOR_LINE = 'Лекарят остава автор';
 
 test('NEGATIVE: no banned residency or authorship claim appears in shipped source', () => {
