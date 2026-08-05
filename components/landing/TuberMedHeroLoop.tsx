@@ -12,10 +12,14 @@
  *   • All icons are inline SVG; there are no companion asset files.
  *
  * Behaviour:
- *   • Autoplays a seamless ~15.8s loop (hook → patient → record → note →
- *     safety catch → payoff), muted/visual-only.
+ *   • Autoplays a seamless ~15.8s loop (hook → start visit → record → note →
+ *     review catch → payoff), muted/visual-only.
+ *   • What it depicts is a CLAIM about the product. It shows no patient
+ *     identity (there is none to show — no name, ЕГН, age or stored history
+ *     anywhere in the workspace) and no clinical alert (those are off by
+ *     ruling); the amber card is a transcription-confidence notice.
  *   • Respects prefers-reduced-motion: renders a static final frame
- *     (finished note + safety alert + confirmed banner), no animation.
+ *     (finished note + review notice + confirmed banner), no animation.
  *   • Scales responsively to fill its container's width at a fixed 920×648
  *     (≈1.42:1) frame — the "card fills the frame, no border" framing.
  *
@@ -539,12 +543,18 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
                       <div style={sx(`position:absolute;inset:0;opacity:${opNew};transition:opacity .55s ease;pointer-events:none;overflow:hidden;`)}>
                         <div style={sx('display:flex;flex-direction:column;gap:16px;padding:34px 34px;height:100%;max-width:600px;')}>
                           <div style={sx('background:#fff;border:1px solid #E7ECF2;border-radius:14px;padding:22px 24px;box-shadow:0 1px 2px rgba(20,39,64,.04);')}>
-                            <div style={sx('font-size:11px;font-weight:700;letter-spacing:0.08em;color:#274C77;text-transform:uppercase;margin-bottom:14px;')}>Пациент</div>
-                            <div style={sx("font-size:23px;font-weight:700;color:#142740;font-family:var(--font-inter-tight,'Inter Tight'),sans-serif;letter-spacing:-0.015em;line-height:1.1;")}>Мария Петрова</div>
-                            <div style={sx('font-size:13.5px;color:#586472;margin-top:4px;')}>жена · 67 г.</div>
+                            {/* The product's start-visit card (components/StartVisitCard.tsx):
+                                visit type + document template + optional chief complaint, and
+                                NO identifier field. Labels are that file's verbatim — „Шаблон на
+                                документа", „Амбулаторен лист", „Тип на посещението", „Първичен" —
+                                plus „Повод" from VisitHeaderStrip.tsx. Nothing about a patient is
+                                known here: the visit stages on its own context alone. */}
+                            <div style={sx('font-size:11px;font-weight:700;letter-spacing:0.08em;color:#274C77;text-transform:uppercase;margin-bottom:14px;')}>Шаблон на документа</div>
+                            <div style={sx("font-size:23px;font-weight:700;color:#142740;font-family:var(--font-inter-tight,'Inter Tight'),sans-serif;letter-spacing:-0.015em;line-height:1.1;")}>Амбулаторен лист</div>
+                            <div style={sx('font-size:13.5px;color:#586472;margin-top:4px;')}>Тип на посещението · Първичен</div>
                             <div style={sx('display:flex;align-items:center;gap:10px;margin-top:18px;')}>
-                              <span style={sx('font-size:10.5px;font-weight:700;letter-spacing:0.06em;color:#8893A1;text-transform:uppercase;')}>Хронична терапия</span>
-                              <span style={sx('display:inline-flex;align-items:center;gap:7px;color:#B7791F;font-weight:700;font-size:14.5px;background:#F7EDDA;padding:6px 14px;border-radius:9px;')}><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#B7791F" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z" /><path d="m8.5 8.5 7 7" /></svg> Варфарин</span>
+                              <span style={sx('font-size:10.5px;font-weight:700;letter-spacing:0.06em;color:#8893A1;text-transform:uppercase;')}>Повод</span>
+                              <span style={sx('display:inline-flex;align-items:center;gap:7px;color:#274C77;font-weight:600;font-size:14.5px;background:#EAF1F8;padding:6px 14px;border-radius:9px;')}><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#274C77" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" /></svg> Сърцебиене от 2 дни</span>
                             </div>
                           </div>
                           <div style={sx("margin-top:2px;align-self:flex-start;white-space:nowrap;display:flex;align-items:center;gap:10px;background:#274C77;color:#fff;font-size:15.5px;font-weight:600;border-radius:11px;padding:15px 28px;box-shadow:0 6px 16px -6px rgba(39,76,119,.5);transition:transform .14s cubic-bezier(.3,0,.3,1),filter .14s ease;" + ctaPress)}>
