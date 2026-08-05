@@ -9,11 +9,10 @@ export function Hero() {
     <section className="relative overflow-hidden" style={{ background: 'var(--lp-bg)' }}>
       <AmbientOrbs />
       {/* Asymmetric split: copy sits left in a narrower track, the hero loop gets the
-          wider track and self-scales its fixed stage to fill it. data-hero-copy is kept
-          for the parked TuberMedHeroDesktop (unused now that TuberMedHeroLoop self-sizes). */}
+          wider track and self-scales its fixed stage to fill it. */}
       <Container className="relative z-10 grid items-center gap-12 py-16 md:py-24 lg:grid-cols-[minmax(0,44fr)_minmax(0,56fr)] lg:gap-8">
         <Reveal className="min-w-0">
-          <div data-hero-copy>
+          <div>
             <h1
               className="font-[family-name:var(--font-inter-tight)] text-4xl font-bold leading-[1.08] tracking-[-0.025em] sm:text-5xl md:text-6xl"
               style={{ color: 'var(--lp-ink)' }}
