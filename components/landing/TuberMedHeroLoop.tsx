@@ -663,7 +663,12 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
                               <div style={sx("font-size:27px;font-weight:700;color:#142740;font-family:var(--font-inter-tight,'Inter Tight'),sans-serif;letter-spacing:-0.015em;line-height:1.1;")}>Амбулаторен лист</div>
                               <div style={sx("font-size:12px;color:#8893A1;font-family:var(--font-jetbrains,'JetBrains Mono'),monospace;")}>21.06.2026</div>
                             </div>
-                            <div style={sx('font-size:12px;color:#8893A1;margin-bottom:18px;')}>Пациент · жена · 67 г. · НРД Приложение №3</div>
+                            {/* The лист carries visit context, never patient context: the real
+                                header (app/app/scribe/result/page.tsx) is the title + the date,
+                                and the strip above it (VisitHeaderStrip.tsx) shows „Преглед" plus
+                                the visit type. „НРД Приложение №3" is not printed anywhere in the
+                                product, so the mockup must not cite it either. */}
+                            <div style={sx('font-size:12px;color:#8893A1;margin-bottom:18px;')}>Първичен преглед</div>
 
                             {/* ДИАГНОЗИ */}
                             <div style={sx(`opacity:${noteOp};transform:${noteTf};transition:opacity .5s ease,transform .5s ease;transition-delay:0ms;margin-bottom:16px;`)}>
