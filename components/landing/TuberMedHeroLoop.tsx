@@ -296,7 +296,7 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
 
       appOpacity = overlayActive ? '0' : '1';
       crumb =
-        screen === 'newvisit' ? 'Нов преглед › Данни на пациента'
+        screen === 'newvisit' ? 'Нов преглед › Вход'
         : onResult ? 'Преглед › Амбулаторен лист (чернова)'
         : screen === 'proc' ? 'Нов преглед › Обработка с ИИ'
         : 'Нов преглед › Запис на консултацията';
