@@ -326,7 +326,9 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
 
     /* ----- stepper ----- */
     const stepCur = screen === 'newvisit' ? 0 : screen === 'rec' ? 1 : screen === 'proc' ? 2 : 3;
-    const stepDefs = ['Вход · Пациент', 'Запис · Консултация', 'Обработка · AI анализ', 'Резултат · Документ'];
+    // Mirrors lib/flow.ts SCRIBE_FLOW_STEPS (label · sublabel) — the product's
+    // own stepper. Step 1 is „Вход · Преглед": there is no patient stage.
+    const stepDefs = ['Вход · Преглед', 'Запис · Консултация', 'Обработка · AI анализ', 'Резултат · Документ'];
     const steps = stepDefs.map((label, k) => {
       const past = k < stepCur;
       const on = k === stepCur;
