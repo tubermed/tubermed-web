@@ -639,7 +639,11 @@ export default class TuberMedHeroLoop extends React.Component<TuberMedHeroLoopPr
                               </div>
                               <div style={sx('display:flex;align-items:center;gap:7px;')}>
                                 <span style={sx('display:flex;align-items:center;gap:5px;font-size:11.5px;color:#274C77;font-weight:600;border:1px solid #C7D7E8;border-radius:7px;padding:6px 10px;background:#fff;')}><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></svg> PDF</span>
-                                <span style={sx('font-size:11.5px;font-weight:700;color:#274C77;background:#EAF1F8;border-radius:7px;padding:6px 11px;')}>→ НЗИС · в практиката</span>
+                                {/* Exports are Копирай / Печат / PDF / Word / Резюме
+                                    (app/app/scribe/result/page.tsx). There is no НЗИС
+                                    submission — the only НЗИС reference in the codebase is a
+                                    nomenclature note in lib/exporters.ts, not an integration. */}
+                                <span style={sx('font-size:11.5px;font-weight:700;color:#274C77;background:#EAF1F8;border-radius:7px;padding:6px 11px;')}>Word</span>
                               </div>
                             </div>
                           )}
