@@ -78,11 +78,17 @@ function scanText(text: string): Array<{ line: number; src: string }> {
 // A guard that has never been seen to fail is not a guard — and a guard against
 // vacuous gates that was itself vacuous would be the joke writing itself.
 test('the detector is not blind — it catches what it claims to catch', () => {
+  // The PAYLOADS below are built from BS so they carry a real primitive at runtime
+  // without putting one in this source. The case LABELS cannot be: a label names the
+  // primitive under test, and naming it is the whole point of the label. They are
+  // marked one by one rather than exempted as a block — `isMarked` deliberately
+  // reaches only the first line under a comment, so a block exemption would silently
+  // cover code nobody classified.
   const cases: Array<[string, string, number]> = [
-    ['unmarked \\b', `const re = /${BS}bост${BS}b/;`, 1],
-    ['unmarked \\w', `const re = /${BS}w+/;`, 1],
-    ['\\\\b inside a string', `new RegExp('${BS}${BS}bfoo');`, 1],
-    ['\\b followed by a letter', `const re = /${BS}bBP${BS}b/;`, 1],
+    ['unmarked \\b', `const re = /${BS}bост${BS}b/;`, 1], // ascii-safe: case label, matched against nothing
+    ['unmarked \\w', `const re = /${BS}w+/;`, 1], // ascii-safe: case label, matched against nothing
+    ['\\\\b inside a string', `new RegExp('${BS}${BS}bfoo');`, 1], // ascii-safe: case label, matched against nothing
+    ['\\b followed by a letter', `const re = /${BS}bBP${BS}b/;`, 1], // ascii-safe: case label, matched against nothing
     ['marker on the same line', `const re = /${BS}bBP${BS}b/; // ascii-safe: Latin acronym`, 0],
     ['marker on the line above', `// ascii-safe: hex only\nconst re = /${BS}w+/;`, 0],
     [
@@ -122,15 +128,17 @@ test('no ASCII-only regex primitive in shipped source without a written reason',
     offenders,
     [],
     `ASCII-only regex primitive(s) with no written reason:\n  ${offenders.join('\n  ')}\n\n` +
-      'JS \\b \\B \\w \\W are ASCII-only. Cyrillic letters are not \\w characters, so\n' +
+      // The remediation text has to name the primitives it is telling you to replace.
+      // Marked per line for the same reason the case labels are.
+      'JS \\b \\B \\w \\W are ASCII-only. Cyrillic letters are not \\w characters, so\n' + // ascii-safe: help text, matched against nothing
       'between „а" and a space there is NO word boundary and the pattern matches\n' +
       'NOTHING — green, silently, forever. This is how a banned residency claim sat\n' +
       'in a shipped file behind a passing test (scripts/eu-claims.test.ts, round 2).\n\n' +
       'If the matched string can be Bulgarian — product copy, a note field, a drug\n' +
       'or diagnosis name, doctor input, a fixture, a test assertion — replace it:\n\n' +
-      '    \\b  ->  (?<![\\p{L}\\p{N}_])  …  (?![\\p{L}\\p{N}_])\n' +
-      '    \\w  ->  [\\p{L}\\p{N}_]\n' +
-      '    \\W  ->  [^\\p{L}\\p{N}_]\n\n' +
+      '    \\b  ->  (?<![\\p{L}\\p{N}_])  …  (?![\\p{L}\\p{N}_])\n' + // ascii-safe: help text, matched against nothing
+      '    \\w  ->  [\\p{L}\\p{N}_]\n' + // ascii-safe: help text, matched against nothing
+      '    \\W  ->  [^\\p{L}\\p{N}_]\n\n' + // ascii-safe: help text, matched against nothing
       '…and put the u flag on the regex.\n\n' +
       'If the input genuinely cannot be Cyrillic — a model id, an env var name, a\n' +
       'URL, a hex string, a JSON key, an МКБ code — say so at the site:\n\n' +
