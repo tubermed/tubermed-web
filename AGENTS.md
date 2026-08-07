@@ -74,18 +74,23 @@ never read as green; if the machine has no network, the check did not run. Fix w
 `npm audit fix`; **NEVER `--force`** (see known-gotchas). Measured 2026-08-07: 6 → 3
 (`@babel/core`, `brace-expansion`, `fast-uri` fixed).
 
-**Residual: 3 HIGH (`next`, `postcss`, `sharp`), all cleared by `next@16.3.0`.** npm
-demands `--force` for it only because `package.json` PINS `next` to an exact `16.2.6` —
-`isSemVerMajor` is **false**, so this is a minor bump, not the 16→9 catastrophe the
-`--force` prohibition exists for. The safe command is therefore `npm install next@16.3.0`,
-never `npm audit fix --force`. Deferred to its own batch: a Next bump in this repo needs
-`npm run build` + the `○`→`ƒ` shell check + live-browser QA, because of the
-`force-dynamic` edge-cache hazard. **Reachability, measured, so the deferral is a
-judgement and not a shrug:** there is **no `middleware.*` file** and **no `'use server'`
-anywhere**, so the Middleware/Turbopack-locale bypass and the Server-Actions DoS/SSRF
-advisories are not reachable here. `sharp` rides `next/image`, which IS used
-(`app/app/login`, `app/signup`, `components/OnboardingWizard`) — that one is a real
-build/optimise-path surface and is the reason this should not sit indefinitely.
+**DONE 2026-08-07 — `next@16.3.0` shipped, `npm audit --omit=dev` (online) now reports
+0 vulnerabilities.** It cleared all 3 HIGH (`next`, `postcss`, `sharp`) at once.
+
+⚠ **`npm install next@16.3.0` REWROTE THE EXACT PIN to `^16.3.0`** — restored by hand to
+`16.3.0`. The pin is deliberate (so are `react`/`react-dom` at `19.2.4`): it is why npm
+demanded `--force` in the first place, `--force` being the flag that installs next@9.3.3
+and destroys the app. If a bump is ever needed again, `npm install next@<exact>` then
+**check `package.json` and put the pin back** — the loosened range is easy to miss in a
+lockfile-heavy diff, and a caret on the framework is how an unreviewed minor arrives on
+its own.
+
+⚠ `devDependencies.eslint-config-next` is still `16.2.6` and now trails `next`. Lint is
+unaffected (baseline holds at 23), so it was left alone rather than risk moving the
+baseline in a dependency batch — but they should be bumped together next time.
+
+Gate run for the bump, per the rule below it: `npm run build` clean, all five `/app/*`
+shells still `ƒ`, `tsc` clean, 179/179, lint 23.
 
 # Identity-free visit start + notes library
 
