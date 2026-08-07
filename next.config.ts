@@ -24,11 +24,21 @@ const APP_PATHS = ["/signup", "/app/:path*"];
 // Production-only (next dev's HMR uses ws:/eval that a strict CSP would flag).
 // Shipped FIRST in Report-Only so violations are reported, never blocked; flip
 // CSP_REPORT_ONLY=false to enforce once a deploy shows zero violations across the
-// scribe flow. See AGENTS.md "Content-Security-Policy" for the policy + deferred
-// tightenings (script-src/style-src nonce via middleware; the phone /mobile-page
-// is served by the BACKEND and needs its own CSP there — not covered here).
+// scribe flow. See AGENTS.md "Content-Security-Policy" for the policy + the one
+// remaining deferred tightening (script-src/style-src nonce via middleware).
 // The policy itself lives in lib/csp.ts (pure module) so `npm test` can pin the
 // connect-src contract — see scripts/csp.test.ts.
+//
+// THE OTHER ORIGIN IS COVERED TOO (2026-08-07). The phone /mobile-page is served
+// by the BACKEND (Express, tubermed-backend routes/sessions.js), so none of this
+// reaches it — and for months nothing did: a sweep of that repo for security
+// headers returned zero, while this very comment recorded the gap as a deferred
+// item and nobody followed it up. It now ships its own helmet config with a
+// per-request NONCE-based CSP and Referrer-Policy: no-referrer (which matters
+// there specifically — the session id rides in the URL and IS the upload
+// credential). Both halves are asserted: tubermed-backend/scripts/test-security-
+// headers.js over real HTTP, and scripts/security-headers.test.ts here. Adding a
+// header to one origin means adding it to the other.
 const CSP_REPORT_ONLY = false; // ENFORCING. Set true to drop back to Report-Only.
 
 const securityHeaders = [
