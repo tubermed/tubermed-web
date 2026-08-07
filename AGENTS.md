@@ -66,6 +66,27 @@ modules (today `lib/stt-stream.ts`); anything touching React or the DOM still ha
 verified in a live local browser (preview tools freeze CSS transitions/rAF — don't trust
 them for animated state; say what you couldn't exercise headlessly).
 
+**Dependencies — `npm audit --omit=dev`, and it MUST say ONLINE (2026-08-07).**
+⚠ **`npm audit --offline` prints „found 0 vulnerabilities" and exits 0 in BOTH repos
+while HIGH advisories are live** — with no advisory database to consult it reports
+nothing and calls that nothing a clean bill of health. A gate that checked nothing must
+never read as green; if the machine has no network, the check did not run. Fix with
+`npm audit fix`; **NEVER `--force`** (see known-gotchas). Measured 2026-08-07: 6 → 3
+(`@babel/core`, `brace-expansion`, `fast-uri` fixed).
+
+**Residual: 3 HIGH (`next`, `postcss`, `sharp`), all cleared by `next@16.3.0`.** npm
+demands `--force` for it only because `package.json` PINS `next` to an exact `16.2.6` —
+`isSemVerMajor` is **false**, so this is a minor bump, not the 16→9 catastrophe the
+`--force` prohibition exists for. The safe command is therefore `npm install next@16.3.0`,
+never `npm audit fix --force`. Deferred to its own batch: a Next bump in this repo needs
+`npm run build` + the `○`→`ƒ` shell check + live-browser QA, because of the
+`force-dynamic` edge-cache hazard. **Reachability, measured, so the deferral is a
+judgement and not a shrug:** there is **no `middleware.*` file** and **no `'use server'`
+anywhere**, so the Middleware/Turbopack-locale bypass and the Server-Actions DoS/SSRF
+advisories are not reachable here. `sharp` rides `next/image`, which IS used
+(`app/app/login`, `app/signup`, `components/OnboardingWizard`) — that one is a real
+build/optimise-path surface and is the reason this should not sit indefinitely.
+
 # Identity-free visit start + notes library
 
 The workspace keeps **no patient records** — no ЕГН/name field, no search, no dedup. The
