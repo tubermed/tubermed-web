@@ -15,9 +15,12 @@ import {
   isMissingConsentError,
   isNoSpeechApiError,
   isNoSpeechMessage,
+  isTranscriptionFailedError,
+  transcriptionFailedAttempt,
   wsUrl,
   type DoctorInfo,
 } from '@/lib/api';
+import { uploadRetryCopy } from '@/lib/upload-retry';
 import type {
   TranscribeResult,
   SessionInit,
@@ -294,18 +297,53 @@ function ScribePageInner() {
   // must outlive it. In memory only — nothing is persisted, so it clears on
   // navigate / reload / logout by construction (no storage to wipe).
   const pcBlobRef = useRef<Blob | null>(null);
-  const [pcRetryMsg, setPcRetryMsg] = useState<string | null>(null);
+  // F-05: the reason AND the server's failed-attempt count. The count decides
+  // when the panel must stop saying „try again" (lib/upload-retry.ts); null
+  // means the server could not report one (migration 026 pending), and the
+  // in-session fallback below stands in for it.
+  const [pcRetry, setPcRetry] = useState<{ message: string; attempt: number | null } | null>(null);
+  const pcAttemptsRef = useRef(0);
+  // Render-visible mirror of pcBlobRef. The panel's promise („Звукът ви е
+  // запазен") depends on whether the buffer is REALLY held, but a ref cannot be
+  // read during render — React cannot track it, and the lint rule that says so
+  // is right. So every site that writes the ref reports the change here, and the
+  // panel reads this. Mirroring beats capturing the value once when the failure
+  // is reported: that would be correct only as long as nothing else ever clears
+  // the blob, which is exactly the kind of assumption this batch exists to kill.
+  const [pcBlobHeld, setPcBlobHeld] = useState(false);
   const retryPcUploadRef = useRef<() => void>(() => {});
+
+  // F-05 — the single place a retainable failure is reported, so the attempt
+  // bookkeeping cannot diverge between the callers. `attempt` is the SERVER's
+  // count when it could report one (authoritative: it survives a reload and
+  // counts attempts this tab never saw); otherwise the in-session count, which
+  // is better than nothing and keeps the retry cap working while migration 026
+  // is pending.
+  const reportRetainableFailure = useCallback((message: string, attempt?: number | null) => {
+    pcAttemptsRef.current += 1;
+    setPcRetry({
+      message,
+      attempt: typeof attempt === 'number' ? attempt : pcAttemptsRef.current,
+    });
+  }, []);
 
   const retryPcUpload = useCallback(async () => {
     const blob = pcBlobRef.current;
+    // Should be unreachable — the panel hides the retry action when the buffer
+    // is gone (lib/upload-retry.ts). Kept as the backstop, never as the guard:
+    // a control that silently does nothing is what this batch is fixing.
     if (!blob) return;
-    setPcRetryMsg(null);
+    setPcRetry(null);
     goToProcessing();
     try {
       const result = await api.transcribe(
         blob, 'audio.webm', consultationId ? { consultationId } : undefined,
       );
+      // Persisted server-side — only NOW is the local recording redundant. Same
+      // rule as PcMode's own submit; without it a successful RETRY left the blob
+      // alive in the parent while PcMode's release path was never reached.
+      pcBlobRef.current = null;
+      setPcBlobHeld(false);
       onResult(result);
     } catch (err) {
       setView('record');
@@ -323,26 +361,34 @@ function ScribePageInner() {
         setNotice('Изпращането е получено и вече се обработва — не е нужно да изпращате отново.');
         return;
       }
+      // F-05 — the retry hit the same pre-transcript service failure. The row is
+      // back at 'pending' and the blob is still here, so this stays a same-audio
+      // retry; what changes is that the panel now knows how many times the
+      // service has failed and stops promising once that is clearly hopeless.
+      if (isTranscriptionFailedError(err)) {
+        reportRetainableFailure('Грешка: ' + err.message, transcriptionFailedAttempt(err));
+        return;
+      }
       if (err instanceof ApiError) {
         // Reached the server this time — classify normally (5xx → recovery panel,
         // 4xx → plain banner). The retained blob is no longer the recovery path.
         reportProcessingError('Грешка: ' + err.message, { reachedServer: err.status >= 500 });
       } else {
         // Still no server — keep the blob and keep offering the same-audio retry.
-        setPcRetryMsg('Все още не се изпраща. Опитайте пак.');
+        reportRetainableFailure('Все още не се изпраща. Опитайте пак.');
       }
     }
-  }, [consultationId, onResult, reportProcessingError, goToProcessing, router]);
+  }, [consultationId, onResult, reportProcessingError, reportRetainableFailure, goToProcessing, router]);
   useEffect(() => { retryPcUploadRef.current = retryPcUpload; }, [retryPcUpload]);
 
   // Warn before leaving while recording, uploading, or with a retry pending — the
   // in-memory recording would be lost. Native prompt text is browser-controlled.
   useEffect(() => {
-    if (!navLocked && !pcRetryMsg) return;
+    if (!navLocked && !pcRetry) return;
     const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [navLocked, pcRetryMsg]);
+  }, [navLocked, pcRetry]);
 
   if (!doctor) {
     return (
@@ -398,9 +444,11 @@ function ScribePageInner() {
               }}
               onRestart={() => router.replace('/app/new-visit')}
             />
-          ) : pcRetryMsg ? (
+          ) : pcRetry ? (
             <UploadRetryPanel
-              message={pcRetryMsg}
+              reason={pcRetry.message}
+              attempt={pcRetry.attempt}
+              blobAvailable={pcBlobHeld}
               onRetry={() => retryPcUploadRef.current()}
               onRestart={() => router.replace('/app/new-visit')}
             />
@@ -460,7 +508,8 @@ function ScribePageInner() {
               onBackToIdle={() => setView('record')}
               requestConsent={requestConsent}
               blobRef={pcBlobRef}
-              onRetainableFailure={setPcRetryMsg}
+              onBlobHeldChange={setPcBlobHeld}
+              onRetainableFailure={reportRetainableFailure}
             />
           )}
           </>
@@ -792,15 +841,26 @@ function NoSpeechPanel({
 // "stop"). The recording is retained IN MEMORY, so the primary action re-sends
 // the SAME audio — no re-recording. Distinct from RecoveryPanel (server-side
 // retry-extraction, for when the audio DID reach the server).
+// F-05 — the copy is DERIVED, never fixed. This panel used to open with a
+// hardcoded promise; when the buffer was gone or the service was simply down,
+// that promise was false and the retry button was inert. lib/upload-retry.ts
+// owns the decision (and is unit-tested — scripts/upload-retry.test.ts), so what
+// the doctor is told can never drift from what is actually true.
 function UploadRetryPanel({
-  message,
+  reason,
+  attempt,
+  blobAvailable,
   onRetry,
   onRestart,
 }: {
-  message: string;
+  reason: string;
+  attempt: number | null;
+  blobAvailable: boolean;
   onRetry: () => void;
   onRestart: () => void;
 }) {
+  const copy = uploadRetryCopy(blobAvailable, attempt, reason);
+
   return (
     <div
       className="bg-white rounded-2xl border p-8 sm:p-10 flex flex-col items-center text-center"
@@ -816,17 +876,22 @@ function UploadRetryPanel({
         className="text-xl font-semibold mb-2"
         style={{ color: 'var(--color-heading)' }}
       >
-        Изпращането не бе успешно
+        {copy.title}
       </div>
       <p className="text-sm max-w-md" style={{ color: 'var(--color-text-muted)' }}>
-        {message}
+        {copy.body}
       </p>
 
       <div className="flex flex-wrap gap-3 justify-center mt-6">
-        <Button variant="primary" onClick={onRetry}>
-          Опитайте отново
-        </Button>
-        <Button variant="secondary" onClick={onRestart}>
+        {/* No retry action when there is nothing to send: the handler behind it
+            begins `if (!blob) return;`, so rendering it would be a button that
+            silently does nothing. */}
+        {copy.canRetry && (
+          <Button variant="primary" onClick={onRetry}>
+            Опитайте отново
+          </Button>
+        )}
+        <Button variant={copy.canRetry ? 'secondary' : 'primary'} onClick={onRestart}>
           Започни нов преглед
         </Button>
       </div>
@@ -1461,6 +1526,7 @@ function PcMode({
   requestConsent,
   blobRef,
   onRetainableFailure,
+  onBlobHeldChange,
 }: {
   mode: Mode;
   onModeChange: (m: Mode) => void;
@@ -1482,7 +1548,8 @@ function PcMode({
   blobRef: { current: Blob | null };
   /** B4: a network drop before the audio reached the server — the parent shows
    *  the retry panel (retry the SAME blob) instead of the plain banner. */
-  onRetainableFailure: (msg: string) => void;
+  onRetainableFailure: (msg: string, attempt?: number | null) => void;
+  onBlobHeldChange: (held: boolean) => void;
 }) {
   const [recording, setRecording] = useState(false);
   // Pause/resume within ONE recording (room-change case). While paused,
@@ -1812,6 +1879,7 @@ function PcMode({
     // audio without re-recording. The PARENT owns the ref because PcMode unmounts
     // while view==='processing'.
     blobRef.current = blob;
+    onBlobHeldChange(true);
 
     // Gate 2 (pre-submit): await consent BEFORE the audio leaves the browser.
     // If consent is already on file this resolves immediately; otherwise it
@@ -1868,6 +1936,7 @@ function PcMode({
           );
           // Persisted server-side — only NOW is the local recording redundant.
           blobRef.current = null;
+          onBlobHeldChange(false);
           onResult(result);
           return;
         } catch (err) {
@@ -1948,6 +2017,16 @@ function PcMode({
         }
       }
       onBackToIdle();
+      // F-05 — a SERVICE failure with no transcript to show for it. „5xx means
+      // the transcript is on the row" was the assumption that made this panel
+      // lie: a Soniox failure is also a 5xx, and it leaves NO transcript, so the
+      // recovery panel promised „Звукът ви е запазен" and then 409ed on the
+      // retry-extraction it offered. The backend now says which it is, and the
+      // row is back at 'pending', so the truthful offer is a same-audio re-post.
+      if (isTranscriptionFailedError(err)) {
+        onRetainableFailure('Грешка: ' + err.message, transcriptionFailedAttempt(err));
+        return;
+      }
       if (err instanceof ApiError) {
         // Server responded. 5xx = the audio landed and processing failed AFTER
         // upload → the transcript is on the row, retry-extraction can resurrect
@@ -1961,7 +2040,7 @@ function PcMode({
         onRetainableFailure('Връзката прекъсна. Не е нужно да записвате отново - натиснете, за да изпратите пак.');
       }
     }
-  }, [stopWaveform, consultationId, onProcessing, onResult, onAuthError, onBackToIdle, onError, onRetainableFailure, blobRef, onRecordingChange, requestConsent]);
+  }, [stopWaveform, consultationId, onProcessing, onResult, onAuthError, onBackToIdle, onError, onRetainableFailure, onBlobHeldChange, blobRef, onRecordingChange, requestConsent]);
 
   // Auto-scroll the live transcript as text lands — but only while the doctor
   // is pinned to the bottom; scrolling up to re-read holds the view still.

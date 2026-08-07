@@ -593,6 +593,44 @@ export function isNoSpeechMessage(msg: string | null | undefined): boolean {
 }
 
 /**
+ * transcription_failed (F-05) — the SERVICE failed before Soniox produced a
+ * transcript. The visit is NOT lost: the backend reverted the staged row to
+ * 'pending', so the browser can re-post the blob it is still holding.
+ *
+ * ⚠ THIS MUST NOT BE ROUTED TO THE RECOVERY PANEL. That panel offers
+ * retry-extraction and opens by telling the doctor their audio is saved — and
+ * with no transcript on the row, retry-extraction 409s. That combination (a
+ * false reassurance, then a dead end) is the whole reason this code exists;
+ * route it to the same-audio upload retry instead.
+ *
+ * Distinguishing it from a post-transcript 5xx is the backend's job, not a
+ * status-code heuristic here: a 502 still means "the transcript IS on the row,
+ * retry-extraction genuinely works", and that path must keep the recovery panel.
+ */
+// A type guard, not a boolean: every call site immediately reads err.message to
+// build the panel's reason line, and without the narrowing that read is either a
+// tsc error or an `instanceof` re-test that could drift from this one.
+export function isTranscriptionFailedError(err: unknown): err is ApiError {
+  if (!(err instanceof ApiError)) return false;
+  return err.code === 'transcription_failed';
+}
+
+/**
+ * The server's count of failed service attempts on this visit
+ * (consultations.transcription_attempts), or null when it could not be reported
+ * — migration 026 pending. Null means UNKNOWN, never zero: the caller
+ * substitutes its own in-session count rather than treating an unknown count as
+ * "no failures yet".
+ */
+export function transcriptionFailedAttempt(err: unknown): number | null {
+  if (!(err instanceof ApiError)) return null;
+  const body = err.body;
+  if (!body || typeof body !== 'object') return null;
+  const n = (body as { attempt?: unknown }).attempt;
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
  * B5 — POST /api/consultations/:id/patient-summary grew two server-side
  * cost-control limits, each an HTTP 429 carrying a machine `code` plus a
  * Bulgarian `error` message (the per-org daily cap, and a per-consultation
