@@ -12,6 +12,8 @@ import MkbPicker from '@/components/MkbPicker';
 import MkbTypeahead from '@/components/MkbTypeahead';
 import MedsPanel from '@/components/MedsPanel';
 import { Icon, type IconName } from '@/components/ui/Icon';
+import { SectionBoundary } from '@/components/SectionBoundary';
+import { normalizeNoteFields, lossyRepairs, type ShapeRepair } from '@/lib/note-normalize';
 import { Button } from '@/components/ui/Button';
 import { NoteSectionHead } from '@/components/ui/NoteSection';
 import VisitHeaderStrip from '@/components/VisitHeaderStrip';
@@ -94,6 +96,25 @@ function normalizeMedications(
     route: normalizeMedField(m.route),
     duration: normalizeMedField(m.duration),
   }));
+}
+
+// The single place a note becomes page state — whether it arrives from the
+// generation blob, from cold-start recovery, or from GET /:id. Types are
+// settled HERE so no section has to guess and no reader has to be defensive.
+//
+// Rows written before 2026-08-08 predate the backend's write boundary and can
+// carry `izsledvania: []`; four of those are approved or sealed and can never
+// be rewritten (409 `note_sealed`, no unlock), so this is the only place they
+// can be made readable. See lib/note-normalize.ts for why `|| ''` never was.
+function shapeNote(raw: TranscribeFields | null | undefined): {
+  fields: TranscribeFields;
+  repairs: ShapeRepair[];
+} {
+  const { fields, repairs } = normalizeNoteFields(raw);
+  return {
+    fields: { ...fields, medications_list: normalizeMedications(fields.medications_list) },
+    repairs,
+  };
 }
 
 type ReviewStatus = 'pending' | 'confirmed';
@@ -274,6 +295,10 @@ function ResultPageInner() {
   const [pendingVisit, setPendingVisit] = useState<PendingVisit | null>(null);
   const [original, setOriginal] = useState<TranscribeResult | null>(null);
   const [fields, setFields] = useState<TranscribeFields>({});
+  // What shapeNote() had to repair on the way in. Only the LOSSY ones are shown
+  // (see lossyRepairs) — a `[]` → `''` fix loses nothing, and a note that flags
+  // itself for nothing teaches the doctor to ignore the flag.
+  const [shapeRepairs, setShapeRepairs] = useState<ShapeRepair[]>([]);
   const [reviewStatus, setReviewStatus] = useState<ReviewStatus>('pending');
   const [reviewPopupOpen, setReviewPopupOpen] = useState(false);
   const [activeNav, setActiveNav] = useState<string>('sec-diag');
@@ -407,12 +432,11 @@ function ResultPageInner() {
       return;
     }
     setOriginal(decision.result);
-    setFields({
-      ...decision.result.fields,
-      medications_list: normalizeMedications(
-        decision.result.fields.medications_list
-      ),
-    });
+    {
+      const shaped = shapeNote(decision.result.fields);
+      setFields(shaped.fields);
+      setShapeRepairs(shaped.repairs);
+    }
     // Visit-header context rides along only when it belongs to the same
     // consultation as the blob (null otherwise — render without the header).
     setPendingVisit(decision.pendingVisit);
@@ -476,10 +500,11 @@ function ResultPageInner() {
         transcript: '',
         fields: note,
       });
-      setFields({
-        ...note,
-        medications_list: normalizeMedications(note.medications_list),
-      });
+      {
+        const shaped = shapeNote(note);
+        setFields(shaped.fields);
+        setShapeRepairs(shaped.repairs);
+      }
       setPendingVisit(recovery.pendingVisit);
       // Restore the SERVER's lifecycle state. Without this the page reopened
       // every filed note as unconfirmed and locked Копирай/Печат/PDF on a note
@@ -553,10 +578,11 @@ function ResultPageInner() {
         }
 
         if (editedFieldsRef.current.size > 0) return;
-        setFields({
-          ...consultation.note,
-          medications_list: normalizeMedications(consultation.note.medications_list),
-        });
+        {
+          const shaped = shapeNote(consultation.note);
+          setFields(shaped.fields);
+          setShapeRepairs(shaped.repairs);
+        }
       } catch {
         /* transient fetch error → keep the blob paint, never blank the screen */
       }
@@ -1867,15 +1893,49 @@ function ResultPageInner() {
           </div>
 
           <div className="space-y-8">
+            {/* Content that arrived in a shape it could not be placed into —
+                from this page's read boundary or from the backend's write
+                boundary. Shown verbatim, at the top, because by definition it
+                has no section of its own: the doctor said it, so it must be
+                somewhere they can see it and copy it back. */}
+            {[...lossyRepairs(shapeRepairs), ...(fields.shape_repairs ?? [])].length > 0 && (
+              <div
+                className="rounded-lg border px-4 py-3"
+                style={{ background: 'var(--color-bg)', borderColor: 'var(--color-border)' }}
+              >
+                <div
+                  className="text-sm font-semibold flex items-center gap-2 mb-1"
+                  style={{ color: 'var(--color-text-muted)' }}
+                >
+                  <Icon name="alert-triangle" /> Текст без разпознато място в листа
+                </div>
+                <div className="text-xs leading-relaxed mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                  Този текст е продиктуван, но е получен във формат, който не
+                  позволява да бъде поставен автоматично. Прегледайте го и го
+                  въведете в подходящата секция.
+                </div>
+                {[...lossyRepairs(shapeRepairs), ...(fields.shape_repairs ?? [])].map((r, i) => (
+                  <div key={`${r.field}-${i}`} className="text-sm mt-2">
+                    <span className="font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                      {r.field}:
+                    </span>{' '}
+                    <span className="whitespace-pre-wrap">{r.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {isEcho ? (
-              <EchoNoteView
-                fields={echoFields}
-                onEditText={updateEchoText}
-                onEditMeasurement={updateEchoMeasurement}
-                sealed={bodyReadOnly}
-              />
+              <SectionBoundary title="Ехокардиография">
+                <EchoNoteView
+                  fields={echoFields}
+                  onEditText={updateEchoText}
+                  onEditMeasurement={updateEchoMeasurement}
+                  sealed={bodyReadOnly}
+                />
+              </SectionBoundary>
             ) : (
             <>
+            <SectionBoundary title="Диагнози">
             <DiagnosesSection
               osnovnaDiagnoza={fields.osnovna_diagnoza || ''}
               osnovnaMkb={fields.osnovna_mkb || ''}
@@ -1906,6 +1966,7 @@ function ResultPageInner() {
               isLocked={isLocked}
               notifyCopy={notifyCopy}
             />
+            </SectionBoundary>
 
             <TextSection
               id="sec-anamneza"
@@ -1941,12 +2002,14 @@ function ResultPageInner() {
                 notice with nothing on screen to point at is not a notice.
                 Advisory only — no approval gate, same standing as
                 uncertain_spans. */}
-            <AllergiesSection
-              fields={fields}
-              serverFields={original?.fields}
-              onChange={(next) => updateField('alergii', next)}
-              readOnly={bodyReadOnly}
-            />
+            <SectionBoundary title="Алергии">
+              <AllergiesSection
+                fields={fields}
+                serverFields={original?.fields}
+                onChange={(next) => updateField('alergii', next)}
+                readOnly={bodyReadOnly}
+              />
+            </SectionBoundary>
 
             <TextSection
               id="sec-obektivno"
@@ -1978,6 +2041,7 @@ function ResultPageInner() {
             />
             {visibleSections['sec-izsledvania'] && (
               <div id="sec-izsledvania" className="scroll-mt-24">
+                <SectionBoundary title="Изследвания">
                 <SectionHead
                   title="Изследвания"
                   icon="flask"
@@ -2078,6 +2142,7 @@ function ResultPageInner() {
                       readOnly={bodyReadOnly}
                     />
                   )}
+                </SectionBoundary>
               </div>
             )}
             <TextSection
@@ -2111,6 +2176,7 @@ function ResultPageInner() {
 
             {visibleSections['sec-izdadeni'] && (
               <div id="sec-izdadeni" className="scroll-mt-24">
+                <SectionBoundary title="Издадени документи">
                 <SectionHead
                   title="Издадени документи"
                   icon="file-text"
@@ -2147,6 +2213,7 @@ function ResultPageInner() {
                     />
                   </div>
                 )}
+                </SectionBoundary>
               </div>
             )}
             </>
@@ -2176,6 +2243,7 @@ function ResultPageInner() {
                 prescribes nothing, so it has no medications_list / med_alerts. */}
             {!isEcho && (
             <>
+            <SectionBoundary title="Медикаменти">
             <MedsPanel
               meds={fields.medications_list || []}
               onChange={onMedsChange}
@@ -2198,6 +2266,7 @@ function ResultPageInner() {
                   });
               }}
             />
+            </SectionBoundary>
 
             {warnings.length > 0 && (
               <div
@@ -2885,19 +2954,27 @@ function TextSection({
   /** Sealed лист — the section renders as a document (see EditableField). */
   readOnly?: boolean;
 }) {
+  // The boundary sits INSIDE the section, not around each call site: this is
+  // the choke point every narrative section already flows through, and the
+  // repo's own rule for this defect class is to fix the class, not the
+  // instances (see AGENTS.md, DiagnosisLine). The id/scroll-mt wrapper stays
+  // OUTSIDE it so the section keeps its scrollspy anchor even when its body
+  // fails — a section that vanished from the nav would be a second bug.
   return (
     <div id={id} className="scroll-mt-24">
-      <SectionHead title={title} icon={icon} actions={headerRight} />
-      <EditableField
-        value={value}
-        onChange={onChange}
-        fieldKey={fieldKey}
-        acknowledged={acknowledged}
-        onAcknowledge={onAcknowledge}
-        uncertainSpans={uncertainSpans}
-        onAcknowledgeUncertain={onAcknowledgeUncertain}
-        readOnly={readOnly}
-      />
+      <SectionBoundary title={title}>
+        <SectionHead title={title} icon={icon} actions={headerRight} />
+        <EditableField
+          value={value}
+          onChange={onChange}
+          fieldKey={fieldKey}
+          acknowledged={acknowledged}
+          onAcknowledge={onAcknowledge}
+          uncertainSpans={uncertainSpans}
+          onAcknowledgeUncertain={onAcknowledgeUncertain}
+          readOnly={readOnly}
+        />
+      </SectionBoundary>
     </div>
   );
 }

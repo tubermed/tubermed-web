@@ -234,7 +234,24 @@ export interface TranscribeFields {
   field_notices?: FieldNotice[];
   med_alerts?: MedAlert[];
   mkb_review?: MkbReview;                          // derived: code-validity gate state
+  // Content that arrived in a shape it could not be placed into. ABSENT
+  // whenever nothing was lost — a lossless repair is not a problem the doctor
+  // needs to see. ⚠ CROSS-REPO MIRROR: backend lib/note-shape.js
+  // (`coerceNoteShape`). Read-only to the client: written at the extraction
+  // write boundary, never authored here.
+  shape_repairs?: NoteShapeRepair[];
   _disclaimer?: string;
+}
+
+/** One field whose emitted type diverged from the declared one, and what was
+ *  done about it. `text` carries clinical content the doctor dictated and that
+ *  had no faithful place in the declared type — show it, never log it. */
+export interface NoteShapeRepair {
+  field: string;
+  got: string;
+  /** 'joined' | 'wrapped' | 'emptied' | 'quarantined' | 'dropped' */
+  recovery: string;
+  text?: string;
 }
 
 export interface TranscribeResult {

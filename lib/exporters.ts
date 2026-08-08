@@ -3,11 +3,14 @@
 // PDF preview includes an in-page action bar with "Save as PDF" and "Close"
 // buttons that are hidden when actually printing.
 
-import type { TranscribeFields, EchoFields, InvestigationBlock } from './types';
+import type {
+  TranscribeFields, EchoFields, InvestigationBlock, ComorbidDiagnosis, Medication,
+} from './types';
 import { mainDiagnosisPresentation, filedComorbidityTerm } from './diagnosis';
 import type { MainDiagnosisPresentation } from './diagnosis';
 import { ECHO_SECTIONS, readEchoPath, type EchoSectionDescriptor } from './echo-template';
 import { getInvestigationBlockDescriptor } from './investigation-blocks';
+import { asText, asList } from './note-normalize';
 
 // Accepts an absent value on purpose. Every caller is on an export path — the
 // PDF, the Word document, the sealed лист — and this function dereferences its
@@ -39,8 +42,16 @@ function clean(s: string): string {
   return s.replace(/\[\[(.+?)\]\]/g, '$1');
 }
 
-function fieldText(s: string | undefined): string {
-  return clean((s || '').trim());
+// The choke point every narrative field in every exporter flows through — 18
+// call sites. `(s || '').trim()` looked like the guard and was not one: `[] ||
+// ''` evaluates to `[]`, so a truthy wrong type went straight to a `.trim` that
+// does not exist on it and took PDF, Word and clipboard down together, on the
+// same rows that killed the result page. asText() absorbs any shape.
+// Deliberately typed `unknown`, matching escapeHtml's `string|null|undefined`:
+// the parameter type is what the backend failed to guarantee, so declaring the
+// narrow one here would only re-assert the assumption that broke.
+function fieldText(s: unknown): string {
+  return clean(asText(s).trim());
 }
 
 // ─── Practice / document identity (export header) ─────────────
@@ -94,7 +105,7 @@ export function formatPlainText(f: TranscribeFields): string {
       if (note) diagLines.push('  ' + note);
     }
   }
-  const co = (f.pridruzhavashti || []).filter(
+  const co = asList<ComorbidDiagnosis>(f.pridruzhavashti).filter(
     (d) => filedComorbidityTerm(d) || (d.mkb && d.mkb.trim())
   );
   if (co.length > 0) {
@@ -134,9 +145,10 @@ export function formatPlainText(f: TranscribeFields): string {
 
   section('ТЕРАПИЯ', f.terapia);
 
-  if (f.medications_list && f.medications_list.length > 0) {
+  const medsText = asList<Medication>(f.medications_list);
+  if (medsText.length > 0) {
     lines.push('МЕДИКАМЕНТИ');
-    f.medications_list.forEach((m) => {
+    medsText.forEach((m) => {
       const parts = [m.inn, m.dose, m.regimen, m.route, m.duration].filter(Boolean);
       lines.push('• ' + parts.join(' · '));
     });
@@ -540,7 +552,7 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string, identity?:
     diagRows += `<tr><td><strong>${escapeHtml(pdfMain.term)}</strong>${diagNotesHtml(pdfMain)}</td>
        <td style="white-space:nowrap;font-family:monospace;color:#1F3A5F;font-weight:700">${escapeHtml(pdfMain.code)}</td></tr>`;
   }
-  (f.pridruzhavashti || []).forEach((d) => {
+  asList<ComorbidDiagnosis>(f.pridruzhavashti).forEach((d) => {
     const coTerm = filedComorbidityTerm(d);
     if (!coTerm && !d.mkb?.trim()) return;
     diagRows += `<tr><td>${escapeHtml(coTerm)}</td>
@@ -548,8 +560,9 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string, identity?:
   });
 
   let medsBlock = '';
-  if (f.medications_list && f.medications_list.length > 0) {
-    const rows = f.medications_list
+  const medsHtml = asList<Medication>(f.medications_list);
+  if (medsHtml.length > 0) {
+    const rows = medsHtml
       .map((m) => {
         const parts = [m.dose, m.regimen, m.route, m.duration]
           .filter(Boolean)
@@ -730,7 +743,7 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string, identity?
   const idSignature = hasId ? wordIdentitySignature(identity!) : '';
 
   let pdRows = '';
-  (f.pridruzhavashti || []).forEach((d, i) => {
+  asList<ComorbidDiagnosis>(f.pridruzhavashti).forEach((d, i) => {
     const coTerm = filedComorbidityTerm(d);
     if (!coTerm && !d.mkb?.trim()) return;
     pdRows += `<tr>
@@ -741,7 +754,7 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string, identity?
   });
 
   let medsRows = '';
-  (f.medications_list || []).forEach((m) => {
+  asList<Medication>(f.medications_list).forEach((m) => {
     const parts = [m.dose, m.regimen, m.route, m.duration]
       .filter(Boolean)
       .join(' · ');
