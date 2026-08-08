@@ -13,7 +13,7 @@ import MkbTypeahead from '@/components/MkbTypeahead';
 import MedsPanel from '@/components/MedsPanel';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { SectionBoundary } from '@/components/SectionBoundary';
-import { normalizeNoteFields, lossyRepairs, type ShapeRepair } from '@/lib/note-normalize';
+import { normalizeNoteFields, lossyRepairs, asText, asList, type ShapeRepair } from '@/lib/note-normalize';
 import { Button } from '@/components/ui/Button';
 import { NoteSectionHead } from '@/components/ui/NoteSection';
 import VisitHeaderStrip from '@/components/VisitHeaderStrip';
@@ -824,11 +824,11 @@ function ResultPageInner() {
   // original; diagnoza + mkb_term are both the official term.
   const addComorbidity = useCallback(
     (code: string, term: string) => {
-      const nextList = [...(fields.pridruzhavashti || []), { mkb: code, diagnoza: term, mkb_term: term }];
+      const nextList = [...asList<ComorbidDiagnosis>(fields.pridruzhavashti), { mkb: code, diagnoza: term, mkb_term: term }];
       const charsChanged = computeCharsChanged('pridruzhavashti', nextList);
       setFields((prev) => ({
         ...prev,
-        pridruzhavashti: [...(prev.pridruzhavashti || []), { mkb: code, diagnoza: term, mkb_term: term }],
+        pridruzhavashti: [...asList<ComorbidDiagnosis>(prev.pridruzhavashti), { mkb: code, diagnoza: term, mkb_term: term }],
       }));
       trackEdit('pridruzhavashti', charsChanged);
     },
@@ -837,11 +837,11 @@ function ResultPageInner() {
 
   const removeComorbidity = useCallback(
     (idx: number) => {
-      const nextList = (fields.pridruzhavashti || []).filter((_, i) => i !== idx);
+      const nextList = asList<ComorbidDiagnosis>(fields.pridruzhavashti).filter((_, i) => i !== idx);
       const charsChanged = computeCharsChanged('pridruzhavashti', nextList);
       setFields((prev) => ({
         ...prev,
-        pridruzhavashti: (prev.pridruzhavashti || []).filter((_, i) => i !== idx),
+        pridruzhavashti: asList<ComorbidDiagnosis>(prev.pridruzhavashti).filter((_, i) => i !== idx),
       }));
       trackEdit('pridruzhavashti', charsChanged);
     },
@@ -1034,7 +1034,7 @@ function ResultPageInner() {
   // Auto-dismiss therapy hint when name no longer in terapia text
   useEffect(() => {
     if (!lastRemovedMedName) return;
-    const text = (fields.terapia || '').toLowerCase();
+    const text = asText(fields.terapia).toLowerCase();
     if (!text.includes(lastRemovedMedName.toLowerCase())) {
       setLastRemovedMedName(null);
     }
@@ -1163,13 +1163,13 @@ function ResultPageInner() {
         addComorbidity(code, term);
       } else {
         const idx = target.index;
-        const nextList = (fields.pridruzhavashti || []).map((d, i) =>
+        const nextList = asList<ComorbidDiagnosis>(fields.pridruzhavashti).map((d, i) =>
           i === idx ? { ...d, mkb: code, diagnoza: term, mkb_term: term } : d
         );
         const charsChanged = computeCharsChanged('pridruzhavashti', nextList);
         setFields((prev) => ({
           ...prev,
-          pridruzhavashti: (prev.pridruzhavashti || []).map((d, i) =>
+          pridruzhavashti: asList<ComorbidDiagnosis>(prev.pridruzhavashti).map((d, i) =>
             i === idx ? { ...d, mkb: code, diagnoza: term, mkb_term: term } : d
           ),
         }));
@@ -1508,9 +1508,9 @@ function ResultPageInner() {
     // Изследвания now parents two conditional subsections: results
     // (izsledvania) + ordered tests (naznacheni, moved out of Издадени
     // документи). The parent stays always-visible — it carries an empty state.
-    const hasIzs = !!(fields.izsledvania && fields.izsledvania.trim());
-    const hasNap = !!(fields.napravlenia && fields.napravlenia.trim());
-    const hasNaz = !!(fields.naznacheni && fields.naznacheni.trim());
+    const hasIzs = !!asText(fields.izsledvania).trim();
+    const hasNap = !!asText(fields.napravlenia).trim();
+    const hasNaz = !!asText(fields.naznacheni).trim();
     v['sec-rezultati'] = hasIzs;
     v['sec-naznacheni'] = hasNaz;
     // Издадени документи is documents-only now — keyed on направления alone.
@@ -1955,10 +1955,9 @@ function ResultPageInner() {
               onShowSource={() =>
                 showSource(
                   'osnovna_diagnoza',
-                  original.fields.osnovna_diagnoza?.trim() ||
-                    fields.osnovna_diagnoza?.trim() ||
-                    fields.osnovna_mkb_term?.trim() ||
-                    '',
+                  asText(original.fields.osnovna_diagnoza).trim() ||
+                    asText(fields.osnovna_diagnoza).trim() ||
+                    asText(fields.osnovna_mkb_term).trim(),
                 )
               }
               sourceDisabled={!hasTranscript}

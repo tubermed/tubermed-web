@@ -10,7 +10,7 @@ import { mainDiagnosisPresentation, filedComorbidityTerm } from './diagnosis';
 import type { MainDiagnosisPresentation } from './diagnosis';
 import { ECHO_SECTIONS, readEchoPath, type EchoSectionDescriptor } from './echo-template';
 import { getInvestigationBlockDescriptor } from './investigation-blocks';
-import { asText, asList } from './note-normalize';
+import { asText, asList } from './note-normalize.ts';
 
 // Accepts an absent value on purpose. Every caller is on an export path — the
 // PDF, the Word document, the sealed лист — and this function dereferences its

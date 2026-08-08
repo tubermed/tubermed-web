@@ -7,10 +7,11 @@
 // is preserved immutably as the "доктор каза" cue source. Pure, no API.
 
 import type { TranscribeFields, ComorbidDiagnosis } from './types';
+import { asText } from './note-normalize.ts';
 
 export function filedMainTerm(f: TranscribeFields): string {
-  const official = (f.osnovna_mkb_term || '').trim();
-  return official || (f.osnovna_diagnoza || '').trim();
+  const official = asText(f.osnovna_mkb_term).trim();
+  return official || asText(f.osnovna_diagnoza).trim();
 }
 
 export function filedComorbidityTerm(d: ComorbidDiagnosis): string {
@@ -125,10 +126,10 @@ export function mainDiagnosisPresentation(
   f: TranscribeFields,
   dictated?: string,
 ): MainDiagnosisPresentation {
-  const official = (f.osnovna_mkb_term || '').trim();
-  const current = (f.osnovna_diagnoza || '').trim();
-  const spoken = (dictated ?? f.osnovna_diagnoza ?? '').trim();
-  const code = (f.osnovna_mkb || '').trim();
+  const official = asText(f.osnovna_mkb_term).trim();
+  const current = asText(f.osnovna_diagnoza).trim();
+  const spoken = asText(dictated ?? f.osnovna_diagnoza).trim();
+  const code = asText(f.osnovna_mkb).trim();
 
   // THE structural branch. `official` is the register lookup's own answer —
   // present or absent. Nothing here compares `official` to `spoken`.

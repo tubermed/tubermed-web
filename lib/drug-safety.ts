@@ -9,7 +9,8 @@
 //   - Diagnoses are read from osnovna_diagnoza/mkb + pridruzhavashti +
 //     анамнеза (where history-of-disease is common).
 
-import type { TranscribeFields } from './types';
+import type { TranscribeFields, Medication, ComorbidDiagnosis } from './types';
+import { asList } from './note-normalize.ts';
 
 export type Severity = 'critical' | 'warning';
 
@@ -269,7 +270,7 @@ function str(v: unknown): string {
 function buildPrescribedText(f: TranscribeFields): string {
   return [
     str(f.terapia),
-    ...(f.medications_list || []).map((m) => str(m.inn) + ' ' + str(m.dose)),
+    ...asList<Medication>(f.medications_list).map((m) => str(m.inn) + ' ' + str(m.dose)),
   ]
     .join(' ')
     .toLowerCase();
@@ -287,7 +288,7 @@ function buildDiagnosesText(f: TranscribeFields): string {
     str(f.osnovna_diagnoza),
     str(f.osnovna_mkb),
     str(f.anamneza),
-    ...(f.pridruzhavashti || []).map((d) => str(d.diagnoza) + ' ' + str(d.mkb)),
+    ...asList<ComorbidDiagnosis>(f.pridruzhavashti).map((d) => str(d.diagnoza) + ' ' + str(d.mkb)),
   ]
     .join(' ')
     .toLowerCase();
