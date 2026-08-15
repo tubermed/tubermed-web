@@ -1,0 +1,89 @@
+# CI — tubermed-web
+#
+# Gates on every push to master and every PR:
+#   1. eslint, tsc --noEmit, and the node --test suite.
+#   2. The cross-repo mirror byte-identity gate: public/ial-inns.json and
+#      public/mkb10.json are the CANONICAL copies; the backend carries mirrors.
+#      Both repos run the same check so drift cannot enter from either side.
+#
+# The mirror gate needs SIBLING_REPO_TOKEN — a fine-grained PAT with
+# Contents:read on tubermed/tubermed-backend. Without it the gate HARD-FAILS
+# when a mirrored file changed in the push and warns otherwise.
+#
+# Node 24: the test script (`node --test scripts/*.test.ts`) needs native
+# type-stripping; verified locally on v24.
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  checks:
+    name: Lint, types, tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm test
+
+  mirror-gate:
+    name: Register mirror byte-identity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect mirrored-file changes
+        id: changes
+        run: |
+          set -u
+          MIRROR_FILES="public/ial-inns.json public/mkb10.json"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}" --depth=50 || true
+            range="$(git merge-base "origin/${{ github.base_ref }}" HEAD)..HEAD"
+          elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ] || [ -z "${{ github.event.before }}" ]; then
+            range="HEAD^..HEAD"
+          else
+            range="${{ github.event.before }}..${{ github.sha }}"
+          fi
+          mirror_changed=$(git diff --name-only "$range" -- $MIRROR_FILES 2>/dev/null) \
+            || mirror_changed=$(git diff --name-only HEAD^..HEAD -- $MIRROR_FILES)
+          echo "mirror_changed=$([ -n "$mirror_changed" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "range: $range"
+          echo "mirrored files changed: ${mirror_changed:-none}"
+      - name: Check for sibling token
+        id: token
+        env:
+          SIBLING: ${{ secrets.SIBLING_REPO_TOKEN }}
+        run: echo "have=$([ -n "$SIBLING" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Checkout tubermed-backend (mirror holder)
+        if: steps.token.outputs.have == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: tubermed/tubermed-backend
+          token: ${{ secrets.SIBLING_REPO_TOKEN }}
+          path: sibling
+      - name: Mirror byte-identity (hard gate)
+        if: steps.token.outputs.have == 'true'
+        run: |
+          set -eu
+          cmp public/ial-inns.json sibling/lib/vocabulary/ial-inns.json
+          cmp public/mkb10.json sibling/lib/vocabulary/mkb10.json
+          echo "mirrors byte-identical"
+      - name: Mirror gate unavailable
+        if: steps.token.outputs.have != 'true'
+        run: |
+          if [ "${{ steps.changes.outputs.mirror_changed }}" = "true" ]; then
+            echo "::error::A mirrored register file changed but SIBLING_REPO_TOKEN is not set — the byte-identity gate cannot run. Add a fine-grained PAT (Contents:read on tubermed/tubermed-backend) as the SIBLING_REPO_TOKEN secret in this repo."
+            exit 1
+          fi
+          echo "::warning::SIBLING_REPO_TOKEN not set — mirror gate skipped (no mirrored file changed in this push)."
