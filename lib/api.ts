@@ -23,11 +23,41 @@ const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL!;
 const STORAGE_KEY = 'tuber_auth';
 
 // Client-side ceiling for the one-shot PC scribe upload (upload + Soniox + Haiku).
-// Bounds a hung/half-open connection so the retry panel surfaces in ~1 min instead
-// of the browser's own multi-minute default. Retries are duplicate-safe — the
-// backend 409-gates /api/transcribe on consultation status — so a timeout only ever
+// Bounds a hung/half-open connection so the retry panel surfaces instead of the
+// browser's own indefinite wait. Retries are duplicate-safe — the backend
+// 409-gates /api/transcribe on consultation status — so a timeout only ever
 // costs a re-send, never a double note, never data loss (the audio blob is retained).
-const UPLOAD_TIMEOUT_MS = 60_000;
+//
+// ⚠ The client must never give up before the server does. The old flat 60_000
+// undercut the server's own allowances (Soniox polling alone is granted
+// 120–600s, and extraction measured p50 19s / p95 31s with 52–55s on a
+// 15-minute consult, 2026-08-16, n=155): a long visit could complete and file
+// server-side while the client had already aborted — and the retry then 409s
+// into a dead end because the row is no longer `pending`. So the bound is
+// derived from the server's own worst case, not from hang-detection comfort:
+// a genuinely dead connection now takes minutes to surface, which is the
+// price of never abandoning real work in flight.
+//
+// Async upload: frontend mirror of the backend's Soniox poll deadline
+// (lib/process-audio.js: min(600s, 120s + uploadBytes/100 ms)) — change
+// together — plus the extraction allowance below.
+const SONIOX_POLL_FLOOR_MS = 120_000;
+const SONIOX_POLL_CAP_MS = 600_000;
+// Extraction + provenance call, including callClaudeEscalating's one doubled
+// retry: measured worst single pass 55s → 180s clears the doubled pass with margin.
+const EXTRACTION_ALLOWANCE_MS = 180_000;
+
+function uploadTimeoutMs(audioBytes: number): number {
+  const sonioxAllowance = Math.min(
+    SONIOX_POLL_CAP_MS,
+    SONIOX_POLL_FLOOR_MS + Math.round(audioBytes / 100),
+  );
+  return sonioxAllowance + EXTRACTION_ALLOWANCE_MS;
+}
+
+// Streamed-transcript submit: the Soniox leg happened during recording, so
+// extraction is the whole wait and the allowance alone bounds it.
+const STREAM_SUBMIT_TIMEOUT_MS = EXTRACTION_ALLOWANCE_MS;
 
 export interface DoctorInfo {
   id: string;
@@ -305,8 +335,10 @@ export const api = {
     // Bound the single upload+transcribe+extract request. On timeout the fetch
     // aborts (AbortError → the scribe flow's retainable-failure path); `signal`
     // rides through request()'s option spread into fetch — no wrapper change.
+    // The bound scales with the blob so it always clears the server's own
+    // size-scaled Soniox deadline (see uploadTimeoutMs).
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), uploadTimeoutMs(audio.size));
     return request<TranscribeResult>('/api/transcribe', {
       method: 'POST',
       body: fd,
@@ -349,11 +381,11 @@ export const api = {
       stopToSubmitMs?: number;
     },
   ) => {
-    // Extraction runs inside this request, so it needs the same generous
-    // deadline the blob upload gets — the streaming win is that the SONIOX
-    // leg is gone, not that Claude got faster.
+    // Extraction runs inside this request — the streaming win is that the
+    // SONIOX leg is gone, not that Claude got faster — so the extraction
+    // allowance (incl. the escalation retry) is the whole bound.
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), STREAM_SUBMIT_TIMEOUT_MS);
     return request<TranscribeResult>(`/api/consultations/${consultationId}/stream-transcript`, {
       method: 'POST',
       body: JSON.stringify({
