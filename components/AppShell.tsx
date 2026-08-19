@@ -18,7 +18,12 @@ interface AppShellProps {
 
 export default function AppShell({ doctor, sidebarLocked = false, children }: AppShellProps) {
   return (
-    <div className="min-h-screen flex" style={{ background: 'var(--color-bg)' }}>
+    // Phone: the nav stacks ABOVE the content as a full-width strip, so <main>
+    // gets the whole viewport. Desktop (md+): the historical side-by-side rail,
+    // byte-identical in behaviour. The 2026-08-15 audit found the 252px rail had
+    // no collapse at all — on a 375px phone <main> was left ~123px wide and
+    // every authenticated page was unusable.
+    <div className="min-h-screen flex flex-col md:flex-row" style={{ background: 'var(--color-bg)' }}>
       <ClinicSidebar doctor={doctor} items={NAV_ITEMS} locked={sidebarLocked} />
       {/* container-type: inline-size lets descendants run @container queries
           keyed off main-area width — needed so /app/scribe/result's right-rail

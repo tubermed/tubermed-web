@@ -16,8 +16,14 @@ interface StepperProps {
 
 export default function Stepper({ steps, current }: StepperProps) {
   return (
+    // Phone (2026-08-19): four labelled steps cannot fit 375px — measured, the
+    // row laid out to 680px and pushed the whole page into horizontal scroll.
+    // Below md only the CURRENT step keeps its label; the others collapse to
+    // their numbered circle. Every step is still rendered, still numbered, and
+    // still carries aria-current + a title, so nothing is lost to a screen
+    // reader — only the visual label is dropped, and only where it does not fit.
     <div
-      className="flex items-center gap-2 px-6 py-3 border-b print:hidden"
+      className="flex items-center gap-1.5 md:gap-2 px-3 md:px-6 py-3 border-b print:hidden"
       style={{
         background: 'var(--color-bg-card)',
         borderColor: 'var(--color-border)',
@@ -27,10 +33,11 @@ export default function Stepper({ steps, current }: StepperProps) {
         const isActive = i === current;
         const isDone   = i <  current;
         return (
-          <div key={i} className="flex items-center gap-2 flex-1">
+          <div key={i} className={`flex items-center gap-1.5 md:gap-2 min-w-0 ${isActive ? 'flex-1' : 'flex-none md:flex-1'}`}>
             <div
               aria-current={isActive ? 'step' : undefined}
-              className="flex-1 flex items-center gap-3 px-4 py-2.5 rounded-lg border transition-all"
+              title={step.sublabel ? `${step.label} — ${step.sublabel}` : step.label}
+              className="flex-1 min-w-0 flex items-center gap-2 md:gap-3 px-2.5 md:px-4 py-2.5 rounded-lg border transition-all"
               style={{
                 background: isActive ? 'var(--color-accent)' : 'transparent',
                 borderColor: isActive
@@ -69,9 +76,9 @@ export default function Stepper({ steps, current }: StepperProps) {
                   i + 1
                 )}
               </span>
-              <span className="flex flex-col min-w-0">
+              <span className={`flex flex-col min-w-0 ${isActive ? '' : 'hidden md:flex'}`}>
                 <span
-                  className="text-sm font-medium leading-tight"
+                  className="text-sm font-medium leading-tight truncate"
                   style={{
                     color: isActive
                       ? 'white'
@@ -84,7 +91,7 @@ export default function Stepper({ steps, current }: StepperProps) {
                 </span>
                 {step.sublabel && (
                   <span
-                    className="text-[10px] uppercase tracking-widest"
+                    className="hidden md:block text-[10px] uppercase tracking-widest"
                     style={{
                       color: isActive
                         ? 'rgba(255,255,255,0.7)'
@@ -98,7 +105,7 @@ export default function Stepper({ steps, current }: StepperProps) {
             </div>
             {i < steps.length - 1 && (
               <span
-                className="w-4 h-[1.5px] flex-shrink-0 rounded-full"
+                className="w-2 md:w-4 h-[1.5px] flex-shrink-0 rounded-full"
                 style={{
                   background:
                     i < current

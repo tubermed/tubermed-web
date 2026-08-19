@@ -30,7 +30,11 @@ export function NoteSectionHead({
 }) {
   return (
     <div className="mb-4">
-      <div className="flex items-center gap-2 min-h-[24px]">
+      {/* flex-wrap (2026-08-19): the action group ("няма ясен източник" +
+          "Копирай") is ~220px and a long section title pushed it past a 375px
+          viewport into horizontal page scroll. Wrapping costs a line on a phone
+          and nothing at all on desktop, where the row never fills. */}
+      <div className="flex flex-wrap items-center gap-2 min-h-[24px]">
         <span
           aria-hidden
           className="inline-block flex-shrink-0 rounded-full"

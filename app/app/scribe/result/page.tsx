@@ -10,7 +10,7 @@ import EditableField from '@/components/EditableField';
 import SkeletonInput from '@/components/SkeletonInput';
 import MkbPicker from '@/components/MkbPicker';
 import MkbTypeahead from '@/components/MkbTypeahead';
-import MedsPanel from '@/components/MedsPanel';
+import MedsPanel, { formatMedLine } from '@/components/MedsPanel';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { SectionBoundary } from '@/components/SectionBoundary';
 import { normalizeNoteFields, lossyRepairs, asText, asList, type ShapeRepair } from '@/lib/note-normalize';
@@ -1596,8 +1596,10 @@ function ResultPageInner() {
       )}
 
       {/* Top action bar */}
+      {/* px-4 at phone width: the six export buttons are the widest fixed row on
+          the page and 24px of side padding is 13% of a 375px screen. */}
       <div
-        className="px-6 py-3 border-b flex items-center justify-between gap-4 flex-wrap no-print"
+        className="px-4 md:px-6 py-3 border-b flex items-center justify-between gap-4 flex-wrap no-print"
         style={{
           background: 'var(--color-bg-card)',
           borderColor: 'var(--color-border)',
@@ -1628,7 +1630,7 @@ function ResultPageInner() {
             (PDF/Word/Копирай/Печат/Резюме) vs the echo paste-block exporters
             below. Approval (StatusBadge) is shared. */}
         {!isEcho && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
             variant="toolbar"
             onClick={handlePdf}
@@ -1682,7 +1684,7 @@ function ResultPageInner() {
         </div>
         )}
         {isEcho && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
             variant="toolbar"
             onClick={handleEchoPdf}
@@ -2172,6 +2174,22 @@ function ResultPageInner() {
                 </>
               }
             />
+
+            {/* Paper-only medication table (2026-08-19).
+                The structured meds live in the right aside, which is `no-print`
+                and must stay that way — it also holds „+ Нова консултация" and
+                the Article-17 erase control, and neither belongs on a лист. So
+                the printed document carries its OWN copy of the same data,
+                rendered through formatMedLine — the exact formatter behind
+                „Копирай медикаментите", which is the one whose completeness has
+                already been checked.
+                Before this, Ctrl+P on the result page printed `terapia` prose
+                and dropped the drug table silently. (The „Печат" BUTTON was
+                never affected: it opens generatePdfHtml, which has always
+                carried a Медикаменти table.)
+                Renders nothing on screen — `.print-only` is display:none until
+                @media print. */}
+            <PrintMedsBlock meds={asList<Medication>(fields.medications_list)} />
 
             {visibleSections['sec-izdadeni'] && (
               <div id="sec-izdadeni" className="scroll-mt-24">
@@ -2750,6 +2768,44 @@ function StatusBadge({
   );
 }
 
+// The medication table as it appears ON PAPER, and nowhere else.
+//
+// Every other affordance in this file is marked `no-print` so it stays off the
+// document. This is the mirror case: content the document NEEDS that lives, on
+// screen, inside a container which must not print. Rather than un-hiding that
+// container for print (which would drag the erase button and „+ Нова
+// консултация" onto a лист), the document gets its own rendering of the same
+// data.
+//
+// Identical source, identical formatter: `formatMedLine` from MedsPanel — the
+// one behind „Копирай медикаментите". If the copy buffer is complete, so is
+// this, by construction rather than by a second implementation that can drift.
+//
+// Inline styles, not tokens: browser print stylesheets routinely drop
+// background colours and CSS variables resolve against a light DOM the printer
+// never sees, so this block states its own black-on-white.
+function PrintMedsBlock({ meds }: { meds: Medication[] }) {
+  const lines = meds.map(formatMedLine).filter(Boolean);
+  if (lines.length === 0) return null;
+  return (
+    <div className="print-only" style={{ breakInside: 'avoid', marginTop: '18px' }}>
+      <h2
+        style={{
+          fontSize: '13pt', fontWeight: 600, color: '#000',
+          margin: '0 0 6px', paddingBottom: '4px', borderBottom: '1px solid #000',
+        }}
+      >
+        Медикаменти
+      </h2>
+      <ul style={{ margin: 0, paddingLeft: '18px', color: '#000', fontSize: '11pt', lineHeight: 1.55 }}>
+        {lines.map((line, i) => (
+          <li key={i}>{line}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 // Small, unobtrusive "виж източника" affordance (Traceability Phase 1a). Sits
 // near a field's label; disabled (greyed, with a hint) when no transcript exists.
 // no-print so it never bleeds into the printed/exported document.
@@ -3124,7 +3180,9 @@ function DiagnosesSection({
           </div>
           <SourceButton onClick={onShowSource} disabled={sourceDisabled} resolved={sourceResolved} />
         </div>
-        <div className="flex items-center gap-2">
+        {/* flex-wrap: the МКБ typeahead + „Копирай МКБ" row overran a 375px
+            viewport by 3px and put the whole page into horizontal scroll. */}
+        <div className="flex flex-wrap items-center gap-2">
           {sealed ? (
             // A search box on a closed лист invites a change that cannot land.
             // Render what was filed — code + official term — and keep the copy

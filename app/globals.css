@@ -559,15 +559,33 @@ html, body {
   }
 }
 
-/* Truly narrow (mobile / very small windows) — single column, document only.
-   Both asides hide here; the rail is allowed to drop only on small screens. */
+/* Truly narrow (mobile / very small windows) — single column.
+   ⚠ The right rail does NOT drop here (2026-08-19). It used to, and the
+   2026-08-15 audit found what that cost: the rail is the SOLE home of the
+   structured medication list, the drug-safety warnings, „+ Нова консултация"
+   and the Article-17 erase control, so a doctor on a phone could not see the
+   meds and could not exercise a data-subject request at all. Hiding a
+   safety-critical panel because the screen is small is a decision about
+   clinical visibility disguised as a layout rule.
+   It stops being a COLUMN and becomes a BLOCK below the document instead —
+   same content, same order of importance, no horizontal space needed. Only the
+   left section-nav still hides; that one really is convenience. */
 @container (max-width: 720px) {
   .result-grid {
     grid-template-columns: 1fr;
     padding: 16px;
   }
-  .result-grid > aside {
+  .result-grid > aside:first-of-type {
     display: none;
+  }
+  .result-grid > aside:last-of-type {
+    display: block;
+  }
+  /* Sticky is meaningless once the rail is in the document flow, and on iOS a
+     sticky element inside a single-column grid can pin itself off-screen. */
+  .result-grid > aside:last-of-type > div {
+    position: static;
+    top: auto;
   }
 }
 
@@ -598,6 +616,12 @@ html, body {
 }
 
 /* ── Print fallback ────────────────────────────────────────── */
+/* This is Ctrl+P on the result page, NOT the „Печат" button — that one opens
+   generatePdfHtml (lib/exporters.ts), which has carried the Медикаменти table
+   all along. The fallback did not: `terapia` prose printed and the structured
+   drug table silently vanished with the rest of the aside. A printed лист that
+   drops the drug table is worse than one that never had it, because the doctor
+   cannot tell it is missing. `.print-only` below is the block that fixes it. */
 @media print {
   body { background: white !important; }
   header,
@@ -605,6 +629,9 @@ html, body {
   aside,
   .no-print {
     display: none !important;
+  }
+  .print-only {
+    display: block !important;
   }
   .result-grid {
     display: block !important;
@@ -619,6 +646,32 @@ html, body {
   }
   @page {
     margin: 18mm 16mm;
+  }
+}
+
+/* Screen-invisible, paper-only. Paired with the @media print rule above; the
+   two must never be separated, which is why they sit adjacent. */
+.print-only {
+  display: none;
+}
+
+/* ── Workspace sidebar (components/ClinicSidebar.tsx) ─────────
+   Desktop: a 252px navy rail. Phone: the same element becomes a full-width top
+   strip (AppShell switches flex-col → md:flex-row). Before this, the 252px rail
+   had no responsive collapse at all, so on a 375px phone <main> received ~123px
+   and every authenticated page was unusable — which also made the meds-rail fix
+   above invisible in practice.
+   These two cards are classes rather than inline styles for one reason: an
+   inline style cannot be answered by a media query, and at strip width their
+   chrome has to go. */
+.nav-card {
+  background: var(--color-nav-bg-elev);
+  border: 1px solid var(--color-nav-border);
+}
+@media (max-width: 767px) {
+  .nav-card {
+    background: transparent;
+    border-color: transparent;
   }
 }
 
