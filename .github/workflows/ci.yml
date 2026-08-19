@@ -1,7 +1,18 @@
 # CI — tubermed-web
 #
 # Gates on every push to master and every PR:
-#   1. eslint, tsc --noEmit, and the node --test suite.
+#   1. the lint RATCHET, tsc --noEmit, and the node --test suite.
+#
+# ⚠ The lint step runs `npm run lint:ratchet`, NOT bare `npm run lint`
+#   (2026-08-19). Bare eslint exits 1 on any error and this repo carries 21
+#   accepted pre-existing react-hooks findings, so this job was RED ON master
+#   FROM THE DAY IT WAS ADDED — which teaches whoever reads it that red is what
+#   this job looks like, and that is how a real failure scrolls past unread.
+#   It was also measuring the wrong thing: AGENTS.md's rule is "zero NEW
+#   findings against the recorded baseline", not "zero findings", so the rule
+#   was satisfied while the gate failed. The gate was wrong, not the code.
+#   The accepted residual lives in ONE place — .eslint-baseline.json — and the
+#   ratchet only ever lets it fall. See scripts/lint-ratchet.mjs.
 #   2. The cross-repo mirror byte-identity gate: public/ial-inns.json and
 #      public/mkb10.json are the CANONICAL copies; the backend carries mirrors.
 #      Both repos run the same check so drift cannot enter from either side.
@@ -31,7 +42,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run lint
+      # No new lint findings vs .eslint-baseline.json (a ratchet — it only falls).
+      - run: npm run lint:ratchet
       - run: npx tsc --noEmit
       - run: npm test
 

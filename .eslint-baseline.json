@@ -1,0 +1,15 @@
+{
+  "_": "THE SINGLE SOURCE OF TRUTH for the accepted lint residual. Read by scripts/lint-ratchet.mjs, which is what CI runs; AGENTS.md points HERE rather than repeating the number, because a count typed in two places is a count that will disagree with itself. Regenerate with: npm run lint:ratchet -- --update",
+  "why": "21 errors + 2 warnings, all react-hooks, all pre-existing and all inherited from the 2026-08 eslint-config-next bump. They are NOT waived — they are a backlog item with a deliberate reason to wait: react-hooks/set-state-in-effect is fixed by restructuring effects across 8 files, which changes render behaviour on the scribe and result pages. That is not a change to make without a live-browser pass and a review. Recorded 2026-08-19.",
+  "ratchet": "This is a CEILING THAT ONLY FALLS. A count above it fails CI (a new finding). A count BELOW it also fails CI, with a different message: lower the baseline in the same commit, or the headroom you just created silently absorbs the next regression.",
+  "recorded_at": "2026-08-19",
+  "totals": {
+    "errors": 21,
+    "warnings": 2
+  },
+  "byRule": {
+    "react-hooks/set-state-in-effect": { "errors": 20, "warnings": 0 },
+    "react-hooks/immutability": { "errors": 1, "warnings": 0 },
+    "react-hooks/exhaustive-deps": { "errors": 0, "warnings": 2 }
+  }
+}

@@ -58,8 +58,10 @@ const P = {
   /** The paper table must reuse the copy formatter, not reimplement it. */
   paperReusesCopyFormatter(page: string, panel: string): boolean {
     const exported = /export function formatMedLine/.test(panel);
+    // ascii-safe: both haystacks are TypeScript source and both needles are JS
+    // identifiers / JSX tag names — ASCII by construction on both sides.
     const imported = /import MedsPanel,\s*\{[^}]*\bformatMedLine\b[^}]*\}/.test(page);
-    const rendered = /<PrintMedsBlock\b/.test(page);
+    const rendered = /<PrintMedsBlock\b/.test(page); // ascii-safe: a JSX component name
     const usedInBlock = (() => {
       const i = page.indexOf('function PrintMedsBlock');
       if (i < 0) return false;
@@ -104,8 +106,10 @@ test('the paper block is NOT inside a container the print sheet hides', () => {
   assert.ok(i > 0, 'PrintMedsBlock must be rendered');
   const before = RESULT.slice(0, i);
   const count = (s: string, re: RegExp) => (s.match(re) || []).length;
+  // ascii-safe: HTML tag names. A JSX element name cannot be Cyrillic.
   const openAsides = count(before, /<aside\b/g) - count(before, /<\/aside>/g);
   assert.equal(openAsides, 0, 'PrintMedsBlock sits inside an <aside>, which the print stylesheet hides');
+  // ascii-safe: HTML tag names, as above.
   const openMains = count(before, /<main\b/g) - count(before, /<\/main>/g);
   assert.ok(openMains >= 1, 'PrintMedsBlock must sit inside the document <main>');
 

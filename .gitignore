@@ -43,3 +43,6 @@ next-env.d.ts
 # Claude Code session artifacts
 scheduled_tasks.lock
 .claude/
+
+# scratch (lint-ratchet json, local probes) — never committed
+/tmp

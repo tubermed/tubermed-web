@@ -25,6 +25,14 @@
 // on the line itself or anywhere in the comment block directly above it.
 // „The input here is a hex colour" is a fine reason. „It works" is not.
 //
+// ⚠ THE GLOB'S COVERAGE CHANGES THE MOMENT YOU `git add`.
+// This guard enumerates `git ls-files`, so an UNTRACKED file is invisible to
+// it. A new file therefore passes every gate while you are writing it and can
+// go red on the very next run, after the commit that tracked it — twice on
+// 2026-08-19 alone, both times on a freshly written test file. That is the
+// verified-while-untracked shape: the check did not fail, it did not RUN.
+// Run the suite once AFTER `git add`, before you trust a green.
+//
 // The backend carries the same guard as scripts/test-ascii-boundary.js.
 
 import { test } from 'node:test';

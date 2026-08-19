@@ -58,13 +58,35 @@ use **cmd**/`git` without PowerShell redirection (e.g. `git cat-file blob HEAD:p
 
 # Verification gates (before every commit)
 
-`npm run build` · `npx tsc --noEmit` clean · `npm run lint` introduces **zero new**
-findings vs the pre-existing baseline (don't chase pre-existing ones). `npm test`
+`npm run build` · `npx tsc --noEmit` clean · **`npm run lint:ratchet`** — zero NEW
+findings vs the recorded baseline (don't chase pre-existing ones). `npm test`
 (added 2026-07-28) is plain `node --test scripts/*.test.ts` — **no runner, no loader,
 no test dependency**: Node 24 strips the types natively. It covers only DOM-free logic
 modules (today `lib/stt-stream.ts`); anything touching React or the DOM still has to be
 verified in a live local browser (preview tools freeze CSS transitions/rAF — don't trust
 them for animated state; say what you couldn't exercise headlessly).
+
+**The accepted lint residual is a NUMBER IN EXACTLY ONE FILE: `.eslint-baseline.json`.**
+Do not restate it here — a count typed in two places is a count that will disagree with
+itself, and `scripts/lint-ratchet.test.ts` fails if this file starts repeating it. The
+file carries the counts, per rule, plus the reason the residual is accepted.
+
+⚠ **The gate is a RATCHET, not a ceiling (2026-08-19).** More findings than the baseline
+fails, as expected — but FEWER findings also fails, with a different message: lower the
+baseline in the same commit. Unclaimed headroom silently absorbs the next regression,
+which is how a baseline drifts back up to where it started. `npm run lint:ratchet --
+--update` rewrites the file.
+
+⚠ **Why this replaced bare `npm run lint` in CI:** the workflow ran plain eslint, which
+exits 1 on any error, so the job was **red on `master` from the day it was added**. A job
+that is always red teaches whoever reads it that red is what that job looks like, and a
+real failure then scrolls past unread — the ignorable-gate shape, arriving at the level of
+the thing that guards everything else. It was also asserting the wrong predicate: the rule
+above is *zero new findings*, not *zero findings*, so the rule was satisfied while the
+gate failed. The gate was wrong, not the code. The 21 `react-hooks/set-state-in-effect`
++ `immutability` errors stay on the backlog: fixing them means restructuring effects
+across 8 files, which changes render behaviour on the scribe and result pages and needs a
+live-browser pass plus review — not a side effect of a CI cleanup.
 
 **Dependencies — `npm audit --omit=dev`, and it MUST say ONLINE (2026-08-07).**
 ⚠ **`npm audit --offline` prints „found 0 vulnerabilities" and exits 0 in BOTH repos
@@ -86,11 +108,12 @@ lockfile-heavy diff, and a caret on the framework is how an unreviewed minor arr
 its own.
 
 ⚠ `devDependencies.eslint-config-next` is still `16.2.6` and now trails `next`. Lint is
-unaffected (baseline holds at 23), so it was left alone rather than risk moving the
-baseline in a dependency batch — but they should be bumped together next time.
+unaffected (the baseline held — see `.eslint-baseline.json`), so it was left alone rather
+than risk moving the baseline in a dependency batch — but they should be bumped together
+next time.
 
 Gate run for the bump, per the rule below it: `npm run build` clean, all five `/app/*`
-shells still `ƒ`, `tsc` clean, 179/179, lint 23.
+shells still `ƒ`, `tsc` clean, 179/179, lint at baseline.
 
 # Identity-free visit start + notes library
 
