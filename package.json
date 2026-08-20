@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "lint:ratchet": "node scripts/lint-ratchet.mjs",
-    "test": "node --test scripts/*.test.ts"
+    "test": "node --test scripts/*.test.ts",
+    "verify:clean-clone": "bash scripts/verify-clean-clone.sh"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.17",

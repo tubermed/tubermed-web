@@ -14,6 +14,23 @@ are Bulgarian; code, comments, and commit messages are English.
 
 # Non-negotiable invariants
 
+- **VERIFICATION INFRASTRUCTURE IS PRODUCTION (standing rule, 2026-08-19).** Every rule
+  about the deployed app — no cross-repo reads, no environment assumptions, no silent
+  degradation — applies **identically** to scripts, harnesses, gates and guards.
+  **A harness that degrades silently is worse than a broken feature, because it
+  certifies the product while blind.** Six instances, all in tooling rather than the
+  product: a boundary guard that could not see itself; a replay that measured
+  UNCOMMITTED code and reported it as the committed contract; a detector that flagged
+  its own correction map; `\b` in three separate new gates, invisible until `git add`,
+  twice after we knew; a support filter applied after the DB limit, answering „никога не
+  се е чупило"; and the backend's replay harness reading THIS repo through
+  `../tubermed-web/…`, which resolves on one laptop on earth and left backend CI red on
+  `main` since it existed. That last one is the sharpest, because **the rule already
+  existed** — the cross-repo-read line in "Known gotchas" below was written, then broken
+  in a test harness, because nobody thinks of a test harness as production. Concretely:
+  a gate may not assume an untracked file is present (`git add` before trusting a
+  green), must state its own coverage when it skips, and must be run from a **clean
+  clone** before any push (`npm run verify:clean-clone`).
 - The doctor is the legal author: notes are editable, approval (`✓ Потвърждавам`) gates
   export and the patient summary — never bypass or fake the approval state client-side.
 - No patient identity: TuberMed keeps **no patient records** — there is no ЕГН or name
