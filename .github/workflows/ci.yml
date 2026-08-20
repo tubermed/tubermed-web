@@ -13,13 +13,20 @@
 #   was satisfied while the gate failed. The gate was wrong, not the code.
 #   The accepted residual lives in ONE place — .eslint-baseline.json — and the
 #   ratchet only ever lets it fall. See scripts/lint-ratchet.mjs.
-#   2. The cross-repo mirror byte-identity gate: public/ial-inns.json and
+#   2. A mirrored-register CHANGE DETECTOR. public/ial-inns.json and
 #      public/mkb10.json are the CANONICAL copies; the backend carries mirrors.
-#      Both repos run the same check so drift cannot enter from either side.
 #
-# The mirror gate needs SIBLING_REPO_TOKEN — a fine-grained PAT with
-# Contents:read on tubermed/tubermed-backend. Without it the gate HARD-FAILS
-# when a mirrored file changed in the push and warns otherwise.
+# ⚠ The byte-identity comparison does NOT happen in this repo (2026-08-20).
+#   It used to claim to: a job named „Register mirror byte-identity" showed a
+#   green tick on every push while its `cmp` had never executed once, because
+#   SIBLING_REPO_TOKEN was never set and the fallback branch exited 0. A check
+#   that cannot fail reports identically to a check that passed.
+#   This side genuinely cannot do it — tubermed-backend is private. The check
+#   moved to the side that can do it for free: this repo is PUBLIC, so the
+#   backend reads the canon from raw.githubusercontent with no token and runs
+#   `scripts/verify-mirror.js` on every push, fail-closed and self-testing.
+#   Byte-identity is symmetric, so one side proving it is enough.
+#   What remains here reports only what it actually establishes.
 #
 # Node 24: the test script (`node --test scripts/*.test.ts`) needs native
 # type-stripping; verified locally on v24.
@@ -47,8 +54,26 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm test
 
-  mirror-gate:
-    name: Register mirror byte-identity
+  # ── This job no longer claims to verify byte-identity (2026-08-20) ─────────
+  # It used to be called „Register mirror byte-identity" and reported a GREEN
+  # TICK on every push while its `cmp` never ran once: SIBLING_REPO_TOKEN has
+  # never been set, so the real steps were `if`-ed out and the fallback branch
+  # exited 0. A check that cannot fail reports identically to a check that
+  # passed — the vacuous-gate shape, in the gate guarding the register copies.
+  #
+  # This side genuinely cannot do the comparison: tubermed-backend is PRIVATE,
+  # so without a credential there is no way to read its mirror. Rather than
+  # pretend, the work moved to the side that CAN do it for free — tubermed-web
+  # is public, so tubermed-backend reads this repo's canon from
+  # raw.githubusercontent with no token and runs the real gate on every backend
+  # push (`scripts/verify-mirror.js`). Byte-identity is symmetric.
+  #
+  # What is left here is honestly named: a CHANGE DETECTOR. It reports only what
+  # it actually established — whether this push touched a mirrored file — and it
+  # HARD-FAILS when one changed and cannot be verified from this side, because a
+  # change to the canon is exactly when drift is introduced.
+  mirror-change-detector:
+    name: Mirrored register change (verification lives in tubermed-backend)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -72,30 +97,18 @@ jobs:
           echo "mirror_changed=$([ -n "$mirror_changed" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "range: $range"
           echo "mirrored files changed: ${mirror_changed:-none}"
-      - name: Check for sibling token
-        id: token
-        env:
-          SIBLING: ${{ secrets.SIBLING_REPO_TOKEN }}
-        run: echo "have=$([ -n "$SIBLING" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-      - name: Checkout tubermed-backend (mirror holder)
-        if: steps.token.outputs.have == 'true'
-        uses: actions/checkout@v4
-        with:
-          repository: tubermed/tubermed-backend
-          token: ${{ secrets.SIBLING_REPO_TOKEN }}
-          path: sibling
-      - name: Mirror byte-identity (hard gate)
-        if: steps.token.outputs.have == 'true'
+      # A mirrored file changed HERE, in the canon. This side cannot verify the
+      # backend followed — so it fails, loudly, rather than reporting a green
+      # tick for a verification that did not happen. Clearing it means landing
+      # the matching backend commit, whose own CI runs the real byte-identity
+      # gate tokenlessly and will go red until both sides agree.
+      - name: A mirrored register file changed — verify from tubermed-backend
+        if: steps.changes.outputs.mirror_changed == 'true'
         run: |
-          set -eu
-          cmp public/ial-inns.json sibling/lib/vocabulary/ial-inns.json
-          cmp public/mkb10.json sibling/lib/vocabulary/mkb10.json
-          echo "mirrors byte-identical"
-      - name: Mirror gate unavailable
-        if: steps.token.outputs.have != 'true'
+          echo "::error::public/ial-inns.json or public/mkb10.json changed in this push. This repo CANNOT verify byte-identity — tubermed-backend is private. Land the matching commit in tubermed-backend; its CI runs 'node scripts/verify-mirror.js' against this repo's canon with no token and will fail until the two agree."
+          exit 1
+      # Nothing was claimed about byte-identity, so nothing false is reported.
+      - name: No mirrored file changed in this push
+        if: steps.changes.outputs.mirror_changed != 'true'
         run: |
-          if [ "${{ steps.changes.outputs.mirror_changed }}" = "true" ]; then
-            echo "::error::A mirrored register file changed but SIBLING_REPO_TOKEN is not set — the byte-identity gate cannot run. Add a fine-grained PAT (Contents:read on tubermed/tubermed-backend) as the SIBLING_REPO_TOKEN secret in this repo."
-            exit 1
-          fi
-          echo "::warning::SIBLING_REPO_TOKEN not set — mirror gate skipped (no mirrored file changed in this push)."
+          echo "::notice::No mirrored register file changed in this push. This job asserts ONLY that — byte-identity is verified in tubermed-backend CI (scripts/verify-mirror.js), which runs on every backend push with no credential."
