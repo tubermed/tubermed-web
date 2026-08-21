@@ -10,17 +10,21 @@
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { NoteSectionHead } from './ui/NoteSection';
 import { Button } from './ui/Button';
-import type { NoteType, VisitType } from '@/lib/types';
+import type { NoteType, NoteVerbosity, VisitType } from '@/lib/types';
+import { NOTE_VERBOSITY_OPTIONS } from '@/lib/note-verbosity';
 
 export interface StartVisitState {
   visit_type: VisitType | '';
   note_type: NoteType;
+  // Per-visit note-length override; '' = the doctor's default from settings.
+  note_verbosity: NoteVerbosity | '';
   chief_complaint: string;
 }
 
 export const EMPTY_START_VISIT: StartVisitState = {
   visit_type: '',
   note_type: 'consultation',
+  note_verbosity: '',
   chief_complaint: '',
 };
 
@@ -68,6 +72,21 @@ export default function StartVisitCard({ state, onChange, onStartVisit, isSaving
           onPick={(v) => set('note_type', v)}
         />
       </CardSection>
+
+      {state.note_type === 'consultation' && (
+        <CardSection title="Дължина на записа" icon="file-text">
+          <PillRow
+            options={NOTE_VERBOSITY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            isActive={(v) => state.note_verbosity === v}
+            onPick={(v) => set('note_verbosity', state.note_verbosity === v ? '' : v)}
+          />
+          <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+            {state.note_verbosity
+              ? 'Само за този преглед. Съдържанието е същото — различна е дължината на текста.'
+              : 'Без избор — дължината от настройките на профила.'}
+          </p>
+        </CardSection>
+      )}
 
       <CardSection title="Повод за посещението" icon="message-square">
         <textarea

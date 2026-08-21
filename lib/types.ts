@@ -308,6 +308,10 @@ export type VisitType      = 'first' | 'followup' | 'urgent' | 'preventive' | 'r
 // 'consultation' = the Амбулаторен лист; 'echo' = the echocardiography readout
 // (no diagnosis/МКБ shape). Default 'consultation' everywhere.
 export type NoteType       = 'consultation' | 'echo';
+// Note length (backend migration 028 / lib/note-verbosity.js). Prompt-level
+// only: the free-prose fields change wording, never coverage; structured
+// fields never change. 'tochno' is the default and today's behaviour.
+export type NoteVerbosity  = 'kratko' | 'tochno' | 'podrobno';
 export type Locale         = 'bg';
 
 export interface VisitStartPayload {
@@ -316,6 +320,9 @@ export interface VisitStartPayload {
   // Document template. Omitted/'consultation' → the default Амбулаторен лист;
   // the backend only writes the column for non-default rows (visits/start).
   note_type?: NoteType | null;
+  // Per-visit note-length override. Omitted/null → the doctor's default
+  // (doctors.note_verbosity); the backend writes the column only when set.
+  note_verbosity?: NoteVerbosity | null;
 }
 
 export interface VisitStartResponse {

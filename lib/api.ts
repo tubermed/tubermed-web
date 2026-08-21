@@ -17,6 +17,7 @@ import type {
   RetryExtractionResponse,
   FailedTranscriptResponse,
   StreamKeyResponse,
+  NoteVerbosity,
 } from './types';
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL!;
@@ -239,6 +240,9 @@ export interface MeResponse {
   // Doctor's self-reported manual-documentation minutes/visit (migration 019).
   // ABSENT when 019 isn't applied; null when applied but unset; number when set.
   baseline_doc_minutes?: number | null;
+  // The doctor's default note length (migration 028). ABSENT when 028 isn't
+  // applied; otherwise always resolved ('tochno' for an unset row).
+  note_verbosity?: NoteVerbosity;
 }
 
 // GET /api/auth/me/value-stats (JWT) — B2 value card, now minutes-saved.
@@ -271,6 +275,7 @@ export interface UpdateMePayload {
   consultations_band?: ConsultationsBand;
   onboarding_completed?: boolean;
   baseline_doc_minutes?: number;
+  note_verbosity?: NoteVerbosity;
 }
 
 // POST /api/auth/change-password (JWT). Email-auth doctors only — a PIN-only

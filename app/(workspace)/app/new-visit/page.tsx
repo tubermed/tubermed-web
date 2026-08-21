@@ -109,6 +109,7 @@ export default function NewVisitPage() {
         chief_complaint: card.chief_complaint.trim() || null,
         visit_type: card.visit_type || null,
         note_type: card.note_type,
+        note_verbosity: card.note_type === 'consultation' && card.note_verbosity ? card.note_verbosity : null,
       });
 
       const pending: PendingVisit = {

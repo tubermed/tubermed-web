@@ -27,6 +27,9 @@ import { NoteSectionHead } from '@/components/ui/NoteSection';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Field, TextInput } from '@/components/ui/Field';
 import { Button } from '@/components/ui/Button';
+import { Segmented } from '@/components/ui/Segmented';
+import type { NoteVerbosity } from '@/lib/types';
+import { NOTE_VERBOSITY_OPTIONS, NOTE_VERBOSITY_DEFAULT, isNoteVerbosity } from '@/lib/note-verbosity';
 
 const APP_VERSION = '0.1.0';
 // Placeholder support address — confirm the real one before pilot. Claim-free:
@@ -48,6 +51,9 @@ interface ProfileForm {
   // onboarding or here for already-onboarded doctors. Stored as a string for
   // the number input; converted to an int on save (see saveProfile).
   baseline_doc_minutes: string;
+  // Default note length (migration 028). '' = not loaded / column absent —
+  // the control renders only once the server has said which it is.
+  note_verbosity: NoteVerbosity | '';
 }
 
 const EMPTY_FORM: ProfileForm = {
@@ -60,6 +66,7 @@ const EMPTY_FORM: ProfileForm = {
   practice_phone: '',
   uin: '',
   baseline_doc_minutes: '',
+  note_verbosity: '',
 };
 
 function formFromMe(m: MeResponse): ProfileForm {
@@ -73,6 +80,7 @@ function formFromMe(m: MeResponse): ProfileForm {
     practice_phone: m.practice_phone ?? '',
     uin: m.uin ?? '',
     baseline_doc_minutes: m.baseline_doc_minutes != null ? String(m.baseline_doc_minutes) : '',
+    note_verbosity: isNoteVerbosity(m.note_verbosity) ? m.note_verbosity : '',
   };
 }
 
@@ -187,6 +195,11 @@ export default function SettingsPage() {
     if (curBaseline !== loadedBaseline && curBaseline !== '') {
       const bn = Number(curBaseline);
       if (Number.isInteger(bn) && bn >= 1 && bn <= 60) payload.baseline_doc_minutes = bn;
+    }
+
+    // Closed-list field: send only a real, changed value (never blanks).
+    if (form.note_verbosity && form.note_verbosity !== me?.note_verbosity) {
+      payload.note_verbosity = form.note_verbosity;
     }
 
     if (Object.keys(payload).length === 0) {
@@ -353,6 +366,20 @@ export default function SettingsPage() {
                     placeholder="напр. 8"
                   />
                 </Field>
+                {me?.note_verbosity !== undefined && (
+                  <Field label="Дължина на записа">
+                    <Segmented
+                      ariaLabel="Дължина на записа"
+                      options={NOTE_VERBOSITY_OPTIONS.map((o) => ({ value: o.value, content: o.label }))}
+                      value={form.note_verbosity || NOTE_VERBOSITY_DEFAULT}
+                      onChange={(v) => setField('note_verbosity', v)}
+                    />
+                    <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                      {NOTE_VERBOSITY_OPTIONS.find((o) => o.value === (form.note_verbosity || NOTE_VERBOSITY_DEFAULT))?.hint}
+                      {' '}Същото клинично съдържание, различна дължина — важи за анамнезата, находките и терапията; кодове, медикаменти и показатели не се променят. Може да се смени за отделен преглед при започването му.
+                    </p>
+                  </Field>
+                )}
               </div>
               {saveBar}
             </Pane>
