@@ -402,8 +402,19 @@ export interface ConsultationDetail {
   note: TranscribeFields | null;
 }
 
+// Which sections the DOCTOR has edited, derived server-side from the withheld
+// ai_original_fields snapshot vs the working copy (backend lib/fields-touched.js,
+// 2026-08-21). true = edited (no tint); false = still the model's wording
+// (tinted). `null` = the row has no snapshot (pre-migration-004 / erased) → no
+// tint at all. Booleans only — the server pins the shape. READ-ONLY to the
+// client: derived server-side, never authored or posted back; it is a SIBLING
+// of `consultation`, never part of `note`, precisely so /edit can't carry it.
+export type FieldsTouched = Record<string, boolean>;
+
 export interface ConsultationDetailResponse {
   consultation: ConsultationDetail;
+  // ABSENT on an older backend; null when the row has no snapshot.
+  fields_touched?: FieldsTouched | null;
 }
 
 // Stored in sessionStorage to carry visit context from /app/new-visit
@@ -478,6 +489,9 @@ export interface EditConsultationResponse {
   mkb_review?: MkbReview | null;
   osnovna_mkb_term?: string | null;
   osnovna_mkb_term_source?: 'exact' | 'parent' | null;
+  // Derived after the edit landed (see FieldsTouched). Absent on failure or
+  // on the echo document — the client keeps its optimistic state then.
+  fields_touched?: FieldsTouched | null;
 }
 
 // Response from POST /api/consultations/:id/patient-summary (A2).

@@ -61,6 +61,18 @@
   --color-gold:      #B7791F;
   --color-gold-soft: #F7EDDA;
 
+  /* AI-AUTHORED = a FOURTH family, not a member of the three above (2026-08-21).
+     It says „the model wrote this section and the doctor has not touched it"
+     — a fact we hold (ai_original_fields vs the working copy), not a
+     confidence. Blue because it is provenance, like the source highlight; its
+     own tokens because it is NOT the source highlight, and a tint written
+     against --color-brand-light would change meaning the day brand-light is
+     re-tuned (the exact drift the gold comment above records). Surface tint +
+     dot; the tint clears the moment the doctor edits the section. Screen
+     only — neutralised in the print stylesheet; the exporters never see the DOM. */
+  --color-ai-tint: #EEF4FB;
+  --color-ai-dot:  #2F5C8F;
+
   /* OK/red kept as aliases on the new palette */
   --color-red:      #C0392B;
   --color-red-soft: #F6E4E1;
@@ -644,6 +656,15 @@ html, body {
     border: none !important;
     padding: 0 !important;
   }
+  /* The AI-authored tint is a screen affordance only — Ctrl+P prints the live
+     note, so the surface and the dot are both removed here. */
+  .ai-authored {
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  .ai-authored::before {
+    display: none !important;
+  }
   @page {
     margin: 18mm 16mm;
   }
@@ -653,6 +674,33 @@ html, body {
    two must never be separated, which is why they sit adjacent. */
 .print-only {
   display: none;
+}
+
+/* AI-authored section (see the --color-ai-* tokens): a surface tint over the
+   section host and one dot in its top-right corner. Decorative by design —
+   no text, no ARIA; the pseudo-element exists only on screen and is never part
+   of a copy, export or print surface. The transition is the „clears the moment
+   the doctor edits" affordance; reduced-motion collapses it. */
+.ai-authored {
+  position: relative;
+  background: var(--color-ai-tint);
+  border-radius: 12px;
+  box-shadow: inset 3px 0 0 var(--color-ai-dot);
+  transition: background 240ms ease-out, box-shadow 240ms ease-out;
+}
+.ai-authored::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-ai-dot);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-authored { transition: none; }
 }
 
 /* ── Workspace sidebar (components/ClinicSidebar.tsx) ─────────

@@ -21,7 +21,7 @@
 
 import { useEffect, useState } from 'react';
 import { api, ApiError, clearSession } from '@/lib/api';
-import type { PendingVisit, TranscribeFields } from '@/lib/types';
+import type { FieldsTouched, PendingVisit, TranscribeFields } from '@/lib/types';
 
 export type RecoveryPage = 'scribe' | 'result';
 
@@ -33,6 +33,9 @@ export type ColdStartRecovery =
       status: string;
       pendingVisit: PendingVisit;
       note: TranscribeFields | null;
+      // Which sections the doctor has edited (see FieldsTouched in types).
+      // undefined = older backend; null = no snapshot on the row.
+      fieldsTouched: FieldsTouched | null | undefined;
       // Lifecycle state the result page cannot infer from `note` alone.
       //
       // noteApproved: without it the page reopened every filed note as
@@ -119,7 +122,7 @@ export function useColdStartRecovery(
 
     (async () => {
       try {
-        const { consultation } = await api.getConsultation(visitId);
+        const { consultation, fields_touched } = await api.getConsultation(visitId);
 
         const dest = decide(
           page,
@@ -151,6 +154,7 @@ export function useColdStartRecovery(
           status: consultation.status,
           pendingVisit,
           note: consultation.note,
+          fieldsTouched: fields_touched,
           // ?? defaults keep an older backend (one that predates these keys)
           // rendering exactly as it does today: unapproved, unsealed, unerased.
           noteApproved: consultation.note_approved ?? false,

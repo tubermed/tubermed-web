@@ -25,6 +25,7 @@ import { resolveResultBootstrap } from '@/lib/result-identity';
 import type {
   TranscribeResult,
   TranscribeFields,
+  FieldsTouched,
   ComorbidDiagnosis,
   Medication,
   PendingVisit,
@@ -295,6 +296,15 @@ function ResultPageInner() {
   const [pendingVisit, setPendingVisit] = useState<PendingVisit | null>(null);
   const [original, setOriginal] = useState<TranscribeResult | null>(null);
   const [fields, setFields] = useState<TranscribeFields>({});
+  // AI-provenance tint state (2026-08-21). serverTouched is the backend's
+  // derived map (FieldsTouched): undefined = not known yet / older backend,
+  // null = the row has no snapshot (pre-migration rows — no tint by design),
+  // else true = the doctor edited that key. localTouched is the optimistic
+  // overlay: a key the doctor edited in THIS session clears its tint on the
+  // keystroke, 1500 ms before /edit lands and whatever the server later says.
+  // The tint is the AND of „server says untouched" and „not edited locally".
+  const [serverTouched, setServerTouched] = useState<FieldsTouched | null | undefined>(undefined);
+  const [localTouched, setLocalTouched] = useState<Set<string>>(() => new Set());
   // What shapeNote() had to repair on the way in. Only the LOSSY ones are shown
   // (see lossyRepairs) — a `[]` → `''` fix loses nothing, and a note that flags
   // itself for nothing teaches the doctor to ignore the flag.
@@ -437,6 +447,11 @@ function ResultPageInner() {
       setFields(shaped.fields);
       setShapeRepairs(shaped.repairs);
     }
+    // A note arriving straight from generation is, by construction, entirely
+    // the model's: the backend writes ai_original_fields and extracted_fields
+    // identically at that moment. Seed „all untouched"; the ?visit= reconcile
+    // below replaces this with the server's derived map whenever it runs.
+    setServerTouched(Object.fromEntries(AI_TINT_KEYS.map((k) => [k, false])));
     // Visit-header context rides along only when it belongs to the same
     // consultation as the blob (null otherwise — render without the header).
     setPendingVisit(decision.pendingVisit);
@@ -505,6 +520,8 @@ function ResultPageInner() {
         setFields(shaped.fields);
         setShapeRepairs(shaped.repairs);
       }
+      // undefined (older backend) and null (no snapshot) both mean: no tint.
+      setServerTouched(recovery.fieldsTouched ?? null);
       setPendingVisit(recovery.pendingVisit);
       // Restore the SERVER's lifecycle state. Without this the page reopened
       // every filed note as unconfirmed and locked Копирай/Печат/PDF on a note
@@ -546,8 +563,11 @@ function ResultPageInner() {
     let cancelled = false;
     (async () => {
       try {
-        const { consultation } = await api.getConsultation(reconcileVisitId);
+        const { consultation, fields_touched } = await api.getConsultation(reconcileVisitId);
         if (cancelled) return;
+        // Adopted before either bail-out: the tint is lifecycle-like state
+        // the blob cannot carry. Local edits stay cleared via localTouched.
+        setServerTouched(fields_touched ?? null);
 
         // Lifecycle state is adopted FIRST, before either bail-out below: these
         // are server facts about the row, not a paint that could clobber a live
@@ -665,6 +685,9 @@ function ResultPageInner() {
           osnovna_mkb_term:        resp.osnovna_mkb_term ?? undefined,
           osnovna_mkb_term_source: resp.osnovna_mkb_term_source ?? undefined,
         }));
+        // Server-authoritative provenance after the edit landed; absent on
+        // failure / echo, in which case the optimistic overlay stands.
+        if (resp.fields_touched !== undefined) setServerTouched(resp.fields_touched);
       })
       .catch((err) => {
         if (err instanceof ApiError) {
@@ -698,6 +721,8 @@ function ResultPageInner() {
       // must NOT be invalidated below (that would lock the exports on a note
       // that can never be re-approved by editing).
       if (bodyReadOnly) return;
+      // Editing IS the attestation: the section's tint clears on this keystroke.
+      setLocalTouched((prev) => (prev.has(fieldKey) ? prev : new Set(prev).add(fieldKey)));
       pendingEditField.current = fieldKey;
       pendingCharsChangedRef.current = charsChanged;
       // Live per-field rollup map. Overwrite (not add) so the latest
@@ -950,6 +975,23 @@ function ResultPageInner() {
     }
     return map;
   }, [fields.field_sources, original]);
+
+  // Is this section still the model's, untouched? True only when the server
+  // could derive it (a snapshot exists), says every listed key is untouched,
+  // the doctor has not edited any of them here, and there is actually content
+  // to have written — an empty section was not „written by AI".
+  const aiAuthored = useCallback(
+    (...keys: AiTintKey[]) => {
+      if (!serverTouched) return false;
+      const hasContent = keys.some((k) => {
+        const v = fields[k];
+        return Array.isArray(v) ? v.length > 0 : typeof v === 'string' ? v.trim().length > 0 : false;
+      });
+      if (!hasContent) return false;
+      return keys.every((k) => serverTouched[k] === false && !localTouched.has(k));
+    },
+    [serverTouched, localTouched, fields],
+  );
 
   const reviewItems = useMemo(() => {
     // Unified review counter: vital-range / transcription highlights AND
@@ -1937,6 +1979,9 @@ function ResultPageInner() {
               </SectionBoundary>
             ) : (
             <>
+            {/* The diagnoses card is ONE section for the tint: it clears on an
+                edit to the main diagnosis, its code, or a comorbidity. */}
+            <div className={aiAuthored('osnovna_diagnoza', 'osnovna_mkb', 'pridruzhavashti') ? 'ai-authored' : undefined} data-ai-authored={aiAuthored('osnovna_diagnoza', 'osnovna_mkb', 'pridruzhavashti') || undefined}>
             <SectionBoundary title="Диагнози">
             <DiagnosesSection
               osnovnaDiagnoza={fields.osnovna_diagnoza || ''}
@@ -1968,11 +2013,13 @@ function ResultPageInner() {
               notifyCopy={notifyCopy}
             />
             </SectionBoundary>
+            </div>
 
             <TextSection
               id="sec-anamneza"
               title="Анамнеза"
               icon="file-text"
+              aiAuthored={aiAuthored('anamneza')}
               fieldKey="anamneza"
               value={fields.anamneza || ''}
               onChange={(v) => updateField('anamneza', v)}
@@ -2003,6 +2050,7 @@ function ResultPageInner() {
                 notice with nothing on screen to point at is not a notice.
                 Advisory only — no approval gate, same standing as
                 uncertain_spans. */}
+            <div className={aiAuthored('alergii') ? 'ai-authored' : undefined} data-ai-authored={aiAuthored('alergii') || undefined}>
             <SectionBoundary title="Алергии">
               <AllergiesSection
                 fields={fields}
@@ -2011,11 +2059,13 @@ function ResultPageInner() {
                 readOnly={bodyReadOnly}
               />
             </SectionBoundary>
+            </div>
 
             <TextSection
               id="sec-obektivno"
               title="Обективно състояние"
               icon="stethoscope"
+              aiAuthored={aiAuthored('obektivno')}
               fieldKey="obektivno"
               value={fields.obektivno || ''}
               onChange={(v) => updateField('obektivno', v)}
@@ -2078,7 +2128,7 @@ function ResultPageInner() {
                   )}
 
                 {visibleSections['sec-rezultati'] && (
-                  <div id="sec-rezultati" className="mb-4 scroll-mt-24">
+                  <div id="sec-rezultati" className={aiAuthored('izsledvania') ? 'mb-4 scroll-mt-24 ai-authored' : 'mb-4 scroll-mt-24'} data-ai-authored={aiAuthored('izsledvania') || undefined}>
                     <div className="flex items-center justify-between gap-2">
                       <SubsectionHead title="Резултати от изследвания" />
                       <div className="flex items-center gap-2">
@@ -2104,7 +2154,7 @@ function ResultPageInner() {
                 )}
 
                 {visibleSections['sec-naznacheni'] && (
-                  <div id="sec-naznacheni" className="scroll-mt-24">
+                  <div id="sec-naznacheni" className={aiAuthored('naznacheni') ? 'scroll-mt-24 ai-authored' : 'scroll-mt-24'} data-ai-authored={aiAuthored('naznacheni') || undefined}>
                     <div className="flex items-center justify-between gap-2">
                       <SubsectionHead icon="flask" title="Назначени изследвания" />
                       <div className="flex items-center gap-2">
@@ -2150,6 +2200,7 @@ function ResultPageInner() {
               id="sec-terapia"
               title="Терапия"
               icon="pill"
+              aiAuthored={aiAuthored('terapia')}
               fieldKey="terapia"
               value={fields.terapia || ''}
               onChange={(v) => updateField('terapia', v)}
@@ -2207,7 +2258,7 @@ function ResultPageInner() {
                 />
 
                 {visibleSections['sec-napravlenia'] && (
-                  <div id="sec-napravlenia" className="scroll-mt-24">
+                  <div id="sec-napravlenia" className={aiAuthored('napravlenia') ? 'scroll-mt-24 ai-authored' : 'scroll-mt-24'} data-ai-authored={aiAuthored('napravlenia') || undefined}>
                     <div className="flex items-center justify-between gap-2">
                       <SubsectionHead icon="clipboard" title="Направления за консултация" />
                       <div className="flex items-center gap-2">
@@ -2260,6 +2311,7 @@ function ResultPageInner() {
                 prescribes nothing, so it has no medications_list / med_alerts. */}
             {!isEcho && (
             <>
+            <div className={aiAuthored('medications_list') ? 'ai-authored' : undefined} data-ai-authored={aiAuthored('medications_list') || undefined}>
             <SectionBoundary title="Медикаменти">
             <MedsPanel
               meds={fields.medications_list || []}
@@ -2284,6 +2336,7 @@ function ResultPageInner() {
               }}
             />
             </SectionBoundary>
+            </div>
 
             {warnings.length > 0 && (
               <div
@@ -2981,6 +3034,15 @@ function SubsectionHead({ title, icon }: { title: string; icon?: IconName }) {
   );
 }
 
+// Keys the AI-provenance tint tracks — the doctor-editable set, mirroring the
+// backend's TOUCHED_KEYS (lib/fields-touched.js). Derived keys (mkb_term,
+// field_sources, uncertain_spans…) are never tinted: /edit re-derives them.
+const AI_TINT_KEYS = [
+  'anamneza', 'obektivno', 'izsledvania', 'terapia', 'napravlenia', 'naznacheni',
+  'osnovna_diagnoza', 'osnovna_mkb', 'alergii', 'medications_list', 'pridruzhavashti',
+] as const;
+type AiTintKey = (typeof AI_TINT_KEYS)[number];
+
 function TextSection({
   id,
   title,
@@ -2994,6 +3056,7 @@ function TextSection({
   onAcknowledgeUncertain,
   headerRight,
   readOnly = false,
+  aiAuthored = false,
 }: {
   id: string;
   title: string;
@@ -3008,6 +3071,8 @@ function TextSection({
   headerRight?: React.ReactNode;
   /** Sealed лист — the section renders as a document (see EditableField). */
   readOnly?: boolean;
+  /** Still the model's wording, untouched by the doctor → blue tint + dot. */
+  aiAuthored?: boolean;
 }) {
   // The boundary sits INSIDE the section, not around each call site: this is
   // the choke point every narrative section already flows through, and the
@@ -3016,7 +3081,7 @@ function TextSection({
   // OUTSIDE it so the section keeps its scrollspy anchor even when its body
   // fails — a section that vanished from the nav would be a second bug.
   return (
-    <div id={id} className="scroll-mt-24">
+    <div id={id} className={aiAuthored ? 'scroll-mt-24 ai-authored' : 'scroll-mt-24'} data-ai-authored={aiAuthored || undefined}>
       <SectionBoundary title={title}>
         <SectionHead title={title} icon={icon} actions={headerRight} />
         <EditableField
