@@ -29,7 +29,7 @@ import { Field, TextInput } from '@/components/ui/Field';
 import { Button } from '@/components/ui/Button';
 import { Segmented } from '@/components/ui/Segmented';
 import type { NoteVerbosity } from '@/lib/types';
-import { NOTE_VERBOSITY_OPTIONS, NOTE_VERBOSITY_DEFAULT, isNoteVerbosity } from '@/lib/note-verbosity';
+import { NOTE_VERBOSITY_OPTIONS, NOTE_VERBOSITY_DEFAULT, NOTE_VERBOSITY_ENABLED, isNoteVerbosity } from '@/lib/note-verbosity';
 
 const APP_VERSION = '0.1.0';
 // Placeholder support address — confirm the real one before pilot. Claim-free:
@@ -366,7 +366,7 @@ export default function SettingsPage() {
                     placeholder="напр. 8"
                   />
                 </Field>
-                {me?.note_verbosity !== undefined && (
+                {NOTE_VERBOSITY_ENABLED && me?.note_verbosity !== undefined && (
                   <Field label="Дължина на записа">
                     <Segmented
                       ariaLabel="Дължина на записа"

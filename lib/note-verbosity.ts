@@ -9,6 +9,20 @@
 
 import type { NoteVerbosity } from './types';
 
+// ── FLAG: NEXT_PUBLIC_NOTE_VERBOSITY — OFF by default (2026-08-21) ──────────
+// The backend's coverage gate was not passed on held-out fixtures (see
+// tubermed-backend lib/note-verbosity.js, NOTE_VERBOSITY). Until it is, no
+// control renders: a doctor must not be offered a choice that the server
+// ignores. Same shape and fail-safe direction as lib/clinical-alerts.ts —
+// Next inlines the env at build, so an unset or misspelled value is OFF.
+// Flip BOTH flags together.
+const ON_VALUES = new Set(['1', 'true', 'on', 'yes']);
+export function noteVerbosityEnabled(): boolean {
+  const raw = (process.env.NEXT_PUBLIC_NOTE_VERBOSITY ?? '').trim().toLowerCase();
+  return ON_VALUES.has(raw);
+}
+export const NOTE_VERBOSITY_ENABLED = noteVerbosityEnabled();
+
 export const NOTE_VERBOSITY_DEFAULT: NoteVerbosity = 'tochno';
 
 export const NOTE_VERBOSITY_OPTIONS: Array<{ value: NoteVerbosity; label: string; hint: string }> = [

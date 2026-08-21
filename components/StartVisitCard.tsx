@@ -11,7 +11,7 @@ import { Icon, type IconName } from '@/components/ui/Icon';
 import { NoteSectionHead } from './ui/NoteSection';
 import { Button } from './ui/Button';
 import type { NoteType, NoteVerbosity, VisitType } from '@/lib/types';
-import { NOTE_VERBOSITY_OPTIONS } from '@/lib/note-verbosity';
+import { NOTE_VERBOSITY_OPTIONS, NOTE_VERBOSITY_ENABLED } from '@/lib/note-verbosity';
 
 export interface StartVisitState {
   visit_type: VisitType | '';
@@ -73,7 +73,7 @@ export default function StartVisitCard({ state, onChange, onStartVisit, isSaving
         />
       </CardSection>
 
-      {state.note_type === 'consultation' && (
+      {NOTE_VERBOSITY_ENABLED && state.note_type === 'consultation' && (
         <CardSection title="Дължина на записа" icon="file-text">
           <PillRow
             options={NOTE_VERBOSITY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
