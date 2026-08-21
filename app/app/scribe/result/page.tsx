@@ -992,6 +992,20 @@ function ResultPageInner() {
     },
     [serverTouched, localTouched, fields],
   );
+  // Embedded investigation blocks are keyed per block (`izsledvania_blocks.<i>`,
+  // one per block the model wrote); their edits reach trackEdit as dotted
+  // paths under that prefix, so a local edit anywhere inside the block clears
+  // the whole card. A block the doctor added has no key and never tints.
+  const aiAuthoredBlock = useCallback(
+    (i: number) => {
+      if (!serverTouched) return false;
+      const key = `izsledvania_blocks.${i}`;
+      if (serverTouched[key] !== false) return false;
+      for (const k of localTouched) if (k === key || k.startsWith(key + '.')) return false;
+      return true;
+    },
+    [serverTouched, localTouched],
+  );
 
   const reviewItems = useMemo(() => {
     // Unified review counter: vital-range / transcription highlights AND
@@ -2107,22 +2121,27 @@ function ResultPageInner() {
 
                 {/* Embedded investigation blocks (izsledvania_blocks) — one
                     titled card per block, ahead of the free-text remainder.
-                    Absent on every row the backend emits today → this maps
-                    over nothing and old rows render exactly as before.
+                    ABSENT (never []) on rows without one, so old rows render
+                    exactly as before; present on mixed visits (C8) — the
+                    backend emits them whenever a dictated readout is found.
                     Edits address `izsledvania_blocks.${i}.fields.${path}` and
                     flow through the same debounced /edit flush as every other
-                    field (editing is never gated on isLocked — see the card). */}
+                    field (editing is never gated on isLocked — see the card).
+                    Each card is its own AI-provenance host: model-written
+                    instrument readouts are exactly where an unreviewed value
+                    matters most. */}
                 {Array.isArray(fields.izsledvania_blocks) &&
                   fields.izsledvania_blocks.length > 0 && (
                     <div className="mb-4 space-y-4">
                       {fields.izsledvania_blocks.map((b, i) => (
+                        <div key={i} className={aiAuthoredBlock(i) ? 'ai-authored' : undefined} data-ai-authored={aiAuthoredBlock(i) || undefined}>
                         <InvestigationBlockCard
-                          key={i}
                           block={b}
                           onEditText={(p, v) => updateBlockText(i, p, v)}
                           onEditMeasurement={(p, m) => updateBlockMeasurement(i, p, m)}
                           sealed={bodyReadOnly}
                         />
+                        </div>
                       ))}
                     </div>
                   )}

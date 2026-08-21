@@ -101,6 +101,8 @@ test('fields_touched is read-only: never posted on /edit, a sibling of the note,
 test('every doctor-editable key has a tint host, and the host carries no text', () => {
   assert.ok(P.everyKeyHosted(RESULT, TINT_KEYS), 'a key without aiAuthored(...) wiring would silently never tint');
   assert.ok(P.hostCarriesNoText(RESULT));
+  // Embedded investigation blocks (model-written readouts) get a per-block host.
+  assert.match(RESULT, /data-ai-authored={aiAuthoredBlock(i) || undefined}/, 'each izsledvania_blocks card must be a tint host');
   // Editing is the attestation: the optimistic clear must live in trackEdit.
   const i = RESULT.indexOf('const trackEdit = useCallback');
   assert.match(RESULT.slice(i, i + 1200), /setLocalTouched/);
