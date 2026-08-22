@@ -67,9 +67,21 @@ const P = {
     const inset = m[2].match(/inset:\s*([^;]+);/);
     if (!inset) return false;
     const sides = inset[1].trim().split(/\s+/);
-    if (sides.length < 1 || sides.length > 4 || !sides.every((v) => /^-\d+px$/.test(v))) return false;
+    // ascii-safe: CSS lengths, digits only
+    if (sides.length < 1 || sides.length > 4 || !sides.every((v) => /^-[0-9]+px$/.test(v))) return false;
     const host = css.match(/(^|\n)\.ai-authored\s*\{([^}]*)\}/);
     return !!host && !/padding/.test(host[2]) && /isolation:\s*isolate/.test(host[2]);
+  },
+  /** The surface is an overlay ABOVE the content (multiply, z-index ≥ 0), not a
+   *  layer behind it: two hosts wrap an opaque card, which would cover a
+   *  surface painted underneath and leave a halo no source predicate can see. */
+  surfaceIsOverlay(css: string): boolean {
+    const m = css.match(/(^|\n)\.ai-authored::after\s*\{([^}]*)\}/);
+    if (!m) return false;
+    const z = m[2].match(/z-index:\s*(-?[0-9]+)/); // ascii-safe: an integer
+    return !!z && Number(z[1]) >= 0
+      && /mix-blend-mode:\s*multiply/.test(m[2])
+      && /pointer-events:\s*none/.test(m[2]);
   },
   /** The tint tokens are named, not borrowed from brand/gold. */
   tintHasOwnTokens(css: string): boolean {
@@ -109,6 +121,7 @@ test('the tint is defined on screen with its own tokens and neutralised in @medi
   assert.ok(P.tintDefinedOnScreen(CSS), '.ai-authored::after surface + ::before dot must exist outside @media print');
   assert.ok(P.tintNeutralisedInPrint(CSS), 'Ctrl+P prints the live note: the surface and the dot must be removed inside @media print');
   assert.ok(P.surfaceHasOwnSpacing(CSS), 'the surface must extend past the host (negative inset) with no host padding');
+  assert.ok(P.surfaceIsOverlay(CSS), 'the surface must be a multiply overlay above the content, never z-index:-1 behind an opaque card');
 });
 
 // ── 2. Copy / export / the page ─────────────────────────────────────────────
@@ -149,6 +162,12 @@ test('RED PROOF — every predicate rejects the regression it guards', () => {
   assert.equal(P.surfaceHasOwnSpacing(CSS.replace('inset: -8px -14px -6px;', 'inset: -8px 0 -6px;')), false);
   assert.equal(P.surfaceHasOwnSpacing(CSS.replace('isolation: isolate;', 'isolation: isolate;\n  padding: 8px 14px;')), false);
   assert.equal(P.surfaceHasOwnSpacing(CSS.replace('isolation: isolate;', 'isolation: auto;')), false);
+  // Overlay: the occluded shape (behind the content), a normal-blend one (washes the text), a click-eating one.
+  const OVERLAY = 'z-index: 1;\n  mix-blend-mode: multiply;';
+  assert.ok(CSS.includes(OVERLAY), 'overlay declarations drifted — re-anchor the red proof');
+  assert.equal(P.surfaceIsOverlay(CSS.replace(OVERLAY, 'z-index: -1;\n  mix-blend-mode: multiply;')), false);
+  assert.equal(P.surfaceIsOverlay(CSS.replace(OVERLAY, 'z-index: 1;\n  mix-blend-mode: normal;')), false);
+  assert.equal(P.surfaceIsOverlay(CSS.replace(OVERLAY, 'z-index: 1;\n  mix-blend-mode: multiply;\n  pointer-events: auto;').replace('  pointer-events: none;\n}\n.ai-authored::before', '}\n.ai-authored::before')), false);
   assert.equal(P.tintHasOwnTokens(CSS.replace('--color-ai-tint:', '--color-ai-tint-x:')), false);
   assert.equal(P.exportersBlindToTint(EXPORTERS + "\nconst leak = document.querySelector('.ai-authored');"), false);
   assert.equal(P.exportersBlindToTint(EXPORTERS + '\n// fields_touched mentioned only here\nconst x = fields_touched;'), false);

@@ -679,8 +679,8 @@ html, body {
    of a copy, export or print surface. */
 .ai-authored {
   position: relative;
-  /* Own stacking context so the ::after surface can sit at z-index:-1 —
-     under the section's text, above the white card behind it. */
+  /* Own stacking context: bounds the ::after overlay's blend group to this
+     host, so it multiplies with the section's own content and nothing else. */
   isolation: isolate;
 }
 /* The surface is a pseudo-element that extends PAST the host box (the host
@@ -688,12 +688,21 @@ html, body {
    tint painted on the host itself sits hard against the text and reads as a
    rendering glitch). Painting the breathing room on ::after instead of as
    host padding means the host's layout is identical tinted or not — when the
-   doctor's edit clears the class nothing moves under the caret. */
+   doctor's edit clears the class nothing moves under the caret.
+
+   It sits ABOVE the content as a multiply overlay, not behind it at z-index
+   -1: two hosts wrap an opaque card (MedsPanel is bg-white, the embedded
+   investigation card is --color-bg) which would cover a surface painted
+   underneath and leave a halo — every source predicate green, nothing
+   visible (the fresh-context refuter's find, 2026-08-22). Multiply over white
+   is the tint, over the grey card a tinted grey, over text a blue so faint it
+   is not legible as a change; pointer-events:none keeps the click-to-edit. */
 .ai-authored::after {
   content: '';
   position: absolute;
   inset: -8px -14px -6px;
-  z-index: -1;
+  z-index: 1;
+  mix-blend-mode: multiply;
   background: var(--color-ai-tint);
   border-radius: 12px;
   /* No inset bar: NoteSectionHead already draws a 3px accent bar beside the
@@ -703,6 +712,7 @@ html, body {
 .ai-authored::before {
   content: '';
   position: absolute;
+  z-index: 2;
   top: -1px;
   right: -5px;
   width: 8px;

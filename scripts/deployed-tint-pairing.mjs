@@ -6,11 +6,16 @@
 const CSS_LINK = /\/_next\/static\/[^"'\s>]+\.css/g;
 const JS_LINK  = /\/_next\/static\/[^"'\s>]+\.js/g;
 
-export const SURFACE_RULE = /\.ai-authored:{1,2}after\s*\{[^}]*background:\s*var\(--color-ai-tint\)/;
-export const PRINT_RULE   = /@media print\s*\{[^@]*\.ai-authored:{1,2}after[^{}]*\{[^}]*display:\s*none/;
-export const TOKEN        = /--color-ai-tint:\s*#[0-9a-fA-F]{6}/;
-// No `\b`: the repo's ASCII-boundary rule — explicit neighbours instead.
-export const CLASS_IN_JS  = /(^|[^\w-])ai-authored(?![\w-])/;
+// The PAIR predicate is „the class is painted with the tint token", whatever
+// the treatment — host background (7fe2dc2) or ::after overlay (d860e83+).
+// Pinned to one treatment, the probe would also go red against a correctly
+// deployed older sheet, and its red would no longer mean „stale".
+export const SURFACE_RULE = /\.ai-authored(:{1,2}after)?\s*\{[^}]*background:\s*var\(--color-ai-tint\)/;
+export const PRINT_RULE   = /@media print\s*\{[^@]*\.ai-authored(:{1,2}after)?[^{}]*\{[^}]*(display:\s*none|background:\s*(transparent|0 0|none))/;
+export const TOKEN        = /--color-ai-tint:\s*#[0-9a-fA-F]{6}/; // ascii-safe: a hex colour
+// ascii-safe: the neighbours of an ASCII class name in minified JS — a quote,
+// a space, a backtick or the string end; Cyrillic cannot be adjacent to it.
+export const CLASS_IN_JS  = /(^|[^A-Za-z0-9_-])ai-authored(?![A-Za-z0-9_-])/;
 
 /**
  * @param {string} html   the served result shell
@@ -41,9 +46,9 @@ export async function verdict(html, fetchText) {
 
   const problems = [];
   if (!scriptWithClass) problems.push('no linked script carries the ai-authored class (the shell is pre-tint)');
-  if (!sheetWithRule)   problems.push('no linked stylesheet carries .ai-authored::after { background: var(--color-ai-tint) } — stale CSS compile?');
+  if (!sheetWithRule)   problems.push('no linked stylesheet paints .ai-authored with var(--color-ai-tint) — stale CSS compile?');
   if (!sheetWithToken)  problems.push('no linked stylesheet defines --color-ai-tint (the rule would resolve to transparent)');
-  if (!sheetWithPrint)  problems.push('no linked stylesheet hides .ai-authored::after under @media print');
+  if (!sheetWithPrint)  problems.push('no linked stylesheet neutralises .ai-authored under @media print');
 
   if (problems.length) {
     lines.push(`FAIL tint pair — ${problems.join('; ')}`);

@@ -84,3 +84,11 @@ test('RED PROOF — a shell with no stylesheet link is exit 2, never 0', async (
 test('RED PROOF — a linked asset that does not fetch is an error, not a pass', async () => {
   await assert.rejects(verdict(shell([CSS_U], [JS_U]), serve({ [JS_U]: GOOD_JS })), /404/);
 });
+
+test('the 7fe2dc2 treatment (tint on the host itself) is ALSO a pair — red means stale, never „old treatment"', async () => {
+  const HOST_PAINTED = '@layer theme{:root,:host{--color-ai-tint:#eef4fb;--color-ai-dot:#2f5c8f}}'
+    + '@media print{.ai-authored{box-shadow:none!important;background:0 0!important}.ai-authored:before{display:none!important}}'
+    + '.ai-authored{background:var(--color-ai-tint);box-shadow:inset 3px 0 0 var(--color-ai-dot);border-radius:12px;position:relative}';
+  const v = await verdict(shell([CSS_U], [JS_U]), serve({ [CSS_U]: HOST_PAINTED, [JS_U]: GOOD_JS }));
+  assert.equal(v.code, 0, v.lines.join('\n'));
+});
