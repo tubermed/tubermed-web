@@ -3198,7 +3198,9 @@ function MkbDivergenceLine({ review, filedTerm }: { review?: MkbReview; filedTer
   return (
     <div
       data-testid="mkb-divergence"
-      className="text-xs px-3 pt-1 leading-relaxed flex items-start gap-1.5"
+      // no-print: Ctrl+P prints the live page (globals.css print fallback);
+      // the disclosure is a screen surface, the „Печат" button never saw it.
+      className="no-print text-xs px-3 pt-1 leading-relaxed flex items-start gap-1.5"
       style={{ color: 'var(--color-text-muted)' }}
     >
       <span

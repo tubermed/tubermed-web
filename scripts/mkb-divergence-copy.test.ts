@@ -96,3 +96,25 @@ test('the advisory never reaches clipboard, PDF or Word output', () => {
     assert.ok(!/divergence/.test(out), 'nor the raw field');
   }
 });
+
+// ── Refuter finds (2026-08-22) ───────────────────────────────────────────────
+
+test('a placeholder in place of the dictation is not quoted as what the doctor said', () => {
+  // The backend blanks an incidental/undictated main diagnosis to a bracketed
+  // marker and its divergence check does not exclude that marker; after the
+  // doctor picks a code, /edit echoes an advisory whose `diagnoza` IS the
+  // marker. Both backend placeholders are whole-string „[…]" — that shape is
+  // the guard, not a mirrored string that would drift.
+  for (const ph of ['[диагноза не е продиктувана — добави ръчно]', '[Диагноза липсва — добави ръчно]', ' [x] ']) {
+    const r = { needs_review: false, divergence_advisory: { diverged: true, term: TERM, diagnoza: ph } };
+    assert.equal(mkbDivergenceCopy(r, TERM), null, `placeholder ${ph} must not render`);
+  }
+  // Brackets INSIDE a real dictation are not a placeholder.
+  const real = { needs_review: false, divergence_advisory: { diverged: true, term: TERM, diagnoza: 'стенокардия [при усилие]' } };
+  assert.ok(mkbDivergenceCopy(real, TERM));
+});
+
+test('the advisory states the record and gives no instruction (a sealed лист cannot act on one)', () => {
+  const text = mkbDivergenceCopy(diverged, TERM)!;
+  assert.ok(!/проверете|коригирайте|изберете/i.test(text), text);
+});

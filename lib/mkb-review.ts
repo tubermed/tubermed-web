@@ -128,6 +128,14 @@ export function mkbDivergenceCopy(review: MkbReview | null | undefined, filedTer
   const term = typeof a.term === 'string' ? a.term.trim() : '';
   const said = typeof a.diagnoza === 'string' ? a.diagnoza.trim() : '';
   if (!term || !said) return null;
+  // The backend blanks an undictated/incidental main diagnosis to a bracketed
+  // marker („[диагноза не е продиктувана — добави ръчно]") and its divergence
+  // check does not exclude it, so after a code pick /edit can echo an advisory
+  // whose `diagnoza` IS the marker. Quoting that as „what the doctor said" is
+  // a lie; the guard is the whole-string [...] SHAPE, not a mirrored string.
+  if (said.startsWith('[') && said.endsWith(']')) return null;
   if (!sameTerm(term, filedTerm || '')) return null;
-  return `Записаният термин по МКБ-10 „${term}“ се разминава с продиктуваното „${said}“. Проверете дали кодът отразява казаното.`;
+  // A statement about the record only — no instruction, because the same line
+  // renders on a sealed лист where there is nothing left to act on.
+  return `Записаният термин по МКБ-10 „${term}“ се разминава с продиктуваното „${said}“.`;
 }
