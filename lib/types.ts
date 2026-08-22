@@ -94,14 +94,26 @@ export const FIELD_COMPLETENESS_LABELS: Record<FieldCompletenessField, string> =
   duration: 'няма посочена продължителност',
 };
 
-// МКБ code-validity gate state (Bug 1). NOTE: divergence_advisory is deliberately
-// NOT part of the client surface — it must never be shown to the doctor.
+// МКБ code-validity gate state (Bug 1).
 export interface MkbReview {
   needs_review: boolean;
   // 'diagnosis_text_not_grounded' (P0-01): the code is valid but the MAIN diagnosis
   // text isn't supported by the transcript — flagged by the backend grounding pass.
   reason?: 'invalid_code' | 'missing_code' | 'diagnosis_text_not_grounded';
   code?: string;
+  // Recorded by the backend ONLY when the filed МКБ-10 term shares no content
+  // stem with the dictated diagnosis (acute-vs-stable, viral-vs-acute). A
+  // DISCLOSURE, never a gate: it does not touch needs_review, approval or
+  // export. Rendered beside the „доктор каза" line (2026-08-22 ruling,
+  // `mkbDivergenceCopy` in lib/mkb-review.ts); absent or diverged:false →
+  // nothing is shown. Never read by the exporters.
+  divergence_advisory?: MkbDivergenceAdvisory;
+}
+
+export interface MkbDivergenceAdvisory {
+  diverged: boolean;
+  term: string;     // the official register term that was filed
+  diagnoza: string; // the dictated osnovna_diagnoza at extraction time
 }
 
 // ── Echo readout shape (note_type='echo') ────────────────────────────────────

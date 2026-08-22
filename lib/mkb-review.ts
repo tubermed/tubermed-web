@@ -100,3 +100,34 @@ export function mkbCorrectionCopy(c?: MkbCorrection | null): string | null {
       return null;
   }
 }
+
+// ── divergence_advisory → the one line a doctor reads about a mismatched term ─
+//
+// The backend flags a filed МКБ-10 term that shares no content stem with the
+// dictation (I24.9 „Остра исхемична болест на сърцето" on „стенокардия при
+// усилие, съмнение за стабилна форма"). The clinical stake is acuity, and an
+// acute code on an ambulatory list is what an auditor notices — so the doctor
+// sees the mismatch while scanning the diagnosis, not after going looking
+// (2026-08-22 ruling; until then the field was stored and never read).
+//
+// Same line as mkbCorrectionCopy: a statement about the RECORD. No severity,
+// no „невалиден", no „блокиран" — that vocabulary belongs to the needs_review
+// gate, which this never touches. Gold pair, never --color-warn.
+//
+// `filedTerm` is the term currently on the note. The advisory was written at
+// extraction time; if the doctor has since repicked the code the advisory
+// describes a term that is no longer there, and must not render.
+function sameTerm(a: string, b: string): boolean {
+  const n = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+  return n(a) === n(b);
+}
+
+export function mkbDivergenceCopy(review: MkbReview | null | undefined, filedTerm: string): string | null {
+  const a = review?.divergence_advisory;
+  if (!a || a.diverged !== true) return null;
+  const term = typeof a.term === 'string' ? a.term.trim() : '';
+  const said = typeof a.diagnoza === 'string' ? a.diagnoza.trim() : '';
+  if (!term || !said) return null;
+  if (!sameTerm(term, filedTerm || '')) return null;
+  return `Записаният термин по МКБ-10 „${term}“ се разминава с продиктуваното „${said}“. Проверете дали кодът отразява казаното.`;
+}

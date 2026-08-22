@@ -47,7 +47,7 @@ import { loadIal } from '@/lib/ial-meds';
 import { findHighlights } from '@/lib/vital-rules';
 import { findSourceSpan, type SourceSpan } from '@/lib/source-grounding';
 import { storedSpanFor } from '@/lib/field-sources';
-import { mkbReviewCopy, mkbCorrectionCopy } from '@/lib/mkb-review';
+import { mkbReviewCopy, mkbCorrectionCopy, mkbDivergenceCopy } from '@/lib/mkb-review';
 import {
   resolveUncertainSpans,
   UNCERTAIN_FIELDS,
@@ -3184,6 +3184,34 @@ function MkbCorrectionLine({ correction }: { correction?: MkbCorrection }) {
   );
 }
 
+// The filed term contradicts the dictation (acute code on a hedged „стабилна"
+// dictation). A DISCLOSURE beside „доктор каза", not a gate: needs_review,
+// approval and export are untouched, and the exporters never read mkb_review.
+// Same gold AI-uncertainty pair as MkbCorrectionLine — never --color-warn, and
+// never the red needs_review banner, which means „you cannot approve".
+// Renders nothing when the advisory is absent, diverged:false, one-sided, or
+// stale against the term now on the note (all pinned in
+// scripts/mkb-divergence-copy.test.ts).
+function MkbDivergenceLine({ review, filedTerm }: { review?: MkbReview; filedTerm: string }) {
+  const text = mkbDivergenceCopy(review, filedTerm);
+  if (!text) return null;
+  return (
+    <div
+      data-testid="mkb-divergence"
+      className="text-xs px-3 pt-1 leading-relaxed flex items-start gap-1.5"
+      style={{ color: 'var(--color-text-muted)' }}
+    >
+      <span
+        className="mt-[1px] shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide"
+        style={{ background: 'var(--color-gold-soft)', color: 'var(--color-gold)' }}
+      >
+        МКБ
+      </span>
+      <span className="flex-1">{text}</span>
+    </div>
+  );
+}
+
 function DiagnosesSection({
   osnovnaDiagnoza,
   osnovnaMkb,
@@ -3305,6 +3333,7 @@ function DiagnosesSection({
             {mainDiag.parentRubricLine}
           </div>
         )}
+        <MkbDivergenceLine review={mkbReview} filedTerm={mainTerm} />
         <MkbCorrectionLine correction={mkbCorrection} />
         {needsReview && (
           <div
