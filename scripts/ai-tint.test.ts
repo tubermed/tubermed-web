@@ -35,21 +35,41 @@ const TINT_KEYS = [
 
 // ── Predicates (pure; section 3 feeds them broken input) ────────────────────
 const P = {
-  /** Inside @media print, .ai-authored loses its surface AND its ::before dot. */
+  /** Inside @media print, BOTH pseudo-elements — the ::after surface and the
+   *  ::before dot — are display:none. Checked per pseudo, not per rule, so
+   *  splitting or merging the selectors cannot pass one while losing the other. */
   tintNeutralisedInPrint(css: string): boolean {
     const i = css.lastIndexOf('@media print {');
     if (i === -1) return false;
     const block = css.slice(i, css.indexOf('\n}\n', i) + 3);
-    const surface = /\.ai-authored\s*\{[^}]*background:\s*transparent\s*!important[^}]*\}/.test(block);
-    const dot = /\.ai-authored::before\s*\{[^}]*display:\s*none\s*!important/.test(block);
-    return surface && dot;
+    const rules = block.replace(/\/\*[\s\S]*?\*\//g, '').match(/[^{}]+\{[^{}]*\}/g) || [];
+    const hidden = (pseudo: string) => rules.some((r) => {
+      const [sel, body] = r.split('{');
+      return sel.split(',').some((s) => s.trim() === `.ai-authored::${pseudo}`)
+        && /display:\s*none\s*!important/.test(body);
+    });
+    return hidden('after') && hidden('before');
   },
-  /** The screen rule exists, with a dot pseudo-element, outside @media print. */
+  /** The screen rule exists outside @media print: a ::after surface painted
+   *  with the tint token, and a ::before dot. */
   tintDefinedOnScreen(css: string): boolean {
     const printStart = css.lastIndexOf('@media print {');
     const screen = css.slice(0, printStart) + css.slice(css.indexOf('\n}\n', printStart) + 3);
-    return /(^|\n)\.ai-authored\s*\{[^}]*background:\s*var\(--color-ai-tint\)/.test(screen)
+    return /(^|\n)\.ai-authored::after\s*\{[^}]*background:\s*var\(--color-ai-tint\)/.test(screen)
       && /(^|\n)\.ai-authored::before\s*\{[^}]*content:\s*''/.test(screen);
+  },
+  /** The surface extends PAST the host box (negative inset on every side) and
+   *  the host itself carries no padding — breathing room without layout shift,
+   *  so clearing the class on edit moves nothing under the caret. */
+  surfaceHasOwnSpacing(css: string): boolean {
+    const m = css.match(/(^|\n)\.ai-authored::after\s*\{([^}]*)\}/);
+    if (!m) return false;
+    const inset = m[2].match(/inset:\s*([^;]+);/);
+    if (!inset) return false;
+    const sides = inset[1].trim().split(/\s+/);
+    if (sides.length < 1 || sides.length > 4 || !sides.every((v) => /^-\d+px$/.test(v))) return false;
+    const host = css.match(/(^|\n)\.ai-authored\s*\{([^}]*)\}/);
+    return !!host && !/padding/.test(host[2]) && /isolation:\s*isolate/.test(host[2]);
   },
   /** The tint tokens are named, not borrowed from brand/gold. */
   tintHasOwnTokens(css: string): boolean {
@@ -86,8 +106,9 @@ const P = {
 // ── 1. The stylesheet ───────────────────────────────────────────────────────
 test('the tint is defined on screen with its own tokens and neutralised in @media print', () => {
   assert.ok(P.tintHasOwnTokens(CSS), '--color-ai-tint / --color-ai-dot must be named tokens');
-  assert.ok(P.tintDefinedOnScreen(CSS), '.ai-authored surface + ::before dot must exist outside @media print');
-  assert.ok(P.tintNeutralisedInPrint(CSS), 'Ctrl+P prints the live note: .ai-authored and its dot must be removed inside @media print');
+  assert.ok(P.tintDefinedOnScreen(CSS), '.ai-authored::after surface + ::before dot must exist outside @media print');
+  assert.ok(P.tintNeutralisedInPrint(CSS), 'Ctrl+P prints the live note: the surface and the dot must be removed inside @media print');
+  assert.ok(P.surfaceHasOwnSpacing(CSS), 'the surface must extend past the host (negative inset) with no host padding');
 });
 
 // ── 2. Copy / export / the page ─────────────────────────────────────────────
@@ -113,8 +134,21 @@ test('RED PROOF — every predicate rejects the regression it guards', () => {
   const NO_PRINT_RULE = CSS.replace(/\n  \/\* The AI-authored tint[\s\S]*?\.ai-authored::before \{\n    display: none !important;\n  \}\n/, '\n');
   assert.notEqual(NO_PRINT_RULE, CSS, 'failed to remove the print rule — the red proof would be vacuous');
   assert.equal(P.tintNeutralisedInPrint(NO_PRINT_RULE), false);
-  assert.equal(P.tintNeutralisedInPrint(CSS.replace('.ai-authored::before {\n    display: none !important;', '.ai-authored::before {\n    display: block !important;')), false);
-  assert.equal(P.tintDefinedOnScreen(CSS.replace("content: '';", 'content: none;')), false);
+  // Lose ONE pseudo from the print selector list: the other surviving is not enough.
+  const PRINT_SEL = '  .ai-authored::after,\n  .ai-authored::before {\n    display: none !important;';
+  assert.ok(CSS.includes(PRINT_SEL), 'print selector list drifted — re-anchor the red proof');
+  assert.equal(P.tintNeutralisedInPrint(CSS.replace(PRINT_SEL, '  .ai-authored::before {\n    display: none !important;')), false);
+  assert.equal(P.tintNeutralisedInPrint(CSS.replace(PRINT_SEL, '  .ai-authored::after {\n    display: none !important;')), false);
+  assert.equal(P.tintNeutralisedInPrint(CSS.replace(PRINT_SEL, PRINT_SEL.replace('none', 'block'))), false);
+  const NO_DOT = CSS.replace(".ai-authored::before {\n  content: '';", '.ai-authored::before {\n  content: none;');
+  assert.notEqual(NO_DOT, CSS, 'dot rule drifted — re-anchor the red proof');
+  assert.equal(P.tintDefinedOnScreen(NO_DOT), false);
+  assert.equal(P.tintDefinedOnScreen(CSS.replace('background: var(--color-ai-tint);', 'background: var(--color-brand-light);')), false);
+  // Spacing: a flush surface, a host with padding, or no stacking context all fail.
+  assert.equal(P.surfaceHasOwnSpacing(CSS.replace('inset: -8px -14px -6px;', 'inset: 0;')), false);
+  assert.equal(P.surfaceHasOwnSpacing(CSS.replace('inset: -8px -14px -6px;', 'inset: -8px 0 -6px;')), false);
+  assert.equal(P.surfaceHasOwnSpacing(CSS.replace('isolation: isolate;', 'isolation: isolate;\n  padding: 8px 14px;')), false);
+  assert.equal(P.surfaceHasOwnSpacing(CSS.replace('isolation: isolate;', 'isolation: auto;')), false);
   assert.equal(P.tintHasOwnTokens(CSS.replace('--color-ai-tint:', '--color-ai-tint-x:')), false);
   assert.equal(P.exportersBlindToTint(EXPORTERS + "\nconst leak = document.querySelector('.ai-authored');"), false);
   assert.equal(P.exportersBlindToTint(EXPORTERS + '\n// fields_touched mentioned only here\nconst x = fields_touched;'), false);

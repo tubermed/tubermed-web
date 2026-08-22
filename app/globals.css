@@ -658,10 +658,7 @@ html, body {
   }
   /* The AI-authored tint is a screen affordance only — Ctrl+P prints the live
      note, so the surface and the dot are both removed here. */
-  .ai-authored {
-    background: transparent !important;
-    box-shadow: none !important;
-  }
+  .ai-authored::after,
   .ai-authored::before {
     display: none !important;
   }
@@ -679,28 +676,40 @@ html, body {
 /* AI-authored section (see the --color-ai-* tokens): a surface tint over the
    section host and one dot in its top-right corner. Decorative by design —
    no text, no ARIA; the pseudo-element exists only on screen and is never part
-   of a copy, export or print surface. The transition is the „clears the moment
-   the doctor edits" affordance; reduced-motion collapses it. */
+   of a copy, export or print surface. */
 .ai-authored {
   position: relative;
+  /* Own stacking context so the ::after surface can sit at z-index:-1 —
+     under the section's text, above the white card behind it. */
+  isolation: isolate;
+}
+/* The surface is a pseudo-element that extends PAST the host box (the host
+   has padding 0: its heading is flush-left and its body only 12px in, so a
+   tint painted on the host itself sits hard against the text and reads as a
+   rendering glitch). Painting the breathing room on ::after instead of as
+   host padding means the host's layout is identical tinted or not — when the
+   doctor's edit clears the class nothing moves under the caret. */
+.ai-authored::after {
+  content: '';
+  position: absolute;
+  inset: -8px -14px -6px;
+  z-index: -1;
   background: var(--color-ai-tint);
   border-radius: 12px;
-  box-shadow: inset 3px 0 0 var(--color-ai-dot);
-  transition: background 240ms ease-out, box-shadow 240ms ease-out;
+  /* No inset bar: NoteSectionHead already draws a 3px accent bar beside the
+     title, and a second one 14px to its left read as two bars (2026-08-22). */
+  pointer-events: none;
 }
 .ai-authored::before {
   content: '';
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: -1px;
+  right: -5px;
   width: 8px;
   height: 8px;
   border-radius: 999px;
   background: var(--color-ai-dot);
   pointer-events: none;
-}
-@media (prefers-reduced-motion: reduce) {
-  .ai-authored { transition: none; }
 }
 
 /* ── Workspace sidebar (components/ClinicSidebar.tsx) ─────────
