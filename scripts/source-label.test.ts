@@ -75,11 +75,11 @@ const bodyOf = (src: string, name: string): string => {
  *  because TextSection carries a `fieldKey` prop too and a file-wide scan
  *  happily reports a neighbour's key for a SourceButton that has none. */
 const callSites = (src: string): string[] =>
-  [...src.matchAll(/<SourceButton\b((?:[^/]|\/(?!>))*?)\/>/g)].map((m) => m[1]);
+  [...src.matchAll(/<SourceButton(?=[\s/])((?:[^/]|\/(?!>))*?)\/>/g)].map((m) => m[1]);
 
 /** fieldKey per call site; undefined where the attribute is missing. */
 const callSiteKeys = (src: string): (string | undefined)[] =>
-  callSites(src).map((s) => s.match(/\bfieldKey="(\w+)"/)?.[1]);
+  callSites(src).map((s) => s.match(/(?:^|\s)fieldKey="([^"]*)"/)?.[1]);
 
 const P = {
   /** The label is rendered in exactly ONE component. A second render site is a
@@ -127,7 +127,9 @@ const P = {
   everyCallSiteFeedsTheGuard(src: string): boolean {
     const sites = callSites(src);
     if (sites.length === 0) return false;
-    return sites.every((s) => /\bhasTranscript=\{/.test(s) && /\bfieldKey="\w+"/.test(s));
+    return sites.every(
+      (s) => /(?:^|\s)hasTranscript=\{/.test(s) && /(?:^|\s)fieldKey="[^"]+"/.test(s),
+    );
   },
 
   /** Every rendered section names its own key. A copy-pasted site pointing at
@@ -345,6 +347,16 @@ test('RED-PROOF: predicates reject the shapes they exist to catch', () => {
   bad(
     'a fieldKey the resolver has never heard of',
     mutateCallSite(RESULT, 'terapia', 'fieldKey="terapia"', 'fieldKey="terapiya"'),
+    P.callSiteKeysAreDistinctAndKnown,
+  );
+  // A Cyrillic homoglyph in the key — „а" U+0430, not „a" U+0061. It would
+  // suppress a working section silently, and TypeScript cannot see it (fieldKey
+  // is a plain string). This is why callSiteKeys reads `[^"]*` and not `\w+`:
+  // the ASCII primitive simply fails to match, the key reads as undefined, and
+  // an earlier version of this predicate would have gone green on it.
+  bad(
+    'a Cyrillic homoglyph in a fieldKey',
+    mutateCallSite(RESULT, 'terapia', 'fieldKey="terapia"', 'fieldKey="terapiа"'),
     P.callSiteKeysAreDistinctAndKnown,
   );
 
