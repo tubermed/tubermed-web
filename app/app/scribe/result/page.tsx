@@ -46,7 +46,7 @@ import { mainDiagnosisPresentation, filedComorbidityTerm } from '@/lib/diagnosis
 import { loadIal } from '@/lib/ial-meds';
 import { findHighlights } from '@/lib/vital-rules';
 import { findSourceSpan, type SourceSpan } from '@/lib/source-grounding';
-import { storedSpanFor, hasSourceLookup } from '@/lib/field-sources';
+import { storedSpanFor, hasSourceLookup, sourcesArmed } from '@/lib/field-sources';
 import { mkbReviewCopy, mkbCorrectionCopy, mkbDivergenceCopy } from '@/lib/mkb-review';
 import {
   resolveUncertainSpans,
@@ -423,6 +423,20 @@ function ResultPageInner() {
     setPendingVisit(null);
     setRecoverVisitId(null);
     setReconcileVisitId(null);
+    // The source SESSION is per-consultation too, and it was missing from this
+    // list. `activeSourceField` is what renders the „Няма ясен източник"
+    // banner; on a same-route ?visit= change it survived into the next
+    // consultation — and if that one arrives without a transcript, the banner
+    // (and its „Покажи предположение" button, and the toast behind it) publish
+    // the verdict over an EMPTY transcript. That is this commit's own defect,
+    // reached by a route the suppression cannot see: SourceButton is not
+    // rendered, so nothing was clicked; the state was simply left behind.
+    // Closing the transcript panel already clears these — this makes a new
+    // consultation do the same.
+    setActiveSourceField(null);
+    setSourceMode(null);
+    setSourceSpan(null);
+    setTranscriptOpen(false);
 
     const decision = resolveResultBootstrap(
       sessionStorage.getItem(RESULT_STORAGE_KEY),
@@ -1252,12 +1266,19 @@ function ResultPageInner() {
   // ── Per-field source grounding (Traceability Phase 1a) ────────
   // Find where the clicked field came from in the RAW transcript, open the
   // transcript, and highlight + scroll to that span. Empty transcript →
-  // "unavailable" — but that guard is now unreachable from the UI: with no
-  // transcript SourceButton renders nothing at all, so there is no click to
-  // make. It stays as the defence-in-depth floor (and keeps activeSourceField,
-  // hence the „Няма ясен източник" banner, unreachable on that path). No
-  // confident match → open the transcript so the doctor can scan it manually.
-  // Frontend-only and read-only: this NEVER flags the field as wrong.
+  // "unavailable" — and with no transcript SourceButton renders nothing at all,
+  // so on a fresh mount there is no click to make and this guard is the
+  // defence-in-depth floor beneath it.
+  //
+  // ⚠ That is NOT the same as „the banner is unreachable without a transcript",
+  // which an earlier draft of this comment claimed and a refuter falsified.
+  // `activeSourceField` outlives a click: on a same-route ?visit= change the
+  // component does not remount, so a banner opened on the PREVIOUS consultation
+  // survived into the next one and published the verdict over an empty
+  // transcript — no button required. The fix is upstream, in the bootstrap
+  // reset list, not here. Guarding a click cannot clear state that is already
+  // set. No confident match → open the transcript so the doctor can scan it
+  // manually. Frontend-only and read-only: this NEVER flags the field as wrong.
   const showSource = useCallback(
     (fieldKey: string, value: string) => {
       if (!original) return;
@@ -1589,6 +1610,13 @@ function ResultPageInner() {
   // render greyed-out, which still published the „няма ясен източник" verdict
   // on a note nothing had been checked against — see SourceButton.
   const hasTranscript = !!(original.transcript && original.transcript.trim());
+
+  // Did the provenance pass run for THIS note at all? Absent/empty
+  // field_sources means it did not — a legacy row, or any error in the
+  // backend's failure-isolated provenance call. Its own rule: surface that as
+  // NOT CHECKED, never as a pass. It is not a fail either, so the affordance
+  // goes quiet for the whole note (see SourceButton, silence 3).
+  const provenanceArmed = sourcesArmed(fields.field_sources);
 
   const todayBg = new Date().toLocaleDateString('bg-BG', {
     day: '2-digit',
@@ -2027,6 +2055,7 @@ function ResultPageInner() {
                 )
               }
               sourceHasTranscript={hasTranscript}
+              sourceArmed={provenanceArmed}
               sourceResolved={sourceResolvedByField.osnovna_diagnoza}
               isLocked={isLocked}
               notifyCopy={notifyCopy}
@@ -2053,6 +2082,7 @@ function ResultPageInner() {
                   <SourceButton
                     onClick={() => showSource('anamneza', fields.anamneza || '')}
                     hasTranscript={hasTranscript}
+                    sourcesArmed={provenanceArmed}
                     resolved={sourceResolvedByField.anamneza}
                     fieldKey="anamneza"
                   />
@@ -2100,6 +2130,7 @@ function ResultPageInner() {
                   <SourceButton
                     onClick={() => showSource('obektivno', fields.obektivno || '')}
                     hasTranscript={hasTranscript}
+                    sourcesArmed={provenanceArmed}
                     resolved={sourceResolvedByField.obektivno}
                     fieldKey="obektivno"
                   />
@@ -2169,6 +2200,7 @@ function ResultPageInner() {
                         <SourceButton
                           onClick={() => showSource('izsledvania', fields.izsledvania || '')}
                           hasTranscript={hasTranscript}
+                          sourcesArmed={provenanceArmed}
                           resolved={sourceResolvedByField.izsledvania}
                           fieldKey="izsledvania"
                         />
@@ -2196,6 +2228,7 @@ function ResultPageInner() {
                         <SourceButton
                           onClick={() => showSource('naznacheni', fields.naznacheni || '')}
                           hasTranscript={hasTranscript}
+                          sourcesArmed={provenanceArmed}
                           resolved={sourceResolvedByField.naznacheni}
                           fieldKey="naznacheni"
                         />
@@ -2250,6 +2283,7 @@ function ResultPageInner() {
                   <SourceButton
                     onClick={() => showSource('terapia', fields.terapia || '')}
                     hasTranscript={hasTranscript}
+                    sourcesArmed={provenanceArmed}
                     resolved={sourceResolvedByField.terapia}
                     fieldKey="terapia"
                   />
@@ -2302,6 +2336,7 @@ function ResultPageInner() {
                         <SourceButton
                           onClick={() => showSource('napravlenia', fields.napravlenia || '')}
                           hasTranscript={hasTranscript}
+                          sourcesArmed={provenanceArmed}
                           resolved={sourceResolvedByField.napravlenia}
                           fieldKey="napravlenia"
                         />
@@ -2920,22 +2955,43 @@ function PrintMedsBlock({ meds }: { meds: Medication[] }) {
 //      lib/field-sources.ts — a single quote for a whole-conversation
 //      synthesis would be a confident-looking lie, so the backend never emits
 //      an anamneza span. Measured over the 35 locked baselines: 0/35, against
-//      89.5% (137/153) for the six mapped fields. The resolver was never asked,
-//      so there is no answer to report. hasSourceLookup reads the resolver's
-//      own map — restore the entry and the label returns by itself.
+//      89.5% (137/153) for the six mapped fields. The STORED resolver was never
+//      asked, so there is no answer to report. hasSourceLookup reads that
+//      resolver's own map — restore the entry and the label returns by itself.
 //
-// Both are SUPPRESSIONS. Nothing here can make the label appear anywhere it
-// did not before, and a resolved field is untouched: „виж източника" renders
-// exactly as it always has.
+//      ⚠ COST, RULING OWED. This one is not label-only. anamneza's button was
+//      also the sole way into `showGuess` → findSourceSpan, the alias-bridge
+//      GUESS, which is generic and does answer for anamneza on a note with a
+//      transcript (a refuter resolved a 23-token span in the demo note). That
+//      route is now unreachable for the longest free-text field on the page.
+//      Keeping it would need an affordance that is not the verdict — i.e. new
+//      copy, which is Dimitar's call, not this commit's.
+//
+//   3. PROVENANCE NEVER RAN. `field_sources` absent or empty. The backend is
+//      explicit that this is failure-isolated — any error in the provenance
+//      call and the key is simply gone — and that „the caller must surface
+//      that as NOT CHECKED and never as a pass" (lib/provenance.js, „Arming").
+//      We are that caller, and we were surfacing it as a FAIL: seven sections
+//      of a fresh note, full transcript loaded, every one of them declaring no
+//      source, because nothing had been asked. Same silence as (1) — there is
+//      nothing to resolve against — reached by a different road. Found by a
+//      refuter; two of the 35 locked baselines have exactly this shape.
+//
+// Nothing here can make the label appear anywhere it did not before, and a
+// resolved field is untouched: „виж източника" renders exactly as it always
+// has.
 function SourceButton({
   onClick,
   hasTranscript,
+  sourcesArmed,
   resolved,
   fieldKey,
 }: {
   onClick: () => void;
   /** False on every recovery path. Suppresses the whole affordance — see (1). */
   hasTranscript?: boolean;
+  /** False when the note carries no field_sources at all — see (3). */
+  sourcesArmed?: boolean;
   // Honest source state (trust Batch B): true = backend-resolved offsets exist
   // → „виж източника"; false = no clear source → the button ITSELF says „няма
   // ясен източник" before any click (persistent, not a transient toast), and
@@ -2944,7 +3000,7 @@ function SourceButton({
   /** The resolver's key for this field. Suppresses when unmapped — see (2). */
   fieldKey: string;
 }) {
-  if (!hasTranscript || !hasSourceLookup(fieldKey)) return null;
+  if (!hasTranscript || !sourcesArmed || !hasSourceLookup(fieldKey)) return null;
   return (
     <button
       type="button"
@@ -3279,6 +3335,7 @@ function DiagnosesSection({
   onComorbidityRemove,
   onShowSource,
   sourceHasTranscript,
+  sourceArmed,
   sourceResolved,
   isLocked,
   notifyCopy,
@@ -3301,6 +3358,7 @@ function DiagnosesSection({
   onComorbidityRemove: (index: number) => void;
   onShowSource: () => void;
   sourceHasTranscript: boolean;
+  sourceArmed: boolean;
   sourceResolved: boolean;
   isLocked: boolean;
   notifyCopy: (ok: boolean) => void;
@@ -3343,6 +3401,7 @@ function DiagnosesSection({
           <SourceButton
             onClick={onShowSource}
             hasTranscript={sourceHasTranscript}
+            sourcesArmed={sourceArmed}
             resolved={sourceResolved}
             fieldKey="osnovna_diagnoza"
           />

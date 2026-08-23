@@ -48,6 +48,32 @@ export function hasSourceLookup(fieldKey: string): boolean {
   return Object.prototype.hasOwnProperty.call(FIELD_SOURCE_LOOKUP, fieldKey);
 }
 
+// Did the provenance pass RUN for this note at all? (2026-08-23)
+//
+// The backend's own words (tubermed-backend/lib/provenance.js, „Arming"):
+// „Provenance is failure-isolated by design: any error and field_sources is
+// simply absent. So „no span for this diagnosis" and „provenance never ran" are
+// indistinguishable from the field alone … The gate therefore reports
+// armed:false when field_sources is missing/empty — THE CALLER MUST SURFACE
+// THAT AS NOT CHECKED AND NEVER AS A PASS."
+//
+// This page is such a caller, and it was surfacing armed:false as „няма ясен
+// източник" — not a pass, but not „not checked" either: a FAIL verdict on a
+// note nothing had been asked about. On a fresh note with a full transcript
+// that is the bug at its loudest, and it is reachable today by any error in
+// the provenance call, not only by a pre-Batch-B row.
+//
+// Same computation as the backend's `armed`, deliberately — one definition of
+// „provenance ran", on both sides of the wire.
+export function sourcesArmed(sources: Record<string, FieldSource> | undefined): boolean {
+  return (
+    !!sources &&
+    typeof sources === 'object' &&
+    !Array.isArray(sources) &&
+    Object.keys(sources).length > 0
+  );
+}
+
 // `method` is informational (resolver identifier), never a gate — a future
 // resolver version must not silently disable existing highlights.
 export function isValidFieldSource(s: unknown, transcriptLength: number): s is FieldSource {

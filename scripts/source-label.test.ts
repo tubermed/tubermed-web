@@ -17,6 +17,11 @@
 //   2. no lookup entry    → the resolver was never asked (anamneza, by the
 //                           atomic-fields ruling; measured 0/35 on the locked
 //                           baselines against 89.5% for the six mapped fields)
+//   3. provenance unarmed → field_sources absent/empty, so the pass never ran
+//                           for this note at all. The backend's own rule:
+//                           surface that as NOT CHECKED, never as a pass —
+//                           and we were surfacing it as a FAIL, on a fresh
+//                           note with a full transcript. Found by a refuter.
 //
 // ── WHAT THIS GATE IS ──────────────────────────────────────────────────────
 // Two halves. `hasSourceLookup` is a real import, exercised directly. The
@@ -39,7 +44,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { hasSourceLookup, storedSpanFor } from '../lib/field-sources.ts';
+import { hasSourceLookup, sourcesArmed, storedSpanFor } from '../lib/field-sources.ts';
 
 const ROOT = join(import.meta.dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
@@ -70,16 +75,57 @@ const bodyOf = (src: string, name: string): string => {
   return j === -1 ? rest : rest.slice(0, j);
 };
 
-/** The `<SourceButton … />` elements, each as its own attribute text. Read the
+/** The `<SourceButton …>` elements, each as its own attribute text. Read the
  *  ELEMENT first, then its attributes — never scan the file for `fieldKey="…"`,
  *  because TextSection carries a `fieldKey` prop too and a file-wide scan
- *  happily reports a neighbour's key for a SourceButton that has none. */
-const callSites = (src: string): string[] =>
-  [...src.matchAll(/<SourceButton(?=[\s/])((?:[^/]|\/(?!>))*?)\/>/g)].map((m) => m[1]);
+ *  happily reports a neighbour's key for a SourceButton that has none.
+ *
+ *  Hand-scanned, not a regex. The regex this replaced required `/>` and was
+ *  therefore BLIND to a non-self-closing `<SourceButton …></SourceButton>`:
+ *  it skipped that element and swallowed forward into the next one, reporting
+ *  the NEIGHBOUR's fieldKey — the exact trap the paragraph above says it
+ *  avoids. A refuter deleted napravlenia's fieldKey, made the element
+ *  non-self-closing, and the gate still reported seven distinct known keys.
+ *  Brace depth is tracked so the `=>` inside `onClick={() => …}` is not
+ *  mistaken for the closing angle bracket. */
+const callSites = (src: string): string[] => {
+  const TAG = '<SourceButton';
+  const out: string[] = [];
+  let i = 0;
+  while ((i = src.indexOf(TAG, i)) !== -1) {
+    let j = i + TAG.length;
+    let depth = 0;
+    let quote: string | null = null;
+    for (; j < src.length; j++) {
+      const c = src[j];
+      if (quote) {
+        if (c === quote) quote = null;
+        continue;
+      }
+      if (c === '"' || c === "'" || c === '`') { quote = c; continue; }
+      if (c === '{') depth++;
+      else if (c === '}') depth--;
+      else if (c === '>' && depth === 0) break;
+    }
+    out.push(src.slice(i + TAG.length, j).replace(/\/\s*$/, ''));
+    i = j + 1;
+  }
+  return out;
+};
+
+/** How many times the tag appears at all. If this ever exceeds callSites().length
+ *  the scanner is skipping an element, which is how G-4 hid. */
+const callSiteTagCount = (src: string): number => src.split('<SourceButton').length - 1;
 
 /** fieldKey per call site; undefined where the attribute is missing. */
 const callSiteKeys = (src: string): (string | undefined)[] =>
   callSites(src).map((s) => s.match(/(?:^|\s)fieldKey="([^"]*)"/)?.[1]);
+
+/** The field name each call site actually passes to showSource — the thing the
+ *  click resolves against. Must equal that site's fieldKey, or the button
+ *  suppresses on one field's behalf and opens another's source. */
+const callSiteClickKeys = (src: string): (string | undefined)[] =>
+  callSites(src).map((s) => s.match(/showSource\('([^']*)'/)?.[1]);
 
 const P = {
   /** The label is rendered in exactly ONE component. A second render site is a
@@ -89,7 +135,7 @@ const P = {
     return inJsx.length === 1 && inJsx[0] === LABEL;
   },
 
-  /** SourceButton returns null BEFORE any JSX when either silence applies. The
+  /** SourceButton returns null BEFORE any JSX when any silence applies. The
    *  guard must be the component's first statement: a guard placed after the
    *  return renders nothing, and a guard placed inside the JSX is a greyed
    *  variant, which is still the sentence — just quieter. */
@@ -101,18 +147,23 @@ const P = {
     return (
       /^if \(/.test(first) &&
       first.includes('!hasTranscript') &&
+      first.includes('!sourcesArmed') &&
       first.includes('!hasSourceLookup(fieldKey)') &&
       first.includes('return null')
     );
   },
 
-  /** Both silences are wired to the same return. Dropping either one puts the
-   *  verdict back on a note it was never reached for. */
+  /** All THREE silences are wired to the same return. Dropping any one puts
+   *  the verdict back on a note it was never reached for. */
   guardCoversBothSilences(src: string): boolean {
     const body = bodyOf(src, 'SourceButton');
     const guard = body.split('\n').find((l) => l.includes('return null'));
     if (!guard) return false;
-    return guard.includes('!hasTranscript') && guard.includes('!hasSourceLookup(fieldKey)');
+    return (
+      guard.includes('!hasTranscript') &&
+      guard.includes('!sourcesArmed') &&
+      guard.includes('!hasSourceLookup(fieldKey)')
+    );
   },
 
   /** No `disabled` anywhere in SourceButton. The old greyed-out button was the
@@ -122,13 +173,116 @@ const P = {
   },
 
   /** EVERY call site passes both inputs the guard reads. A site that omits
-   *  `fieldKey` would throw at hasSourceLookup(undefined) or — worse, with a
-   *  default — silently opt out of the suppression. */
+   *  `fieldKey` does NOT throw — Object.hasOwnProperty.call(map, undefined) is
+   *  simply false — it silently suppresses that section for ever. Silent, not
+   *  loud, which is why this is pinned rather than left to a runtime error. */
   everyCallSiteFeedsTheGuard(src: string): boolean {
     const sites = callSites(src);
     if (sites.length === 0) return false;
     return sites.every(
-      (s) => /(?:^|\s)hasTranscript=\{/.test(s) && /(?:^|\s)fieldKey="[^"]+"/.test(s),
+      (s) =>
+        /(?:^|\s)hasTranscript=\{/.test(s) &&
+        /(?:^|\s)sourcesArmed=\{/.test(s) &&
+        /(?:^|\s)fieldKey="[^"]+"/.test(s),
+    );
+  },
+
+  /** ── POLARITY ──────────────────────────────────────────────────────────
+   *  The whole change is one boolean, and every inversion of it is
+   *  `boolean → boolean`, so TypeScript cannot see any of them. A refuter
+   *  inverted this three different ways — the definition, the DiagnosisSection
+   *  prop, and a single call site — and the gate stayed 14/14 GREEN each time.
+   *  Inverted, the shipped behaviour is exactly backwards: the affordance
+   *  vanishes on fresh notes and the verdict returns on every reopened one.
+   *  So the polarity is pinned literally, at all three places it can flip. */
+  transcriptFlagDefinitionIsUninverted(src: string): boolean {
+    return src.includes(
+      "const hasTranscript = !!(original.transcript && original.transcript.trim());",
+    );
+  },
+
+  everyCallSitePassesTheFlagUninverted(src: string): boolean {
+    const sites = callSites(src);
+    if (sites.length === 0) return false;
+    // Exactly `hasTranscript={hasTranscript}` (the six TextSection sites) or
+    // `hasTranscript={sourceHasTranscript}` (the one inside DiagnosisSection).
+    return sites.every(
+      (s) =>
+        /(?:^|\s)hasTranscript=\{(?:hasTranscript|sourceHasTranscript)\}/.test(s) &&
+        /(?:^|\s)sourcesArmed=\{(?:provenanceArmed|sourceArmed)\}/.test(s),
+    );
+  },
+
+  diagnosisSectionForwardsTheFlagUninverted(src: string): boolean {
+    return (
+      src.includes('sourceHasTranscript={hasTranscript}') &&
+      !/sourceHasTranscript=\{!/.test(src)
+    );
+  },
+
+  /** ── RESOLVED WIRING ───────────────────────────────────────────────────
+   *  `resolved` decides WHICH sentence renders. Nothing read it: pinning
+   *  `resolved={false && …}` at every site — every working link relabelled to
+   *  the verdict — left the gate green. Each site must read its OWN key out of
+   *  sourceResolvedByField. */
+  resolvedIsWiredPerField(src: string): boolean {
+    const sites = callSites(src);
+    if (sites.length === 0) return false;
+    return sites.every((s) => {
+      const key = s.match(/(?:^|\s)fieldKey="([^"]*)"/)?.[1];
+      if (!key) return false;
+      const resolved = s.match(/(?:^|\s)resolved=\{([^}]*)\}/)?.[1]?.trim();
+      // The DiagnosisSection site forwards its own prop, which is pinned below.
+      if (resolved === 'sourceResolved') return key === 'osnovna_diagnoza';
+      return resolved === `sourceResolvedByField.${key}`;
+    });
+  },
+
+  diagnosisSectionForwardsResolvedForItsOwnField(src: string): boolean {
+    return src.includes('sourceResolved={sourceResolvedByField.osnovna_diagnoza}');
+  },
+
+  /** The ternary must say two DIFFERENT things. labelHasOneRenderSite counted
+   *  render sites but was satisfied when BOTH branches were the verdict. */
+  bothSentencesAreDistinct(src: string): boolean {
+    return src.includes("{resolved ? 'виж източника' : 'няма ясен източник'}");
+  },
+
+  /** ── CLICK AGREEMENT ───────────────────────────────────────────────────
+   *  The key the button suppresses on behalf of and the key its click resolves
+   *  against must be the same field. A copy-paste that leaves
+   *  `fieldKey="terapia"` beside `showSource('obektivno', …)` was invisible. */
+  clickAgreesWithFieldKey(src: string): boolean {
+    const keys = callSiteKeys(src);
+    const clicks = callSiteClickKeys(src);
+    if (keys.length === 0) return false;
+    return keys.every((k, i) => {
+      // DiagnosisSection's site takes an onShowSource callback, not a literal.
+      if (clicks[i] === undefined) return k === 'osnovna_diagnoza';
+      return clicks[i] === k;
+    });
+  },
+
+  /** The scanner sees every element there is. G-4: the old regex required `/>`
+   *  and silently skipped a non-self-closing element, then swallowed forward
+   *  and reported its neighbour's key. */
+  scannerSeesEveryElement(src: string): boolean {
+    return callSites(src).length === callSiteTagCount(src) && callSiteTagCount(src) > 0;
+  },
+
+  /** The bootstrap resets the source SESSION on a same-route ?visit= change.
+   *  Without it a banner opened on the previous consultation survives into the
+   *  next one and publishes the verdict over an empty transcript — no button
+   *  required, so the suppression cannot see it. */
+  bootstrapResetsTheSourceSession(src: string): boolean {
+    const start = src.indexOf('editedFieldsRef.current = new Map();');
+    const end = src.indexOf('const decision = resolveResultBootstrap(');
+    if (start === -1 || end === -1 || end < start) return false;
+    const block = src.slice(start, end);
+    return (
+      block.includes('setActiveSourceField(null)') &&
+      block.includes('setSourceMode(null)') &&
+      block.includes('setSourceSpan(null)')
     );
   },
 
@@ -185,6 +339,30 @@ test('hasSourceLookup agrees with the resolver it reads — unmapped ⇒ storedS
   }
 });
 
+// ── 1b. sourcesArmed — „did the provenance pass run at all?" ───────────────
+
+test('sourcesArmed is false exactly when the pass never ran', () => {
+  assert.equal(sourcesArmed(undefined), false, 'legacy row / provenance errored');
+  assert.equal(sourcesArmed({}), false, 'present but empty is still not-run');
+  assert.equal(sourcesArmed([] as never), false, 'an array is not a source map');
+  assert.equal(sourcesArmed(null as never), false);
+  assert.equal(sourcesArmed('x' as never), false);
+});
+
+test('sourcesArmed is true as soon as the backend wrote anything', () => {
+  assert.equal(sourcesArmed({ vitals: { start: 0, end: 5 } } as never), true);
+  // Armed even when every entry is out of bounds: the pass RAN, and a field
+  // that then fails to resolve has earned its honest „няма ясен източник".
+  assert.equal(sourcesArmed({ vitals: { start: 9_000, end: 9_100 } } as never), true);
+});
+
+test('armed and resolved are different questions — the label lives between them', () => {
+  const src = { vitals: { start: 9_000, end: 9_100 } } as never;
+  assert.equal(sourcesArmed(src), true, 'the pass ran');
+  assert.equal(storedSpanFor('obektivno', src, 100), null, 'and this field did not resolve');
+  // ⇒ armed && !resolved is the ONE state the verdict is true in.
+});
+
 test('hasSourceLookup does NOT change resolution — it only decides whether we speak', () => {
   // A mapped field with no usable entries still resolves to null. The label is
   // still correct THERE: we asked, and the answer was no source.
@@ -194,9 +372,12 @@ test('hasSourceLookup does NOT change resolution — it only decides whether we 
 
 // ── 2. The two silences, as the page implements them ───────────────────────
 
-test('SourceButton refuses to render before any JSX, on both silences', () => {
+test('SourceButton refuses to render before any JSX, on all three silences', () => {
   assert.ok(P.guardIsFirstStatement(RESULT), 'the null-return must be the first statement');
-  assert.ok(P.guardCoversBothSilences(RESULT), 'both no-transcript and no-lookup must gate it');
+  assert.ok(
+    P.guardCoversBothSilences(RESULT),
+    'no-transcript, unarmed-provenance and no-lookup must all gate it',
+  );
 });
 
 test('there is no greyed variant — a quieter verdict is still the verdict', () => {
@@ -215,6 +396,31 @@ test('the banner sentence sits behind showSource’s empty-transcript return', (
 
 test('every SourceButton call site feeds the guard', () => {
   assert.ok(P.everyCallSiteFeedsTheGuard(RESULT));
+});
+
+test('the scanner sees every <SourceButton> element in the file', () => {
+  assert.ok(P.scannerSeesEveryElement(RESULT), 'an element was skipped — G-4');
+  assert.equal(callSites(RESULT).length, 7, 'seven sections carry the affordance');
+});
+
+test('POLARITY: the transcript flag is not inverted, at any of its three places', () => {
+  assert.ok(P.transcriptFlagDefinitionIsUninverted(RESULT), 'definition inverted');
+  assert.ok(P.everyCallSitePassesTheFlagUninverted(RESULT), 'a call site inverts it');
+  assert.ok(P.diagnosisSectionForwardsTheFlagUninverted(RESULT), 'DiagnosisSection inverts it');
+});
+
+test('RESOLVED: each site reads its OWN field, and the two sentences differ', () => {
+  assert.ok(P.resolvedIsWiredPerField(RESULT));
+  assert.ok(P.diagnosisSectionForwardsResolvedForItsOwnField(RESULT));
+  assert.ok(P.bothSentencesAreDistinct(RESULT));
+});
+
+test('the click resolves the same field the button suppresses on behalf of', () => {
+  assert.ok(P.clickAgreesWithFieldKey(RESULT));
+});
+
+test('the bootstrap clears the source session on a same-route ?visit= change', () => {
+  assert.ok(P.bootstrapResetsTheSourceSession(RESULT));
 });
 
 test('call-site keys are distinct and known to the resolver map', () => {
@@ -254,7 +460,16 @@ const mutateCallSite = (src: string, key: string, from: string, to: string): str
   return src.replace(el, el.replace(from, to));
 };
 
+/** The guard line, read out of the file rather than retyped. Every mutation
+ *  below anchors on this — retyped copies went stale the moment a third
+ *  silence was added, and `bad()` then failed with "mutation was a no-op"
+ *  instead of testing anything. */
+const GUARD_LINE = RESULT.split('\n').find(
+  (l) => l.includes('return null;') && l.includes('!hasTranscript'),
+)!;
+
 test('RED-PROOF: predicates reject the shapes they exist to catch', () => {
+  assert.ok(GUARD_LINE, 'no guard line found — every mutation below is vacuous');
   const bad = (name: string, mutated: string, p: (s: string) => boolean) => {
     // A no-op "mutation" would prove nothing and pass silently.
     assert.notEqual(mutated, RESULT, `mutation was a no-op: ${name}`);
@@ -264,10 +479,7 @@ test('RED-PROOF: predicates reject the shapes they exist to catch', () => {
   // The original bug, restored: greyed-out instead of absent.
   bad(
     'guard removed, disabled attribute back',
-    RESULT.replace(
-      /  if \(!hasTranscript \|\| !hasSourceLookup\(fieldKey\)\) return null;\n/,
-      '      disabled={!hasTranscript}\n',
-    ),
+    RESULT.replace(GUARD_LINE + '\n', '      disabled={!hasTranscript}\n'),
     P.guardIsFirstStatement,
   );
 
@@ -276,6 +488,24 @@ test('RED-PROOF: predicates reject the shapes they exist to catch', () => {
     'lookup silence dropped',
     RESULT.replace(' || !hasSourceLookup(fieldKey)', ''),
     P.guardCoversBothSilences,
+  );
+
+  // The third silence dropped — a fresh note whose provenance call errored
+  // goes back to declaring no source on every section.
+  bad(
+    'unarmed-provenance silence dropped',
+    RESULT.replace(' || !sourcesArmed', ''),
+    P.guardCoversBothSilences,
+  );
+  bad(
+    'a call site stops passing sourcesArmed',
+    mutateCallSite(RESULT, 'obektivno', 'sourcesArmed={provenanceArmed}', ''),
+    P.everyCallSiteFeedsTheGuard,
+  );
+  bad(
+    'a call site inverts sourcesArmed',
+    mutateCallSite(RESULT, 'obektivno', 'sourcesArmed={provenanceArmed}', 'sourcesArmed={!provenanceArmed}'),
+    P.everyCallSitePassesTheFlagUninverted,
   );
 
   // The other half: anamneza silenced, the reopened note still shouts.
@@ -288,10 +518,10 @@ test('RED-PROOF: predicates reject the shapes they exist to catch', () => {
   // Guard present but after the return — renders, then decides.
   bad(
     'guard moved below the JSX',
-    RESULT.replace(
-      '  if (!hasTranscript || !hasSourceLookup(fieldKey)) return null;\n  return (',
-      '  return (',
-    ).replace('  );\n}\n\n// Amber', '  );\n  if (!hasTranscript) return null;\n}\n\n// Amber'),
+    RESULT.replace(GUARD_LINE + '\n  return (', '  return (').replace(
+      '  );\n}\n\n// Amber',
+      '  );\n  ' + GUARD_LINE.trim() + '\n}\n\n// Amber',
+    ),
     P.guardIsFirstStatement,
   );
 
@@ -360,6 +590,63 @@ test('RED-PROOF: predicates reject the shapes they exist to catch', () => {
     P.callSiteKeysAreDistinctAndKnown,
   );
 
+  // ── The six mutations a refuter got past the gate (2026-08-23) ───────────
+  // Every one of these left it 14/14 GREEN. They are the reason the predicates
+  // above exist; each is reproduced verbatim so a regression cannot re-open the
+  // same hole. All six are boolean→boolean or attribute-level, so `tsc` is
+  // blind to them too — this file is the only thing standing between them and
+  // a note that says the opposite of the truth.
+  bad(
+    'G-1a: the transcript flag definition inverted (one `!`)',
+    RESULT.replace(
+      'const hasTranscript = !!(original.transcript && original.transcript.trim());',
+      'const hasTranscript = !(original.transcript && original.transcript.trim());',
+    ),
+    P.transcriptFlagDefinitionIsUninverted,
+  );
+  bad(
+    'G-1b: DiagnosisSection handed the inverted flag — the prop this diff renamed',
+    RESULT.replace('sourceHasTranscript={hasTranscript}', 'sourceHasTranscript={!hasTranscript}'),
+    P.diagnosisSectionForwardsTheFlagUninverted,
+  );
+  bad(
+    'G-1c: one call site inverts the flag',
+    mutateCallSite(RESULT, 'terapia', 'hasTranscript={hasTranscript}', 'hasTranscript={!hasTranscript}'),
+    P.everyCallSitePassesTheFlagUninverted,
+  );
+  bad(
+    'G-2a: every working link relabelled to the verdict',
+    RESULT.replaceAll('resolved={sourceResolvedByField.', 'resolved={false && sourceResolvedByField.'),
+    P.resolvedIsWiredPerField,
+  );
+  bad(
+    'G-2b: both ternary branches say the verdict',
+    RESULT.replace(
+      "{resolved ? 'виж източника' : 'няма ясен източник'}",
+      "{resolved ? 'няма ясен източник' : 'няма ясен източник'}",
+    ),
+    P.bothSentencesAreDistinct,
+  );
+  bad(
+    'G-3: fieldKey and the click point at different fields',
+    mutateCallSite(RESULT, 'terapia', "showSource('terapia'", "showSource('obektivno'"),
+    P.clickAgreesWithFieldKey,
+  );
+  // G-4. Not via mutateCallSite: this changes the element's CLOSING form, which
+  // lives outside the attribute text mutateCallSite operates on. napravlenia
+  // loses its fieldKey AND stops self-closing — the shape that defeated the
+  // old regex scanner.
+  const nonSelfClosing = RESULT.replace(
+    '                          fieldKey="napravlenia"\n                        />',
+    '                        ></SourceButton>',
+  );
+  bad('G-4: a missing fieldKey on a non-self-closing element', nonSelfClosing, P.callSiteKeysAreDistinctAndKnown);
+  bad(
+    'B-1: the bootstrap stops clearing the source session',
+    RESULT.replace('    setActiveSourceField(null);\n', ''),
+    P.bootstrapResetsTheSourceSession,
+  );
+
   // The banner's transcript guard removed — a click could mint it on a
   // recovery path again.
   bad(
@@ -377,6 +664,51 @@ test('RED-PROOF: predicates reject the shapes they exist to catch', () => {
     ),
     P.bannerIsBehindTheTranscriptGuard,
   );
+});
+
+test('RED-PROOF: the scanner this file used to have was blind to the G-4 shape', () => {
+  // scannerSeesEveryElement cannot be reddened by mutating page.tsx — it
+  // compares the scanner against a raw tag count, so it only fails if the
+  // SCANNER is wrong. Prove it the other way: run the regex this file used to
+  // use against the shape a refuter found, and show it under-counts while the
+  // hand-scanner does not. Without this, that predicate would be an assertion
+  // nobody has ever seen fail.
+  const oldRegexScanner = (src: string): string[] =>
+    [...src.matchAll(/<SourceButton(?=[\s/])((?:[^/]|\/(?!>))*?)\/>/g)].map((m) => m[1]);
+
+  const nonSelfClosing = RESULT.replace(
+    '                          fieldKey="napravlenia"\n                        />',
+    '                        ></SourceButton>',
+  );
+  assert.notEqual(nonSelfClosing, RESULT, 'mutation was a no-op');
+
+  assert.equal(callSiteTagCount(nonSelfClosing), 7, 'seven tags are present either way');
+  assert.equal(callSites(nonSelfClosing).length, 7, 'the hand-scanner sees all seven');
+
+  // The mechanical tell: needing `/>`, the old regex ran past the element's
+  // `></SourceButton>` and kept going to the next `/>` anywhere in the file.
+  const oldEls = oldRegexScanner(nonSelfClosing);
+  const swallowed = oldEls.find((s) => s.includes("showSource('napravlenia'"))!;
+  const honest = callSites(nonSelfClosing).find((s) => s.includes("showSource('napravlenia'"))!;
+  assert.ok(
+    swallowed.length > honest.length * 2,
+    `old scanner swallowed forward (${swallowed.length} chars vs ${honest.length})`,
+  );
+
+  // And the consequence that made it dangerous. It is worse than reporting a
+  // WRONG key: the swallowed markup contained the Направления TextSection's own
+  // `fieldKey="napravlenia"`, so the old scanner reported exactly the key a
+  // reviewer would expect — for an element that no longer has one. Seven
+  // distinct, known, plausible keys out of a file with a hole in it.
+  const oldKeys = oldEls.map((s) => s.match(/(?:^|\s)fieldKey="([^"]*)"/)?.[1]);
+  const newKeys = callSiteKeys(nonSelfClosing);
+  assert.ok(oldKeys.every((k) => typeof k === 'string'), 'old scanner reported no gap');
+  assert.equal(
+    oldKeys[oldEls.indexOf(swallowed)],
+    'napravlenia',
+    'and the key it invented was the believable one',
+  );
+  assert.ok(newKeys.includes(undefined), 'the hand-scanner surfaces the missing key');
 });
 
 test('RED-PROOF: hasSourceLookup would catch anamneza being silently re-mapped', () => {
