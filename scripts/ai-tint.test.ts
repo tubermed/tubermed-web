@@ -13,6 +13,13 @@
 // (it would corrupt the comparison it is derived from), every tint key has a
 // host on the page, and the tint host never carries text (no sr-only label,
 // no title) — a visual-only affordance by decision.
+//
+// Since 2026-08-23 the mark has TWO layers and this gate pins both: the tint
+// surface (::after, soft, secondary) and the CARRIER — a dashed left edge
+// (::before) along the surface's left boundary, which is what a doctor can
+// actually see (the tint alone measured ~1.07:1 against white). The carrier
+// must be a LEFT EDGE, never a corner-absolute mark: every host's top-right
+// corner is a control slot, and the retired dot collided with all of them.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -49,6 +56,19 @@ const afterInsets = (css: string): string[][] =>
     .filter((m): m is RegExpMatchArray => !!m)
     .map((m) => m[1].trim().split(/\s+/));
 
+// The body of the FIRST at-rule block opening with `head`, by brace matching —
+// so a rule that follows the block can never stand in for one inside it.
+const mediaBlock = (css: string, head: string): string => {
+  const start = css.indexOf(head);
+  if (start === -1) return '';
+  let depth = 0;
+  for (let i = start + head.length - 1; i < css.length; i++) {
+    if (css[i] === '{') depth++;
+    else if (css[i] === '}' && --depth === 0) return css.slice(start + head.length, i);
+  }
+  return '';
+};
+
 // ── Predicates (pure; section 3 feeds them broken input) ────────────────────
 const P = {
   /** Inside @media print, BOTH pseudo-elements are display:none. Checked per
@@ -74,20 +94,60 @@ const P = {
     return /(^|\n)\.ai-authored::after\s*\{[^}]*background:\s*var\(--color-ai-tint\)/
       .test(screenOnly(css));
   },
-  /** THE MARK IS THE SURFACE — no ::before is DRAWN on screen. The retired dot
-   *  was absolutely positioned to the host's top-right corner, and every host
-   *  already spends that corner on a control (Копирай, „няма ясен източник",
-   *  the meds count badge); it overlapped them at some widths and not others,
-   *  because it was pinned to the border box while they sit in a flex-wrap row.
-   *  Any corner-absolute mark reintroduced there brings the whole class back,
-   *  so this predicate refuses one rather than trusting a review to catch it. */
-  markIsSurfaceOnly(css: string): boolean {
-    const rules = screenOnly(css).replace(/\/\*[\s\S]*?\*\//g, '').match(/[^{}]+\{[^{}]*\}/g) || [];
-    return !rules.some((r) => {
-      const [sel, body] = r.split('{');
-      return sel.split(',').some((s) => s.trim().startsWith('.ai-authored::before'))
-        && /content:\s*(''|"")/.test(body);
-    });
+  /** THE CARRIER IS A LEFT EDGE. The base screen `.ai-authored::before` rule
+   *  must draw a vertical edge along the surface's LEFT boundary: anchored by
+   *  `left` (negative — outside the host box, at the bleed), spanning `top` to
+   *  `bottom` (the surface's height, never a fixed `height`), painted with
+   *  `border-left … var(--color-ai-edge)`, above the multiply overlay (a
+   *  z-index greater than ::after's, so the edge is crisp and not washed by
+   *  the tint), and click-transparent.
+   *
+   *  What it refuses, by shape: the retired corner dot (`right` + `width` +
+   *  `height`), or any mark that declares `right` at all. Every host's
+   *  top-right corner is a control slot (Копирай, „няма ясен източник", the
+   *  meds count badge) and the dot collided with all of them, at different
+   *  widths, because it was pinned to the border box while the controls sit
+   *  in a flex-wrap row. A corner mark brings the whole class back, so this
+   *  predicate refuses one rather than trusting a review to catch it. */
+  markIsLeftEdge(css: string): boolean {
+    const clean = screenOnly(css).replace(/\/\*[\s\S]*?\*\//g, '');
+    const before = clean.match(/(^|\n)\.ai-authored::before\s*\{([^}]*)\}/);
+    const after = clean.match(/(^|\n)\.ai-authored::after\s*\{([^}]*)\}/);
+    if (!before || !after) return false;
+    const b = before[2];
+    // Declarations are matched at a property boundary (`;`, `{` or line start)
+    // so `border-left` can never satisfy or violate a check meant for `left`.
+    const decl = (prop: string) => new RegExp(`(^|[;{\\n])\\s*${prop}:\\s*([^;]+);`).exec(b)?.[2].trim();
+    const z = (body: string) => Number(/z-index:\s*(-?[0-9]+)/.exec(body)?.[1] ?? NaN); // ascii-safe: an integer
+    const left = decl('left');
+    const width = decl('width');
+    return /content:\s*(''|"")/.test(b)
+      && decl('position') === 'absolute'
+      && !!left && /^-[0-9]+px$/.test(left)                               // ascii-safe: a CSS length
+      && decl('right') === undefined
+      && decl('height') === undefined
+      && (width === undefined || width === '0')
+      && /^-?[0-9]+px$/.test(decl('top') ?? '') && /^-?[0-9]+px$/.test(decl('bottom') ?? '') // ascii-safe: CSS lengths
+      && /^[1-9][0-9]*px\s+(dashed|dotted|solid)\s+var\(--color-ai-edge\)$/.test(decl('border-left') ?? '') // ascii-safe: a CSS border shorthand
+      && decl('pointer-events') === 'none'
+      && z(b) > z(after[2]);
+  },
+  /** The edge sits ON the surface's left boundary at every width: each screen
+   *  `.ai-authored::before` rule's `left` equals the horizontal inset of the
+   *  `.ai-authored::after` rule beside it — base, the ≥640px step, and the
+   *  aside override alike, in sheet order. A surface that steps its bleed
+   *  without the edge stepping with it leaves the edge floating inside the
+   *  tint at one width and outside it at another — a mark whose position
+   *  depends on the window, which is the defect the dot was removed for. */
+  edgeTracksSurface(css: string): boolean {
+    const clean = screenOnly(css).replace(/\/\*[\s\S]*?\*\//g, '');
+    const surfaceX = [...clean.matchAll(/\.ai-authored::after\s*\{([^}]*)\}/g)]
+      .map((m) => /inset:\s*([^;]+);/.exec(m[1])?.[1].trim().split(/\s+/))
+      .map((sides) => (sides ? (sides.length >= 2 ? sides[1] : sides[0]) : null));
+    const edgeX = [...clean.matchAll(/\.ai-authored::before\s*\{([^}]*)\}/g)]
+      .map((m) => /(^|[;{\n])\s*left:\s*([^;]+);/.exec(m[1])?.[2].trim() ?? null);
+    return surfaceX.length >= 2 && surfaceX.length === edgeX.length
+      && surfaceX.every((x, i) => x !== null && x === edgeX[i]);
   },
   /** The surface extends PAST the host box on every side, AT EVERY WIDTH, and
    *  the host itself carries no padding — breathing room without layout shift,
@@ -97,9 +157,11 @@ const P = {
    *  text there and nowhere else, which is a defect exactly one viewport sees. */
   surfaceHasOwnSpacing(css: string): boolean {
     const insets = afterInsets(css);
-    // Two rules by construction — the sheet's padding steps at Tailwind's `sm`
-    // and the bleed steps with it. One rule means the responsive step was lost.
+    // The sheet's padding steps at Tailwind's `sm` and the bleed steps with it:
+    // a ::after inset INSIDE the min-width:640px block is required by name (a
+    // rule count would be satisfied by the aside override alone, 2026-08-23).
     if (insets.length < 2) return false;
+    if (!/\.ai-authored::after\s*\{[^}]*inset:/.test(mediaBlock(css, '@media (min-width: 640px) {'))) return false;
     // ascii-safe: CSS lengths, digits only
     const negative = (sides: string[]) =>
       sides.length >= 1 && sides.length <= 4 && sides.every((v) => /^-[0-9]+px$/.test(v));
@@ -134,11 +196,13 @@ const P = {
       && /mix-blend-mode:\s*multiply/.test(m[2])
       && /pointer-events:\s*none/.test(m[2]);
   },
-  /** The tint token is named, not borrowed from brand/gold — and the retired
-   *  dot token is gone from the sheet entirely, so nothing can quietly paint
-   *  with it again. */
+  /** The tint and the edge are named tokens of the AI-authored family, not
+   *  borrowed from brand/gold — and the retired dot token is gone from the
+   *  sheet entirely, so nothing can quietly paint with it again. */
   tintHasOwnTokens(css: string): boolean {
-    return /--color-ai-tint:\s*#[0-9A-Fa-f]{6}/.test(css) && !/--color-ai-dot/.test(css);
+    return /--color-ai-tint:\s*#[0-9A-Fa-f]{6}/.test(css)
+      && /--color-ai-edge:\s*#[0-9A-Fa-f]{6}/.test(css)
+      && !/--color-ai-dot/.test(css);
   },
   /** Exporters never reference the tint and never read the DOM for content. */
   exportersBlindToTint(src: string): boolean {
@@ -170,9 +234,10 @@ const P = {
 
 // ── 1. The stylesheet ───────────────────────────────────────────────────────
 test('the tint is defined on screen with its own tokens and neutralised in @media print', () => {
-  assert.ok(P.tintHasOwnTokens(CSS), '--color-ai-tint must be a named token, and --color-ai-dot must be gone');
+  assert.ok(P.tintHasOwnTokens(CSS), '--color-ai-tint and --color-ai-edge must be named tokens, and --color-ai-dot must be gone');
   assert.ok(P.tintDefinedOnScreen(CSS), '.ai-authored::after surface must exist outside @media print');
-  assert.ok(P.markIsSurfaceOnly(CSS), 'the mark is the surface: no corner-absolute ::before may be drawn on screen');
+  assert.ok(P.markIsLeftEdge(CSS), 'the carrier is a dashed LEFT edge on ::before, above the overlay — never a corner-absolute mark');
+  assert.ok(P.edgeTracksSurface(CSS), 'the edge must sit on the surface boundary at every width: each ::before left equals the ::after horizontal inset beside it');
   assert.ok(P.tintNeutralisedInPrint(CSS), 'Ctrl+P prints the live note: both pseudo-elements must be removed inside @media print');
   assert.ok(P.surfaceHasOwnSpacing(CSS), 'the surface must extend past the host (negative inset) at every width, with no host padding');
   assert.ok(P.verticalBleedKeepsTheSeam(CSS), 'the vertical bleed must leave a seam between two sections 16px apart');
@@ -199,7 +264,7 @@ test('every doctor-editable key has a tint host, and the host carries no text', 
 
 // ── 3. Red proof ────────────────────────────────────────────────────────────
 test('RED PROOF — every predicate rejects the regression it guards', () => {
-  const NO_PRINT_RULE = CSS.replace(/\n  \/\* The AI-authored tint[\s\S]*?\.ai-authored::before \{\n    display: none !important;\n  \}\n/, '\n');
+  const NO_PRINT_RULE = CSS.replace(/\n  \/\* The AI-authored mark[\s\S]*?\.ai-authored::before \{\n    display: none !important;\n  \}\n/, '\n');
   assert.notEqual(NO_PRINT_RULE, CSS, 'failed to remove the print rule — the red proof would be vacuous');
   assert.equal(P.tintNeutralisedInPrint(NO_PRINT_RULE), false);
   // Lose ONE pseudo from the print selector list: the other surviving is not enough.
@@ -209,28 +274,62 @@ test('RED PROOF — every predicate rejects the regression it guards', () => {
   assert.equal(P.tintNeutralisedInPrint(CSS.replace(PRINT_SEL, '  .ai-authored::after {\n    display: none !important;')), false);
   assert.equal(P.tintNeutralisedInPrint(CSS.replace(PRINT_SEL, PRINT_SEL.replace('none', 'block'))), false);
   assert.equal(P.tintDefinedOnScreen(CSS.replace('background: var(--color-ai-tint);', 'background: var(--color-brand-light);')), false);
-  // The regression this change exists to prevent: the corner dot, put back.
-  const RESPONSIVE_STEP = '@media (min-width: 640px) {\n  .ai-authored::after {';
-  assert.ok(CSS.includes(RESPONSIVE_STEP), 'responsive bleed drifted — re-anchor the red proof');
-  const WITH_DOT = CSS.replace(
-    RESPONSIVE_STEP,
-    ".ai-authored::before {\n  content: '';\n  position: absolute;\n  top: -1px;\n  right: -5px;\n  width: 8px;\n  height: 8px;\n}\n" + RESPONSIVE_STEP,
-  );
-  assert.notEqual(WITH_DOT, CSS, 'failed to reintroduce the dot — the red proof would be vacuous');
-  assert.equal(P.markIsSurfaceOnly(WITH_DOT), false);
-  // …and nothing else catches it: the print neutraliser still passes on that
-  // same input. A dot hidden on paper is still a dot on screen, which is the
-  // only place it ever collided — so this predicate is the one doing the work.
+  // THE CARRIER REMOVED: the base ::before rule deleted outright. This is the
+  // regression the 2026-08-23 ruling exists to prevent — the tint alone is
+  // ~1.07:1 against white and carries nothing a doctor can see.
+  const EDGE_RULE = CSS.match(/(^|\n)\.ai-authored::before\s*\{[^}]*\}/)?.[0];
+  assert.ok(EDGE_RULE && /border-left/.test(EDGE_RULE), 'base ::before edge rule drifted — re-anchor the red proof');
+  const NO_EDGE = CSS.replace(EDGE_RULE!, '\n');
+  assert.notEqual(NO_EDGE, CSS, 'failed to remove the edge — the red proof would be vacuous');
+  assert.equal(P.markIsLeftEdge(NO_EDGE), false);
+  // …and nothing else catches it: the surface predicates and the print
+  // neutraliser all still pass on that same input, so this predicate is the
+  // one doing the work.
+  assert.equal(P.tintDefinedOnScreen(NO_EDGE), true);
+  assert.equal(P.surfaceHasOwnSpacing(NO_EDGE), true);
+  assert.equal(P.tintNeutralisedInPrint(NO_EDGE), true);
+  // The corner dot, put back in the edge's place: `right` + `width` + `height`.
+  const WITH_DOT = CSS.replace(EDGE_RULE!, "\n.ai-authored::before {\n  content: '';\n  position: absolute;\n  top: -1px;\n  right: -5px;\n  width: 8px;\n  height: 8px;\n  z-index: 2;\n  pointer-events: none;\n}");
+  assert.equal(P.markIsLeftEdge(WITH_DOT), false);
   assert.equal(P.tintNeutralisedInPrint(WITH_DOT), true);
+  // Each shape constraint alone, spliced into the base edge rule only (a
+  // whole-file replace would hit the responsive step first and prove nothing).
+  const edge = (from: string, to: string) => {
+    const r = EDGE_RULE!.replace(from, to);
+    assert.notEqual(r, EDGE_RULE, `edge splice "${from}" did not apply — re-anchor the red proof`);
+    return CSS.replace(EDGE_RULE!, r);
+  };
+  assert.equal(P.markIsLeftEdge(edge('left: -12px;', 'right: -12px;')), false);         // the corner
+  assert.equal(P.markIsLeftEdge(edge('left: -12px;', 'left: 0;')), false);              // flush with the text, not at the bleed
+  assert.equal(P.markIsLeftEdge(edge('bottom: -6px;', 'height: 16px;')), false);        // a tick-length mark, indistinguishable from the section tick
+  assert.equal(P.markIsLeftEdge(edge('var(--color-ai-edge)', 'var(--color-accent)')), false); // borrowed colour — drifts with the brand
+  assert.equal(P.markIsLeftEdge(edge('z-index: 2;', 'z-index: 0;')), false);             // under the overlay: multiplied, washed
+  assert.equal(P.markIsLeftEdge(edge('z-index: 2;', 'z-index: 1;')), false);             // level with it: paint order undefined by this sheet
+  assert.equal(P.markIsLeftEdge(edge('  pointer-events: none;\n', '')), false);          // eats the click-to-edit
+  // `border-left` must never satisfy a check meant for `left` (and vice versa).
+  assert.equal(P.markIsLeftEdge(edge('  left: -12px;\n', '')), false);
+  // Tracking: the responsive step lost, the step's edge left behind, the aside
+  // override's edge left behind.
+  const STEP_EDGE = '  .ai-authored::before {\n    left: -20px;\n  }\n';
+  assert.ok(CSS.includes(STEP_EDGE), 'responsive edge step drifted — re-anchor the red proof');
+  assert.equal(P.edgeTracksSurface(CSS.replace(STEP_EDGE, '')), false);
+  assert.equal(P.edgeTracksSurface(CSS.replace(STEP_EDGE, STEP_EDGE.replace('-20px', '-12px'))), false);
+  const ASIDE_EDGE = '.result-grid > aside .ai-authored::before {\n  left: -12px;\n}';
+  assert.ok(CSS.includes(ASIDE_EDGE), 'aside edge override drifted — re-anchor the red proof');
+  assert.equal(P.edgeTracksSurface(CSS.replace(ASIDE_EDGE, '')), false);
+  assert.equal(P.edgeTracksSurface(CSS.replace(ASIDE_EDGE, ASIDE_EDGE.replace('-12px', '-20px'))), false);
+  assert.equal(P.edgeTracksSurface(NO_EDGE), false);
   // Spacing: a flush surface, a one-sided bleed, a host with padding, no
   // stacking context, and — the width-specific shape — a responsive step that
   // goes positive while the base rule stays correct.
   assert.equal(P.surfaceHasOwnSpacing(CSS.replace('inset: -6px -12px;', 'inset: 0;')), false);
   assert.equal(P.surfaceHasOwnSpacing(CSS.replace('inset: -6px -12px;', 'inset: -6px 0;')), false);
   assert.equal(P.surfaceHasOwnSpacing(CSS.replace('inset: -6px -20px;', 'inset: -6px 20px;')), false);
-  const RESPONSIVE_RULE = RESPONSIVE_STEP + '\n    inset: -6px -20px;\n  }\n}';
+  // The responsive ::after step removed (the ::before step and the aside
+  // override stay, so a bare rule count would still see two insets).
+  const RESPONSIVE_RULE = '@media (min-width: 640px) {\n  .ai-authored::after {\n    inset: -6px -20px;\n  }\n';
   assert.ok(CSS.includes(RESPONSIVE_RULE), 'responsive rule body drifted — re-anchor the red proof');
-  assert.equal(P.surfaceHasOwnSpacing(CSS.replace(RESPONSIVE_RULE, '')), false);
+  assert.equal(P.surfaceHasOwnSpacing(CSS.replace(RESPONSIVE_RULE, '@media (min-width: 640px) {\n')), false);
   assert.equal(P.surfaceHasOwnSpacing(CSS.replace('isolation: isolate;', 'isolation: isolate;\n  padding: 8px 14px;')), false);
   assert.equal(P.surfaceHasOwnSpacing(CSS.replace('isolation: isolate;', 'isolation: auto;')), false);
   // The seam: 8px a side exactly closes a 16px gap, so it must already fail.
@@ -252,6 +351,7 @@ test('RED PROOF — every predicate rejects the regression it guards', () => {
   assert.ok(BASE && /pointer-events:\s*none/.test(BASE), 'base ::after rule drifted — re-anchor the red proof');
   assert.equal(P.surfaceIsOverlay(CSS.replace(BASE!, BASE!.replace(/\n\s*pointer-events:\s*none;/, ''))), false);
   assert.equal(P.tintHasOwnTokens(CSS.replace('--color-ai-tint:', '--color-ai-tint-x:')), false);
+  assert.equal(P.tintHasOwnTokens(CSS.replace('--color-ai-edge:', '--color-ai-edge-x:')), false);
   assert.equal(P.tintHasOwnTokens(CSS.replace('  --color-ai-tint: #EEF4FB;', '  --color-ai-tint: #EEF4FB;\n  --color-ai-dot:  #2F5C8F;')), false);
   assert.equal(P.exportersBlindToTint(EXPORTERS + "\nconst leak = document.querySelector('.ai-authored');"), false);
   assert.equal(P.exportersBlindToTint(EXPORTERS + '\n// fields_touched mentioned only here\nconst x = fields_touched;'), false);

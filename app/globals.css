@@ -67,13 +67,23 @@
      confidence. Blue because it is provenance, like the source highlight; its
      own token because it is NOT the source highlight, and a tint written
      against --color-brand-light would change meaning the day brand-light is
-     re-tuned (the exact drift the gold comment above records). A surface tint
-     and NOTHING else — it clears the moment the doctor edits the section. (A
-     corner dot rode alongside it until 2026-08-22; it was removed because every
-     host's top-right corner is already a control slot, so it had no home. The
-     surface is now the sole carrier of the mark.) Screen only — neutralised in
-     the print stylesheet; the exporters never see the DOM. */
+     re-tuned (the exact drift the gold comment above records). It clears the
+     moment the doctor edits the section. Screen only — neutralised in the
+     print stylesheet; the exporters never see the DOM.
+     Two layers, one bit (2026-08-23): --color-ai-tint is the SURFACE, a soft
+     secondary wash (~1.07:1 against white — it cannot carry the signal alone,
+     which is why the family has a second token). --color-ai-edge is the
+     CARRIER: a dashed left edge along the surface's boundary, the part of the
+     mark a doctor can actually see. Its value is the documented brand-mid
+     steel (#2F5C8F, Design-System-App.md) — the same provenance-blue family
+     as the source highlight, one step lighter than the heading ink so the
+     edge sits beside the section title without competing with it — but it is
+     its OWN token for the same reason the tint is. (A corner dot rode with
+     the tint until 2026-08-22; it was removed because every host's top-right
+     corner is already a control slot, so it had no home. The edge has one:
+     the left boundary, which no control ever occupies.) */
   --color-ai-tint: #EEF4FB;
+  --color-ai-edge: #2F5C8F;
 
   /* OK/red kept as aliases on the new palette */
   --color-red:      #C0392B;
@@ -658,11 +668,12 @@ html, body {
     border: none !important;
     padding: 0 !important;
   }
-  /* The AI-authored tint is a screen affordance only — Ctrl+P prints the live
-     note, so the surface is removed here. ::before is listed alongside it on
-     purpose although nothing draws one today: the neutraliser must already be
-     in place for whatever treatment review lands on, so a future mark cannot
-     reach paper by simply being added. */
+  /* The AI-authored mark is a screen affordance only — Ctrl+P prints the live
+     note, so both layers are removed here: the tint surface (::after) and the
+     dashed left edge that carries it (::before). The ::before line predates
+     the edge: it was put here on 2026-08-22, while nothing drew one, precisely
+     so that whatever treatment review landed on could not reach paper by
+     simply being added. Keep both; scripts/ai-tint.test.ts checks per pseudo. */
   .ai-authored::after,
   .ai-authored::before {
     display: none !important;
@@ -678,26 +689,48 @@ html, body {
   display: none;
 }
 
-/* AI-authored section (see the --color-ai-tint token): a surface tint over the
-   section host, and nothing else. Decorative by design — no text, no ARIA; the
-   pseudo-element exists only on screen and is never part of a copy, export or
-   print surface.
+/* AI-authored section (see the --color-ai-tint / --color-ai-edge tokens): a
+   dashed LEFT EDGE along a soft surface tint, on the section host, and nothing
+   else. Decorative by design — no text, no ARIA; both pseudo-elements exist
+   only on screen and are never part of a copy, export or print surface.
 
-   THE MARK IS THE SURFACE (2026-08-22). It used to be the surface PLUS an 8px
-   dot absolutely positioned to the host's top-right corner, and that corner is
-   never free: NoteSectionHead puts its action group there (`ml-auto` — Копирай,
+   THE CARRIER IS THE EDGE, THE SURFACE IS SECONDARY (2026-08-23). From
+   2026-08-22 the surface was the sole carrier, and a surface alone cannot
+   carry this: #EEF4FB over white is ~1.07:1, below anything a doctor reads at
+   a glance. The earlier rationale — that the blue bar beside the title already
+   said „the machine wrote this" — was false: NoteSectionHead draws that 3px
+   accent tick on EVERY section, tinted or not, and the three subsection hosts
+   (Резултати / Назначени / Направления) use SubsectionHead, which draws no
+   bar at all. So the mark needed a carrier of its own that (a) appears only
+   on AI-authored hosts, (b) works on hosts with no heading bar to modify, and
+   (c) is distinguishable from the universal tick at a glance, without a
+   second section to compare against.
+
+   The edge is that carrier. It runs the full height of the surface along its
+   left boundary — DASHED, where the tick is a solid 3×16px pill: a different
+   kind of line, not a second copy of the same one (a solid bar out at the
+   bleed read as „two bars" next to the tick, 2026-08-22), and dashed is the
+   conventional drawing for „provisional, not yet attested", which is the one
+   bit the mark carries. With the surface's left corners squared against it
+   the two layers compose into a single callout — edge plus panel — and the
+   doctor learns one shape, not two. It clears with the class when the doctor
+   edits, so the section's layout never moves.
+
+   Why not a corner mark: the surface PLUS an 8px dot absolutely positioned to
+   the host's top-right corner was tried first, and that corner is never free —
+   NoteSectionHead puts its action group there (`ml-auto` — Копирай,
    Редактирай), the subsection heads put a `justify-between` right group there
-   („няма ясен източник"), and MedsPanel puts its count badge there. Measured on
-   a real note: the dot sat ON Копирай in Анамнеза and Терапия, ON „няма ясен
-   източник" in Резултати / Назначени / Направления, and half off the card above
-   the „5" badge in Медикаменти. Worse, it was anchored to the host's border box
-   while the controls it overlapped are in a `flex-wrap` row — so at 390px the
-   header wraps, the button drops to a second line and the dot does not, and the
-   mark's apparent position changes with the window. A corner-absolute overlay
-   in a corner that is always occupied cannot be made collision-safe; it was
-   removed rather than negotiated with. The surface has no such problem: it IS
-   the section, so it is in the same relative place at every width by
-   construction, and it carries exactly the same one bit the dot did. */
+   („няма ясен източник"), and MedsPanel puts its count badge there. Measured
+   on a real note: the dot sat ON Копирай in Анамнеза and Терапия, ON „няма ясен
+   източник" in Резултати / Назначени / Направления, and half off the card
+   above the „5" badge in Медикаменти. Worse, it was anchored to the host's
+   border box while the controls it overlapped are in a `flex-wrap` row — so
+   at 390px the header wraps, the button drops to a second line and the dot
+   does not, and the mark's apparent position changes with the window. A
+   corner-absolute overlay in a corner that is always occupied cannot be made
+   collision-safe; it was removed rather than negotiated with. The left
+   boundary has none of that: no control ever occupies it, and the edge is in
+   the same relative place at every width by construction. */
 .ai-authored {
   position: relative;
   /* Own stacking context: bounds the ::after overlay's blend group to this
@@ -735,19 +768,56 @@ html, body {
   z-index: 1;
   mix-blend-mode: multiply;
   background: var(--color-ai-tint);
-  border-radius: 12px;
-  /* No inset bar: NoteSectionHead already draws a 3px accent bar beside the
-     title, and a second one out at the bleed's edge read as two bars
-     (2026-08-22). */
+  /* Squared on the left, where the edge runs; rounded on the right. The two
+     pseudo-elements read as ONE callout this way — a rounded left corner would
+     curve the tint away from a straight edge and leave the edge's ends poking
+     out of the panel. */
+  border-radius: 0 12px 12px 0;
+  pointer-events: none;
+}
+/* THE CARRIER: a 3px dashed edge on the surface's left boundary, the surface's
+   full height. `left` is the ::after's horizontal inset and `top`/`bottom` its
+   vertical one — the edge sits ON the boundary, not near it, and every rule
+   that moves the surface moves the edge (the responsive step and the aside
+   override below both carry a ::before line for that reason;
+   scripts/ai-tint.test.ts pins the pairing). Above the overlay (z-index 2 > 1)
+   so the multiply wash never dulls it: the dashes are the token's colour
+   exactly, which is what the measured contrast is a measurement OF. */
+.ai-authored::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  left: -12px;
+  width: 0;
+  border-left: 3px dashed var(--color-ai-edge);
+  z-index: 2;
   pointer-events: none;
 }
 /* The sheet's padding grows at Tailwind's `sm` (p-6 → sm:p-8); the bleed grows
-   with it so the gutter stays 13px. Same breakpoint, deliberately — a bleed
-   tuned to a different one would drift the day the sheet's padding is retuned. */
+   with it so the gutter stays 13px, and the edge steps with the bleed. Same
+   breakpoint, deliberately — a bleed tuned to a different one would drift the
+   day the sheet's padding is retuned. */
 @media (min-width: 640px) {
   .ai-authored::after {
     inset: -6px -20px;
   }
+  .ai-authored::before {
+    left: -20px;
+  }
+}
+/* The meds rail's host (Медикаменти, in the right aside) is not inside the
+   sheet, so the sheet's padding is the wrong thing for its bleed to track. In
+   the single-column layout (.result-grid at 16px padding, <main> under 720px)
+   the 20px step pushed that surface 4px past the viewport — a 4px horizontal
+   page scroll on every phone and tablet between 640px and ~970px wide
+   (measured 2026-08-23; the 20px bleed was sized for the sheet on 08-22 and
+   never met the aside). 12px fits the rail's 16px gutter at every width. */
+.result-grid > aside .ai-authored::after {
+  inset: -6px -12px;
+}
+.result-grid > aside .ai-authored::before {
+  left: -12px;
 }
 
 /* ── Workspace sidebar (components/ClinicSidebar.tsx) ─────────
