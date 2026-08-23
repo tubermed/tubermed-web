@@ -229,6 +229,83 @@ const P = {
     if (!edge || !tint || !sheet) return false;
     return contrast(edge, tint) >= 3 && contrast(edge, sheet) >= 3;
   },
+  /** CLOSED FORM. A source-text gate cannot see the cascade: the refuter's
+   *  second round (2026-08-23) wrote 34 mutations of this sheet and 28 of
+   *  them left every predicate above green while the carrier rendered with
+   *  0% ink in the real page — a trailing `.ai-authored:before { border: 0 }`,
+   *  `border-left-color: transparent` or `clip-path` or `transform: scale(0)`
+   *  ADDED to the base rule beside the declarations that are checked, a
+   *  second `--color-ai-edge` in `:root`, `overflow: hidden` on the host.
+   *  Every one is "something else in the sheet wins". So the sheet may say
+   *  NOTHING about the carrier beyond what is pinned here:
+   *    – the base rule carries exactly these nine declarations, each once;
+   *    – the 640px step and the aside override carry exactly `left`;
+   *    – the host rule carries exactly `position` + `isolation`;
+   *    – no other selector addresses the pseudo-element in any spelling
+   *      (`:before`, `::before`, inside `:is()`, an attribute form, a
+   *      descendant form, inside `@media screen` / `@supports`);
+   *    – `--color-ai-edge` is defined exactly once in the whole file.
+   *  Values stay loose where review owns them (thickness, style, colour —
+   *  the colour through edgeIsVisible); the SET of properties is closed.
+   *  What this still cannot see: a utility class or inline style on a host
+   *  or an ancestor — hostIsBare covers the host tag; the rendered check
+   *  (the edge sweep in the rig) remains the only proof of pixels. */
+  edgeRulesAreClosed(css: string): boolean {
+    const clean = screenOnly(css).replace(/\/\*[\s\S]*?\*\//g, '');
+    const decls = (body: string) => body.split(';').map((s) => s.trim()).filter(Boolean)
+      .map((s) => { const i = s.indexOf(':'); return [s.slice(0, i).trim(), s.slice(i + 1).trim()] as const; });
+    const exactly = (body: string | undefined, expected: Record<string, string | RegExp>): boolean => {
+      if (body === undefined) return false;
+      const d = decls(body);
+      if (d.length !== Object.keys(expected).length) return false;
+      const seen = new Set<string>();
+      return d.every(([p, v]) => {
+        if (seen.has(p)) return false;
+        seen.add(p);
+        const e = expected[p];
+        return e !== undefined && (typeof e === 'string' ? v === e : e.test(v));
+      });
+    };
+    const base = clean.match(/(^|\n)\.ai-authored::before\s*\{([^}]*)\}/)?.[2];
+    const step = mediaBlock(clean, '@media (min-width: 640px) {').match(/\.ai-authored::before\s*\{([^}]*)\}/)?.[1];
+    const aside = clean.match(/\n\.result-grid > aside \.ai-authored::before\s*\{([^}]*)\}/)?.[1];
+    const host = clean.match(/(^|\n)\.ai-authored\s*\{([^}]*)\}/)?.[2];
+    const px = /^-?[0-9]+px$/; // ascii-safe: CSS lengths
+    if (!exactly(base, {
+      content: /^(''|"")$/, position: 'absolute', top: px, bottom: px, left: /^-[0-9]+px$/, width: '0',
+      'border-left': /^[1-9][0-9]*px (dashed|dotted|solid) var\(--color-ai-edge\)$/, // ascii-safe: a CSS border shorthand
+      'z-index': /^[0-9]+$/, 'pointer-events': 'none',
+    })) return false;
+    if (!exactly(step, { left: /^-[0-9]+px$/ })) return false;
+    if (!exactly(aside, { left: /^-[0-9]+px$/ })) return false;
+    if (!exactly(host, { position: 'relative', isolation: 'isolate' })) return false;
+    // Every selector in the screen sheet (at-rule heads excluded); exactly
+    // the three known ones may mention the host together with `before`.
+    const selectors = [...clean.matchAll(/([^{}]+)\{/g)].map((m) => m[1].trim()).filter((s) => !s.startsWith('@'));
+    if (selectors.filter((s) => /ai-authored/.test(s) && /before/.test(s)).length !== 3) return false;
+    return (css.match(/--color-ai-edge\s*:/g) || []).length === 1;
+  },
+  /** The host tag itself is bare: id / key / className / data-ai-authored and
+   *  nothing else — no inline style, no extra utility hook. (The class string
+   *  is checked by hostClassesAreClosed.) */
+  hostIsBare(page: string): boolean {
+    const tags = page.match(/<div[\s\n][^>]*data-ai-authored=[^>]*>/g) || [];
+    if (tags.length === 0) return false;
+    return tags.every((t) => [...t.matchAll(/\s([A-Za-z][A-Za-z0-9-]*)=/g)].map((m) => m[1]) // ascii-safe: JSX attribute names
+      .every((a) => ['id', 'key', 'className', 'data-ai-authored'].includes(a)));
+  },
+  /** Every class literal that carries `ai-authored` is made only of the
+   *  layout tokens the hosts are known to use — a utility such as
+   *  `overflow-hidden` or `contain-paint` on a host would clip the edge
+   *  without touching the sheet. */
+  hostClassesAreClosed(page: string): boolean {
+    // Class-token characters only, so the match can never span from one
+    // string literal to the next (`…'pridruzhavashti') ? 'ai-authored'`).
+    const literals = page.match(/'[A-Za-z0-9 :/.\-\[\]]*ai-authored[A-Za-z0-9 :/.\-\[\]]*'/g) || []; // ascii-safe: Tailwind class tokens
+    if (literals.length === 0) return false;
+    const allowed = new Set(['ai-authored', 'scroll-mt-24', 'mb-4']);
+    return literals.every((l) => l.slice(1, -1).split(/\s+/).every((c) => allowed.has(c)));
+  },
   /** The tint and the edge are named tokens of the AI-authored family, not
    *  borrowed from brand/gold — and the retired dot token is gone from the
    *  sheet entirely, so nothing can quietly paint with it again. */
@@ -272,6 +349,7 @@ test('the tint is defined on screen with its own tokens and neutralised in @medi
   assert.ok(P.markIsLeftEdge(CSS), 'the carrier is a dashed LEFT edge on ::before, above the overlay — never a corner-absolute mark');
   assert.ok(P.edgeTracksSurface(CSS), 'the edge must sit on the surface boundary at every width: each ::before left equals the ::after horizontal inset beside it');
   assert.ok(P.edgeIsVisible(CSS), 'the edge must be visible: never hidden by a screen rule, and at least 3:1 against both the sheet and the tint');
+  assert.ok(P.edgeRulesAreClosed(CSS), 'the sheet may say nothing else about the carrier: closed declaration sets, no other selector on the pseudo-element, the token defined once');
   assert.ok(P.tintNeutralisedInPrint(CSS), 'Ctrl+P prints the live note: both pseudo-elements must be removed inside @media print');
   assert.ok(P.surfaceHasOwnSpacing(CSS), 'the surface must extend past the host (negative inset) at every width, with no host padding');
   assert.ok(P.verticalBleedKeepsTheSeam(CSS), 'the vertical bleed must leave a seam between two sections 16px apart');
@@ -289,6 +367,8 @@ test('fields_touched is read-only: never posted on /edit, a sibling of the note,
 test('every doctor-editable key has a tint host, and the host carries no text', () => {
   assert.ok(P.everyKeyHosted(RESULT, TINT_KEYS), 'a key without aiAuthored(...) wiring would silently never tint');
   assert.ok(P.hostCarriesNoText(RESULT));
+  assert.ok(P.hostIsBare(RESULT), 'a tint host tag carries id / key / className / data-ai-authored and nothing else');
+  assert.ok(P.hostClassesAreClosed(RESULT), 'a tint host class string is made only of ai-authored + its known layout tokens');
   // Embedded investigation blocks (model-written readouts) get a per-block host.
   assert.match(RESULT, /data-ai-authored={aiAuthoredBlock(i) || undefined}/, 'each izsledvania_blocks card must be a tint host');
   // Editing is the attestation: the optimistic clear must live in trackEdit.
@@ -368,6 +448,41 @@ test('RED PROOF — every predicate rejects the regression it guards', () => {
   // …and the real sheet clears the bar with room: the token is 6.9:1 on
   // white and 6.2:1 on the tint, so a 3:1 floor is a floor, not a fit.
   assert.ok(contrast('2F5C8F', 'FFFFFF') > 6.5 && contrast('2F5C8F', 'EEF4FB') > 6);
+  // CLOSED FORM — the refuter's 28 green-but-invisible mutations, one per
+  // route class. Each was rendered in the real page at 0% ink before this
+  // predicate existed; each must now be refused by the sheet alone.
+  const closed = (mutated: string) => { assert.notEqual(mutated, CSS, 'mutation did not apply'); return P.edgeRulesAreClosed(mutated); };
+  // A later rule wins the cascade, in every spelling the regexes above do not see.
+  assert.equal(closed(CSS + '\n.ai-authored:before { border: 0; }\n'), false);
+  assert.equal(closed(CSS + '\n.ai-authored::before, .never-matches { display: none; }\n'), false);
+  assert.equal(closed(CSS + '\n[class~="ai-authored"]::before { border-left-width: 0; }\n'), false);
+  assert.equal(closed(CSS + '\n:is(.ai-authored)::before { border-left-color: transparent; }\n'), false);
+  assert.equal(closed(CSS + '\nhtml .ai-authored::before { left: -12px; border-left-color: transparent; }\n'), false);
+  assert.equal(closed(CSS + '\n@media screen {\n  .ai-authored:before { visibility: hidden; }\n}\n'), false);
+  // A declaration ADDED to the base rule beside the nine that are checked.
+  for (const extra of ['border-left-color: transparent', 'clip-path: inset(100%)', 'transform: scale(0)', 'filter: opacity(0)',
+    'mix-blend-mode: lighten', 'max-height: 0', 'border-left-style: hidden', 'inset-block: 50% 50%', 'scale: 0',
+    'translate: -9999px', 'border-image: linear-gradient(transparent, transparent) 1', 'content: normal', 'border-left: 0']) {
+    assert.equal(closed(edge('  pointer-events: none;\n', `  pointer-events: none;\n  ${extra};\n`)), false, extra);
+  }
+  assert.equal(closed(edge('  left: -12px;\n', '  left: -12px;\n  left: 9999px;\n')), false);          // the same property twice
+  assert.equal(closed(edge('  width: 0;\n', '')), false);                                              // one of the nine missing
+  // The step or the override saying more than `left`.
+  assert.equal(closed(CSS.replace(STEP_EDGE, STEP_EDGE.replace('left: -20px;', 'left: -20px;\n    border-left-color: transparent;'))), false);
+  assert.equal(closed(CSS.replace(ASIDE_EDGE, ASIDE_EDGE.replace('left: -12px;', 'left: -12px;\n  border: 0;'))), false);
+  // The host rule clipping its own pseudo-element.
+  assert.equal(closed(CSS.replace('isolation: isolate;', 'isolation: isolate;\n  overflow: hidden;')), false);
+  assert.equal(closed(CSS.replace('isolation: isolate;', 'isolation: isolate;\n  contain: paint;')), false);
+  assert.equal(closed(CSS.replace('isolation: isolate;', 'isolation: isolate;\n  --color-ai-edge: transparent;')), false);
+  // The token defined a second time, anywhere — `:root` outside @theme, the
+  // host, the theme itself, a comment-free duplicate.
+  assert.equal(closed(CSS + '\n:root { --color-ai-edge: transparent; }\n'), false);
+  assert.equal(closed(CSS + '\n:root { --color-ai-edge: rgb(238 244 251); }\n'), false);
+  assert.equal(closed(CSS.replace('  --color-ai-edge: #2F5C8F;', '  --color-ai-edge: #2F5C8F;\n  --color-ai-edge: #EEF4FB;')), false);
+  // The host tag or class string carrying a clip the sheet never sees.
+  assert.equal(P.hostIsBare(RESULT.replace('data-ai-authored={aiAuthored || undefined}>', 'data-ai-authored={aiAuthored || undefined} style={{ overflow: \'hidden\' }}>')), false);
+  assert.equal(P.hostClassesAreClosed(RESULT.replace("'scroll-mt-24 ai-authored'", "'scroll-mt-24 ai-authored overflow-hidden'")), false);
+  assert.equal(P.hostClassesAreClosed(RESULT.replace("'ai-authored'", "'ai-authored contain-paint'")), false);
   // Spacing: a flush surface, a one-sided bleed, a host with padding, no
   // stacking context, and — the width-specific shape — a responsive step that
   // goes positive while the base rule stays correct.
