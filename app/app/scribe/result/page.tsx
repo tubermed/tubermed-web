@@ -2148,9 +2148,16 @@ function ResultPageInner() {
 
                 {visibleSections['sec-rezultati'] && (
                   <div id="sec-rezultati" className={aiAuthored('izsledvania') ? 'mb-4 scroll-mt-24 ai-authored' : 'mb-4 scroll-mt-24'} data-ai-authored={aiAuthored('izsledvania') || undefined}>
-                    <div className="flex items-center justify-between gap-2">
+                    {/* flex-wrap + ml-auto (2026-08-23), the same row shape
+                        NoteSectionHead got on 08-19: these three subsection
+                        rows never wrapped, so at 375px „няма ясен източник"
+                        escaped its section by 13/15/25px. justify-between
+                        and ml-auto place the right group identically on one
+                        line; only ml-auto keeps it right-aligned when it
+                        drops to a second one. */}
+                    <div className="flex flex-wrap items-center gap-2">
                       <SubsectionHead title="Резултати от изследвания" />
-                      <div className="flex items-center gap-2">
+                      <div className="ml-auto flex items-center gap-2">
                         {uncertainByField.izsledvania.length > 0 && <SourceStateBadge />}
                         <SourceButton
                           onClick={() => showSource('izsledvania', fields.izsledvania || '')}
@@ -2174,9 +2181,9 @@ function ResultPageInner() {
 
                 {visibleSections['sec-naznacheni'] && (
                   <div id="sec-naznacheni" className={aiAuthored('naznacheni') ? 'scroll-mt-24 ai-authored' : 'scroll-mt-24'} data-ai-authored={aiAuthored('naznacheni') || undefined}>
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <SubsectionHead icon="flask" title="Назначени изследвания" />
-                      <div className="flex items-center gap-2">
+                      <div className="ml-auto flex items-center gap-2">
                         {uncertainByField.naznacheni.length > 0 && <SourceStateBadge />}
                         <SourceButton
                           onClick={() => showSource('naznacheni', fields.naznacheni || '')}
@@ -2278,9 +2285,9 @@ function ResultPageInner() {
 
                 {visibleSections['sec-napravlenia'] && (
                   <div id="sec-napravlenia" className={aiAuthored('napravlenia') ? 'scroll-mt-24 ai-authored' : 'scroll-mt-24'} data-ai-authored={aiAuthored('napravlenia') || undefined}>
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <SubsectionHead icon="clipboard" title="Направления за консултация" />
-                      <div className="flex items-center gap-2">
+                      <div className="ml-auto flex items-center gap-2">
                         {uncertainByField.napravlenia.length > 0 && <SourceStateBadge />}
                         <SourceButton
                           onClick={() => showSource('napravlenia', fields.napravlenia || '')}

@@ -148,13 +148,36 @@ export default function MkbTypeahead({
 
   // ── Resolved (display) mode ──
   const hasValue = !!(code || term);
+  // flex-wrap (2026-08-23): this row is the field + the browse and remove
+  // buttons, and it never wrapped. Its minimum width is the field's longest
+  // word — „хиперхолестеролемия" at text-base is ~170px, plus the 64px code
+  // chip, paddings and the two 36/32px buttons — about 424px for a
+  // comorbidity row. On a 375px phone that put the browse button 50px past
+  // the section and the remove button off-screen entirely, and because the
+  // page's minimum width was now 424px, a real phone zoomed the whole sheet
+  // out to fit it. The field carries a flex basis so the buttons drop under
+  // it BEFORE it is squeezed below that; the term may break mid-word only
+  // once a single word is wider than the whole line (at 375px that is one
+  // word in the fixture, „хиперхолестеролемия", 177px in a 173px line; the
+  // alternative was the field escaping the section by the same 6px). Both
+  // numbers are sized to the 1280px result column (386px wide, measured) so
+  // that nothing wraps there that did not wrap before: a comorbidity row
+  // (browse + remove, 84px) has the section to itself and takes 18.5rem,
+  // which also drops its buttons under the field at 1024px instead of
+  // breaking the word; the main-diagnosis row shares its line with
+  // „Копирай МКБ" (71px) and takes 14rem — at 15rem its browse button would
+  // drop under the field at 1280. The wrapper's min-width makes the outer
+  // row drop „Копирай МКБ" under the field before the field is squeezed
+  // (without it the copy button packed beside a 214px field at 375px);
+  // min(…,100%) so it can never itself exceed the section at 320px.
+  const basis = onRemove ? 'basis-[18.5rem]' : 'basis-56';
   return (
-    <div className="flex items-center gap-2 flex-1">
+    <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[min(17rem,100%)]">
       <button
         type="button"
         onClick={enterSearch}
         disabled={disabled}
-        className="flex-1 flex items-center gap-2 px-3 py-2 rounded-md border text-left transition hover:bg-[var(--color-bg)] disabled:opacity-60"
+        className={`flex-1 ${basis} flex items-center gap-2 px-3 py-2 rounded-md border text-left transition hover:bg-[var(--color-bg)] disabled:opacity-60`}
         style={{
           borderColor: invalid ? 'var(--color-red)' : 'var(--color-border-mid)',
           background: 'white',
@@ -174,7 +197,11 @@ export default function MkbTypeahead({
             >
               {code || '—'}
             </span>
-            <span className="text-base flex-1 min-w-0" style={{ color: 'var(--color-ink)' }}>
+            {/* wrap-anywhere, not break-words: only `anywhere` lowers the
+                span's min-content, which is what lets the FIELD shrink below
+                its longest word; break-word breaks the same word but leaves
+                the minimum where it was, so the field still overflowed. */}
+            <span className="text-base flex-1 min-w-0 wrap-anywhere" style={{ color: 'var(--color-ink)' }}>
               {term || <span style={{ color: 'var(--color-text-muted)' }}>Изберете диагноза</span>}
             </span>
           </>
@@ -183,31 +210,40 @@ export default function MkbTypeahead({
         )}
         <Icon name="pencil" className="flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
       </button>
-      {onBrowse && (
-        <button
-          type="button"
-          onClick={onBrowse}
-          disabled={disabled}
-          aria-label="Преглед на всички МКБ-10 кодове"
-          title="Преглед по глави / закачени"
-          className="w-9 h-9 flex items-center justify-center rounded border transition flex-shrink-0 hover:bg-[var(--color-bg)] disabled:opacity-40"
-          style={{ borderColor: 'var(--color-border-mid)', color: 'var(--color-text-muted)' }}
-        >
-          <Icon name="search" />
-        </button>
-      )}
-      {onRemove && (
-        <button
-          type="button"
-          onClick={onRemove}
-          disabled={disabled}
-          aria-label="Премахни"
-          title="Премахни"
-          className="w-8 h-8 flex items-center justify-center rounded transition flex-shrink-0 hover:bg-[var(--color-red-soft)] disabled:opacity-40"
-          style={{ color: 'var(--color-text-muted)' }}
-        >
-          <Icon name="x" />
-        </button>
+      {/* One group, so the two buttons wrap under the field TOGETHER: a flex
+          line breaks item by item, and without the group the browse button
+          stayed beside the field while the remove button dropped under it
+          alone (425px and 1024px, measured). Same gap inside as outside, so
+          the geometry on one line is unchanged. */}
+      {(onBrowse || onRemove) && (
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {onBrowse && (
+            <button
+              type="button"
+              onClick={onBrowse}
+              disabled={disabled}
+              aria-label="Преглед на всички МКБ-10 кодове"
+              title="Преглед по глави / закачени"
+              className="w-9 h-9 flex items-center justify-center rounded border transition flex-shrink-0 hover:bg-[var(--color-bg)] disabled:opacity-40"
+              style={{ borderColor: 'var(--color-border-mid)', color: 'var(--color-text-muted)' }}
+            >
+              <Icon name="search" />
+            </button>
+          )}
+          {onRemove && (
+            <button
+              type="button"
+              onClick={onRemove}
+              disabled={disabled}
+              aria-label="Премахни"
+              title="Премахни"
+              className="w-8 h-8 flex items-center justify-center rounded transition flex-shrink-0 hover:bg-[var(--color-red-soft)] disabled:opacity-40"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              <Icon name="x" />
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
