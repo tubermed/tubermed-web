@@ -55,8 +55,17 @@ export function NoteSectionHead({
         >
           {title}
         </span>
+        {/* The action group wraps INSIDE itself too (2026-08-23): with the
+            „AI несигурен" badge beside „няма ясен източник" and Копирай it is
+            ~318px, wider than a 375px phone's 293px column, and as a
+            flex-shrink-0 unit it escaped the section by 26px (off-screen at
+            320–359, where it set the page's minimum width and the phone
+            zoomed out). Dropping flex-shrink-0 lets the group take the line
+            it wrapped onto; justify-end keeps whatever drops to a further
+            line right-aligned, as ml-auto does for the group itself. On one
+            line with room to spare nothing shrinks, so desktop is unchanged. */}
         {action && (
-          <div className="ml-auto flex items-center gap-2 flex-shrink-0">{action}</div>
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{action}</div>
         )}
       </div>
       <div

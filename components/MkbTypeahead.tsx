@@ -92,9 +92,15 @@ export default function MkbTypeahead({
   }
 
   // ── Search mode ──
+  // Same min-width as the display row (2026-08-23): without it the search
+  // box shared its line with „Копирай МКБ" and was 159px wide at 320 / 214px
+  // at 375, and the dropdown — input-width — clipped every option row
+  // horizontally (30/30 at 320, 17/30 at 375). Each option's term may wrap
+  // (min-w-0 + break-words: at spaces, mid-word only for a word wider than
+  // the row), which at 320 is the whole menu.
   if (searching) {
     return (
-      <div className="relative flex-1">
+      <div className="relative flex-1 min-w-[min(17rem,100%)]">
         <input
           ref={inputRef}
           type="text"
@@ -137,7 +143,7 @@ export default function MkbTypeahead({
                 >
                   {r[0]}
                 </span>
-                <span className="text-sm" style={{ color: 'var(--color-text)' }}>{r[1]}</span>
+                <span className="text-sm min-w-0 break-words" style={{ color: 'var(--color-text)' }}>{r[1]}</span>
               </button>
             ))}
           </div>
