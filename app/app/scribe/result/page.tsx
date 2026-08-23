@@ -46,7 +46,7 @@ import { mainDiagnosisPresentation, filedComorbidityTerm } from '@/lib/diagnosis
 import { loadIal } from '@/lib/ial-meds';
 import { findHighlights } from '@/lib/vital-rules';
 import { findSourceSpan, type SourceSpan } from '@/lib/source-grounding';
-import { storedSpanFor } from '@/lib/field-sources';
+import { storedSpanFor, hasSourceLookup } from '@/lib/field-sources';
 import { mkbReviewCopy, mkbCorrectionCopy, mkbDivergenceCopy } from '@/lib/mkb-review';
 import {
   resolveUncertainSpans,
@@ -1252,9 +1252,12 @@ function ResultPageInner() {
   // ── Per-field source grounding (Traceability Phase 1a) ────────
   // Find where the clicked field came from in the RAW transcript, open the
   // transcript, and highlight + scroll to that span. Empty transcript →
-  // "unavailable" (the button is already disabled in that case); no confident
-  // match → open the transcript so the doctor can scan it manually. Frontend-only
-  // and read-only: this NEVER flags the field as wrong.
+  // "unavailable" — but that guard is now unreachable from the UI: with no
+  // transcript SourceButton renders nothing at all, so there is no click to
+  // make. It stays as the defence-in-depth floor (and keeps activeSourceField,
+  // hence the „Няма ясен източник" banner, unreachable on that path). No
+  // confident match → open the transcript so the doctor can scan it manually.
+  // Frontend-only and read-only: this NEVER flags the field as wrong.
   const showSource = useCallback(
     (fieldKey: string, value: string) => {
       if (!original) return;
@@ -1581,8 +1584,10 @@ function ResultPageInner() {
     return <BootSplash />;
   }
 
-  // Source-grounding affordance is disabled when there's no transcript to point
-  // at (cold-start recovery omits the transcript by design).
+  // Source-grounding affordance is SUPPRESSED ENTIRELY when there's no
+  // transcript to point at (the recovery paths omit it by design). It used to
+  // render greyed-out, which still published the „няма ясен източник" verdict
+  // on a note nothing had been checked against — see SourceButton.
   const hasTranscript = !!(original.transcript && original.transcript.trim());
 
   const todayBg = new Date().toLocaleDateString('bg-BG', {
@@ -2021,7 +2026,7 @@ function ResultPageInner() {
                     asText(fields.osnovna_mkb_term).trim(),
                 )
               }
-              sourceDisabled={!hasTranscript}
+              sourceHasTranscript={hasTranscript}
               sourceResolved={sourceResolvedByField.osnovna_diagnoza}
               isLocked={isLocked}
               notifyCopy={notifyCopy}
@@ -2047,8 +2052,9 @@ function ResultPageInner() {
                   {uncertainByField.anamneza.length > 0 && <SourceStateBadge />}
                   <SourceButton
                     onClick={() => showSource('anamneza', fields.anamneza || '')}
-                    disabled={!hasTranscript}
+                    hasTranscript={hasTranscript}
                     resolved={sourceResolvedByField.anamneza}
+                    fieldKey="anamneza"
                   />
                   <CopyButton
                     text={fields.anamneza || ''}
@@ -2093,8 +2099,9 @@ function ResultPageInner() {
                   {uncertainByField.obektivno.length > 0 && <SourceStateBadge />}
                   <SourceButton
                     onClick={() => showSource('obektivno', fields.obektivno || '')}
-                    disabled={!hasTranscript}
+                    hasTranscript={hasTranscript}
                     resolved={sourceResolvedByField.obektivno}
+                    fieldKey="obektivno"
                   />
                   <CopyButton
                     text={fields.obektivno || ''}
@@ -2161,8 +2168,9 @@ function ResultPageInner() {
                         {uncertainByField.izsledvania.length > 0 && <SourceStateBadge />}
                         <SourceButton
                           onClick={() => showSource('izsledvania', fields.izsledvania || '')}
-                          disabled={!hasTranscript}
+                          hasTranscript={hasTranscript}
                           resolved={sourceResolvedByField.izsledvania}
+                          fieldKey="izsledvania"
                         />
                       </div>
                     </div>
@@ -2187,8 +2195,9 @@ function ResultPageInner() {
                         {uncertainByField.naznacheni.length > 0 && <SourceStateBadge />}
                         <SourceButton
                           onClick={() => showSource('naznacheni', fields.naznacheni || '')}
-                          disabled={!hasTranscript}
+                          hasTranscript={hasTranscript}
                           resolved={sourceResolvedByField.naznacheni}
+                          fieldKey="naznacheni"
                         />
                       </div>
                     </div>
@@ -2240,8 +2249,9 @@ function ResultPageInner() {
                   {uncertainByField.terapia.length > 0 && <SourceStateBadge />}
                   <SourceButton
                     onClick={() => showSource('terapia', fields.terapia || '')}
-                    disabled={!hasTranscript}
+                    hasTranscript={hasTranscript}
                     resolved={sourceResolvedByField.terapia}
+                    fieldKey="terapia"
                   />
                   <CopyButton
                     text={fields.terapia || ''}
@@ -2291,8 +2301,9 @@ function ResultPageInner() {
                         {uncertainByField.napravlenia.length > 0 && <SourceStateBadge />}
                         <SourceButton
                           onClick={() => showSource('napravlenia', fields.napravlenia || '')}
-                          disabled={!hasTranscript}
+                          hasTranscript={hasTranscript}
                           resolved={sourceResolvedByField.napravlenia}
+                          fieldKey="napravlenia"
                         />
                       </div>
                     </div>
@@ -2886,34 +2897,64 @@ function PrintMedsBlock({ meds }: { meds: Medication[] }) {
 }
 
 // Small, unobtrusive "виж източника" affordance (Traceability Phase 1a). Sits
-// near a field's label; disabled (greyed, with a hint) when no transcript exists.
-// no-print so it never bleeds into the printed/exported document.
+// near a field's label. no-print so it never bleeds into the printed/exported
+// document.
+//
+// ── The two silences (2026-08-23) ──────────────────────────────────────────
+// „няма ясен източник" is a VERDICT — „we looked and found nothing" — and this
+// component is the ONLY place it is rendered. A verdict may only be published
+// when it was actually reached, so the whole affordance disappears in the two
+// cases where it was not:
+//
+//   1. NO TRANSCRIPT. The recovery paths (`?visit=` from the library, a reload,
+//      a cold start) set original.transcript = '' by design — the backend omits
+//      it. Length zero → storedSpanFor returns null for every field → seven
+//      sections would each report „no source" having never been checked. „We
+//      can't check right now" is a different statement from „there is no
+//      source", and only the first one is true. The honest rendering of a
+//      question we could not ask is NOTHING — not a greyed variant, which is
+//      still the sentence, just quieter. (This replaces the old `disabled`
+//      state, whose greyed button said exactly the wrong thing.)
+//
+//   2. NO LOOKUP ENTRY. anamneza has none, by the atomic-fields ruling in
+//      lib/field-sources.ts — a single quote for a whole-conversation
+//      synthesis would be a confident-looking lie, so the backend never emits
+//      an anamneza span. Measured over the 35 locked baselines: 0/35, against
+//      89.5% (137/153) for the six mapped fields. The resolver was never asked,
+//      so there is no answer to report. hasSourceLookup reads the resolver's
+//      own map — restore the entry and the label returns by itself.
+//
+// Both are SUPPRESSIONS. Nothing here can make the label appear anywhere it
+// did not before, and a resolved field is untouched: „виж източника" renders
+// exactly as it always has.
 function SourceButton({
   onClick,
-  disabled,
+  hasTranscript,
   resolved,
+  fieldKey,
 }: {
   onClick: () => void;
-  disabled?: boolean;
+  /** False on every recovery path. Suppresses the whole affordance — see (1). */
+  hasTranscript?: boolean;
   // Honest source state (trust Batch B): true = backend-resolved offsets exist
   // → „виж източника"; false = no clear source → the button ITSELF says „няма
   // ясен източник" before any click (persistent, not a transient toast), and
   // clicking opens the banner with the explicit „Покажи предположение" opt-in.
   resolved?: boolean;
+  /** The resolver's key for this field. Suppresses when unmapped — see (2). */
+  fieldKey: string;
 }) {
+  if (!hasTranscript || !hasSourceLookup(fieldKey)) return null;
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={disabled}
       title={
-        disabled
-          ? 'Източникът не е наличен'
-          : resolved
-            ? 'Покажи мястото в транскрипта, от което идва това поле'
-            : 'Няма потвърден източник в транскрипта — отвори за предположение'
+        resolved
+          ? 'Покажи мястото в транскрипта, от което идва това поле'
+          : 'Няма потвърден източник в транскрипта — отвори за предположение'
       }
-      className="no-print flex-shrink-0 text-xs underline decoration-dotted underline-offset-2 transition hover:opacity-80 disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
+      className="no-print flex-shrink-0 text-xs underline decoration-dotted underline-offset-2 transition hover:opacity-80"
       style={{ color: 'var(--color-text-muted)', background: 'transparent' }}
     >
       {resolved ? 'виж източника' : 'няма ясен източник'}
@@ -3237,7 +3278,7 @@ function DiagnosesSection({
   onComorbidityAddBrowse,
   onComorbidityRemove,
   onShowSource,
-  sourceDisabled,
+  sourceHasTranscript,
   sourceResolved,
   isLocked,
   notifyCopy,
@@ -3259,7 +3300,7 @@ function DiagnosesSection({
   onComorbidityAddBrowse: () => void;
   onComorbidityRemove: (index: number) => void;
   onShowSource: () => void;
-  sourceDisabled: boolean;
+  sourceHasTranscript: boolean;
   sourceResolved: boolean;
   isLocked: boolean;
   notifyCopy: (ok: boolean) => void;
@@ -3299,7 +3340,12 @@ function DiagnosesSection({
           >
             Основна диагноза
           </div>
-          <SourceButton onClick={onShowSource} disabled={sourceDisabled} resolved={sourceResolved} />
+          <SourceButton
+            onClick={onShowSource}
+            hasTranscript={sourceHasTranscript}
+            resolved={sourceResolved}
+            fieldKey="osnovna_diagnoza"
+          />
         </div>
         {/* flex-wrap: the МКБ typeahead + „Копирай МКБ" row overran a 375px
             viewport by 3px and put the whole page into horizontal scroll. */}

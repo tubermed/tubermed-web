@@ -30,6 +30,24 @@ const FIELD_SOURCE_LOOKUP: Record<string, { exact?: string[]; prefix?: string }>
   naznacheni:       { prefix: 'naznacheni.' },
 };
 
+// Is this fieldKey one the resolver is even ASKED about? (2026-08-23)
+//
+// „няма ясен източник" is a VERDICT — „we looked and found nothing". A field
+// with no lookup entry was never a question the resolver was posed, so the
+// verdict is not merely unhelpful, it is untrue: anamneza is 0/35 on the
+// locked baselines BY DESIGN (the atomic-fields ruling above; the backend's
+// SCALAR_QUOTE_KEYS/ARRAY_QUOTE_KEYS never emit an anamneza span at all —
+// measured: zero anamneza-shaped keys across all 35). Callers use this to
+// SUPPRESS the label, never to change resolution — storedSpanFor still
+// returns null for an unmapped key, exactly as before.
+//
+// Derived from the same map on purpose: give anamneza a lookup entry and the
+// label comes back with no second edit, so this can never drift into a stale
+// hardcoded denylist.
+export function hasSourceLookup(fieldKey: string): boolean {
+  return Object.prototype.hasOwnProperty.call(FIELD_SOURCE_LOOKUP, fieldKey);
+}
+
 // `method` is informational (resolver identifier), never a gate — a future
 // resolver version must not silently disable existing highlights.
 export function isValidFieldSource(s: unknown, transcriptLength: number): s is FieldSource {
