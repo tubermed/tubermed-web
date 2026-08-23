@@ -69,6 +69,17 @@ const mediaBlock = (css: string, head: string): string => {
   return '';
 };
 
+// WCAG 2.x contrast ratio of two 6-digit hexes (sRGB relative luminance).
+const contrast = (a: string, b: string): number => {
+  const lum = (h: string) => {
+    const c = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255) // ascii-safe: hex digits
+      .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
 // ── Predicates (pure; section 3 feeds them broken input) ────────────────────
 const P = {
   /** Inside @media print, BOTH pseudo-elements are display:none. Checked per
@@ -196,6 +207,28 @@ const P = {
       && /mix-blend-mode:\s*multiply/.test(m[2])
       && /pointer-events:\s*none/.test(m[2]);
   },
+  /** The carrier is VISIBLE, not merely shaped (the fresh-context refuter's
+   *  find, 2026-08-23: an edge recoloured to the tint, or hidden with
+   *  display/visibility/opacity, passed every shape check). Two halves:
+   *  no screen rule on `.ai-authored::before` — base, step or override —
+   *  may hide it; and the edge token must measure at least 3:1 (WCAG's
+   *  non-text minimum) against BOTH grounds it meets, the sheet and the tint.
+   *  The ratio is computed from the token hexes — the same arithmetic the
+   *  pixel measurement used (6.89:1 / 6.22:1 on 2026-08-23), so a retune of
+   *  either token that drops the edge below legibility fails here, not at
+   *  review. */
+  edgeIsVisible(css: string): boolean {
+    const clean = screenOnly(css).replace(/\/\*[\s\S]*?\*\//g, '');
+    const rules = [...clean.matchAll(/\.ai-authored::before\s*\{([^}]*)\}/g)].map((m) => m[1]);
+    // The BASE rule (line-anchored) must exist: the step and the override
+    // alone draw nothing, they only reposition what the base rule draws.
+    if (rules.length === 0 || !/(^|\n)\.ai-authored::before\s*\{/.test(clean)) return false;
+    if (rules.some((b) => /(^|[;{\n])\s*(display|visibility|opacity|content:\s*none)/.test(b))) return false;
+    const token = (name: string) => css.match(new RegExp(`${name}:\\s*#([0-9A-Fa-f]{6})`))?.[1];
+    const edge = token('--color-ai-edge'), tint = token('--color-ai-tint'), sheet = token('--color-bg-surface');
+    if (!edge || !tint || !sheet) return false;
+    return contrast(edge, tint) >= 3 && contrast(edge, sheet) >= 3;
+  },
   /** The tint and the edge are named tokens of the AI-authored family, not
    *  borrowed from brand/gold — and the retired dot token is gone from the
    *  sheet entirely, so nothing can quietly paint with it again. */
@@ -238,6 +271,7 @@ test('the tint is defined on screen with its own tokens and neutralised in @medi
   assert.ok(P.tintDefinedOnScreen(CSS), '.ai-authored::after surface must exist outside @media print');
   assert.ok(P.markIsLeftEdge(CSS), 'the carrier is a dashed LEFT edge on ::before, above the overlay — never a corner-absolute mark');
   assert.ok(P.edgeTracksSurface(CSS), 'the edge must sit on the surface boundary at every width: each ::before left equals the ::after horizontal inset beside it');
+  assert.ok(P.edgeIsVisible(CSS), 'the edge must be visible: never hidden by a screen rule, and at least 3:1 against both the sheet and the tint');
   assert.ok(P.tintNeutralisedInPrint(CSS), 'Ctrl+P prints the live note: both pseudo-elements must be removed inside @media print');
   assert.ok(P.surfaceHasOwnSpacing(CSS), 'the surface must extend past the host (negative inset) at every width, with no host padding');
   assert.ok(P.verticalBleedKeepsTheSeam(CSS), 'the vertical bleed must leave a seam between two sections 16px apart');
@@ -319,6 +353,21 @@ test('RED PROOF — every predicate rejects the regression it guards', () => {
   assert.equal(P.edgeTracksSurface(CSS.replace(ASIDE_EDGE, '')), false);
   assert.equal(P.edgeTracksSurface(CSS.replace(ASIDE_EDGE, ASIDE_EDGE.replace('-12px', '-20px'))), false);
   assert.equal(P.edgeTracksSurface(NO_EDGE), false);
+  // Visibility (the refuter's three routes, plus the seam between them):
+  // the edge recoloured to the tint; hidden in the base rule, the step or
+  // the aside override; a token retune that lands below 3:1 on either ground.
+  assert.equal(P.edgeIsVisible(NO_EDGE), false);
+  assert.equal(P.edgeIsVisible(CSS.replace('--color-ai-edge: #2F5C8F;', '--color-ai-edge: #EEF4FB;')), false);
+  assert.equal(P.edgeIsVisible(CSS.replace('--color-ai-edge: #2F5C8F;', '--color-ai-edge: #C2CAD4;')), false); // border-strong: 1.6:1 on white
+  assert.equal(P.edgeIsVisible(CSS.replace('--color-ai-edge: #2F5C8F;', '--color-ai-edge: #8893A1;')), false); // text-hint: 3.1:1 on white, 2.7:1 on the tint
+  assert.equal(P.edgeIsVisible(edge('  pointer-events: none;\n', '  pointer-events: none;\n  display: none;\n')), false);
+  assert.equal(P.edgeIsVisible(edge('  pointer-events: none;\n', '  pointer-events: none;\n  opacity: 0;\n')), false);
+  assert.equal(P.edgeIsVisible(CSS.replace(STEP_EDGE, '  .ai-authored::before {\n    left: -20px;\n    visibility: hidden;\n  }\n')), false);
+  assert.equal(P.edgeIsVisible(CSS.replace(ASIDE_EDGE, '.result-grid > aside .ai-authored::before {\n  left: -12px;\n  display: none;\n}')), false);
+  assert.equal(P.edgeIsVisible(CSS.replace('--color-ai-tint: #EEF4FB;', '--color-ai-tint: #2F5C8F;')), false); // the tint retuned onto the edge
+  // …and the real sheet clears the bar with room: the token is 6.9:1 on
+  // white and 6.2:1 on the tint, so a 3:1 floor is a floor, not a fit.
+  assert.ok(contrast('2F5C8F', 'FFFFFF') > 6.5 && contrast('2F5C8F', 'EEF4FB') > 6);
   // Spacing: a flush surface, a one-sided bleed, a host with padding, no
   // stacking context, and — the width-specific shape — a responsive step that
   // goes positive while the base rule stays correct.
