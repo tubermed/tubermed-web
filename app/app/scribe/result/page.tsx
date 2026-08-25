@@ -2977,27 +2977,32 @@ function PrintMedsBlock({ meds }: { meds: Medication[] }) {
 //      asked, so there is no answer to report. hasSourceLookup reads that
 //      resolver's own map — restore the entry and the label returns by itself.
 //
-//      ⚠ COST, MEASURED AND RULED ON (Dimitar, 2026-08-24). This one is not
-//      label-only: anamneza's button was also the sole way into `showGuess` →
-//      findSourceSpan, the alias-bridge GUESS, which is generic and DOES answer
-//      for anamneza. Measured over the same 35 baselines, against the identical
-//      guess run on the six mapped fields as a control arm:
+//      ⚠ COST, MEASURED — DEFERRED, NOT SETTLED (Dimitar, 2026-08-25). This
+//      one is not label-only: suppressing anamneza's label also removed the
+//      ONLY entry into „Покажи предположение" — `showGuess` → findSourceSpan,
+//      the alias-bridge GUESS, which is generic and DOES answer for anamneza.
+//      Measured over the same 35 baselines, against the identical guess run on
+//      the six mapped fields as a control arm:
 //
 //                    resolves          median coverage   under 25% coverage
 //        mapped      141/153 (92.2%)   75.0%             5.0%
 //        anamneza     34/35  (97.1%)   48.4%             26.5%
 //
-//      So it fired MORE often than on the mapped fields, and on genuinely
-//      relevant conversation — but its highlight accounted for only about half
-//      the synthesis, and under a quarter of it on 9 of 34 notes. It points at
-//      A place the anamneza came from, not THE place. That is the atomic-fields
-//      ruling holding up on quality rather than on reach.
+//      The route fires on 34 of 35 notes — MORE often than on the six mapped
+//      fields — and on genuinely relevant content. What it cannot do is account
+//      for the section: 48.4% median coverage against 75%, and under a quarter
+//      on 9 of 34 notes. It points at A place the anamneza came from, not THE
+//      place. That is the atomic-fields ruling holding on quality, not reach.
 //
-//      RULED: leave it suppressed. Restoring it would need an affordance that
-//      offers a guess without asserting a verdict — new copy — and the numbers
-//      do not earn that before the first doctors see this. Cheap to revisit:
-//      hasSourceLookup reads the resolver's own map, so adding an anamneza
-//      entry brings the whole affordance back with no second edit.
+//      DEFERRED, pending an affordance that is not the verdict — i.e. new copy,
+//      which is Dimitar's to write. It is recorded as deferred and NOT as
+//      settled on purpose: a route that reaches 34/35 notes on relevant content
+//      is a live question about what the doctor is offered, and a „ruled" here
+//      would retire it silently. The numbers stay in this file because they are
+//      why the deferral is a real question rather than a todo nobody reopens.
+//      Cheap to revisit either way: hasSourceLookup reads the resolver's own
+//      map, so adding an anamneza entry brings the whole affordance back with
+//      no second edit.
 //
 //   3. PROVENANCE NEVER RAN. `field_sources` absent or empty. The backend is
 //      explicit that this is failure-isolated — any error in the provenance
