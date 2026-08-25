@@ -40,6 +40,21 @@ are Bulgarian; code, comments, and commit messages are English.
 - No patient identity: TuberMed keeps **no patient records** — there is no ЕГН or name
   field anywhere in the workspace (identity removal, 2026-07). No PII in URLs, browser
   history, `sessionStorage`, logs, or commits; synthetic data only in tests and fixtures.
+- **No probe prints stored clinical content (invariant, 2026-08-23):** no probe, script, or
+  measurement may print stored clinical content — transcript text, diagnosis text,
+  `mkb_review`, medications, ЕГН — into a session transcript, log, or report. Counts, codes,
+  row IDs and booleans only. A measurement that needs the text runs in-sandbox and emits a
+  count. Why: a batch-J backend probe stringified a stored `mkb_review` into a session
+  transcript — a debugging probe is a data flow nobody had classified as one. Applies to
+  `scripts/probe-*.mjs`, browser-console evaluations over a rendered note, and any read of a
+  `tuber_last_result` blob, committed or not.
+  **STORED is the operative word, and it is about PROVENANCE, not about how the text
+  reads.** Committed fixtures, synthetic notes and hand-written test strings are not stored
+  clinical content: the test scripts that echo fixture text are correct as they stand and
+  must not be „fixed" to satisfy this rule. What is bound is anything read back out of the
+  database, a `runs/` or `baselines/` artefact, or a live note blob — because at the moment
+  of printing you cannot tell whose it is. The batch-J dictations were themselves synthetic;
+  the mechanism that printed them would not have known.
 - EU-only browser traffic: cross-origin requests go to the EU backend and EU Sentry
   ingest ONLY (enforced by the derived CSP `connect-src`). Note: the backend's own
   extraction call currently goes to US `api.anthropic.com` pending the Bedrock EU
