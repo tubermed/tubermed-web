@@ -2935,10 +2935,10 @@ function PrintMedsBlock({ meds }: { meds: Medication[] }) {
 // near a field's label. no-print so it never bleeds into the printed/exported
 // document.
 //
-// ── The two silences (2026-08-23) ──────────────────────────────────────────
+// ── The three silences (2026-08-23) ────────────────────────────────────────
 // „няма ясен източник" is a VERDICT — „we looked and found nothing" — and this
 // component is the ONLY place it is rendered. A verdict may only be published
-// when it was actually reached, so the whole affordance disappears in the two
+// when it was actually reached, so the whole affordance disappears in the three
 // cases where it was not:
 //
 //   1. NO TRANSCRIPT. The recovery paths (`?visit=` from the library, a reload,
@@ -2959,13 +2959,27 @@ function PrintMedsBlock({ meds }: { meds: Medication[] }) {
 //      asked, so there is no answer to report. hasSourceLookup reads that
 //      resolver's own map — restore the entry and the label returns by itself.
 //
-//      ⚠ COST, RULING OWED. This one is not label-only. anamneza's button was
-//      also the sole way into `showGuess` → findSourceSpan, the alias-bridge
-//      GUESS, which is generic and does answer for anamneza on a note with a
-//      transcript (a refuter resolved a 23-token span in the demo note). That
-//      route is now unreachable for the longest free-text field on the page.
-//      Keeping it would need an affordance that is not the verdict — i.e. new
-//      copy, which is Dimitar's call, not this commit's.
+//      ⚠ COST, MEASURED AND RULED ON (Dimitar, 2026-08-24). This one is not
+//      label-only: anamneza's button was also the sole way into `showGuess` →
+//      findSourceSpan, the alias-bridge GUESS, which is generic and DOES answer
+//      for anamneza. Measured over the same 35 baselines, against the identical
+//      guess run on the six mapped fields as a control arm:
+//
+//                    resolves          median coverage   under 25% coverage
+//        mapped      141/153 (92.2%)   75.0%             5.0%
+//        anamneza     34/35  (97.1%)   48.4%             26.5%
+//
+//      So it fired MORE often than on the mapped fields, and on genuinely
+//      relevant conversation — but its highlight accounted for only about half
+//      the synthesis, and under a quarter of it on 9 of 34 notes. It points at
+//      A place the anamneza came from, not THE place. That is the atomic-fields
+//      ruling holding up on quality rather than on reach.
+//
+//      RULED: leave it suppressed. Restoring it would need an affordance that
+//      offers a guess without asserting a verdict — new copy — and the numbers
+//      do not earn that before the first doctors see this. Cheap to revisit:
+//      hasSourceLookup reads the resolver's own map, so adding an anamneza
+//      entry brings the whole affordance back with no second edit.
 //
 //   3. PROVENANCE NEVER RAN. `field_sources` absent or empty. The backend is
 //      explicit that this is failure-isolated — any error in the provenance
@@ -2980,6 +2994,17 @@ function PrintMedsBlock({ meds }: { meds: Medication[] }) {
 // Nothing here can make the label appear anywhere it did not before, and a
 // resolved field is untouched: „виж източника" renders exactly as it always
 // has.
+//
+// ── What deliberately SURVIVES: tint + label together ──────────────────────
+// On a fresh note, a section can carry the AI-provenance tint AND this label:
+// the model wrote it, provenance ran, and that field still did not resolve.
+// Measured: 4 section-instances across the 35 baselines (51 before these
+// silences), 1 on a typical note. RULED (Dimitar, 2026-08-24): KEEP IT. That
+// pairing is not the contradiction this change was made to remove — it is the
+// one sentence in the whole surface that is straightforwardly true, and it
+// flags the case most worth a doctor's eye: AI-written and untraceable.
+// Silencing it would hide a real verdict, which is the opposite of the fix.
+// Do not „finish the job" by suppressing this too.
 function SourceButton({
   onClick,
   hasTranscript,
