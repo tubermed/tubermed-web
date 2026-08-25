@@ -460,12 +460,30 @@ function ResultPageInner() {
       const shaped = shapeNote(decision.result.fields);
       setFields(shaped.fields);
       setShapeRepairs(shaped.repairs);
+      // A note arriving straight from generation is, by construction, entirely
+      // the model's: the backend writes ai_original_fields and extracted_fields
+      // identically at that moment. Seed „all untouched"; the ?visit= reconcile
+      // below replaces this with the server's derived map whenever it runs.
+      //
+      // The embedded investigation blocks (ЕКГ / ехо cards) are keyed
+      // SEPARATELY in that map — `izsledvania_blocks.<i>`, one per block, see
+      // lib/fields-touched.js — and aiAuthoredBlock() requires the key to be
+      // PRESENT and false. Seeding only AI_TINT_KEYS left every fresh ЕКГ
+      // block reading `undefined` and therefore unmarked until a reconcile or
+      // an F5 landed the server's map: the doctor's FIRST read of the note,
+      // the one moment the mark exists to serve, was the one without it.
+      // Indices come from the SHAPED array, because that is what renders —
+      // normalizeNoteFields can wrap a malformed single block into a list.
+      const blockCount = Array.isArray(shaped.fields.izsledvania_blocks)
+        ? shaped.fields.izsledvania_blocks.length
+        : 0;
+      setServerTouched({
+        ...Object.fromEntries(AI_TINT_KEYS.map((k) => [k, false])),
+        ...Object.fromEntries(
+          Array.from({ length: blockCount }, (_, i) => [`izsledvania_blocks.${i}`, false]),
+        ),
+      });
     }
-    // A note arriving straight from generation is, by construction, entirely
-    // the model's: the backend writes ai_original_fields and extracted_fields
-    // identically at that moment. Seed „all untouched"; the ?visit= reconcile
-    // below replaces this with the server's derived map whenever it runs.
-    setServerTouched(Object.fromEntries(AI_TINT_KEYS.map((k) => [k, false])));
     // Visit-header context rides along only when it belongs to the same
     // consultation as the blob (null otherwise — render without the header).
     setPendingVisit(decision.pendingVisit);

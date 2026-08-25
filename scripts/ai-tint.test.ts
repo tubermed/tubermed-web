@@ -335,6 +335,39 @@ const P = {
     if (hosts.length === 0) return false;
     return hosts.every((h) => !/title=|aria-label=|sr-only/.test(h));
   },
+  /** Evaluate the FRESH-PATH seed — the map painted straight from the
+   *  generation blob, before any server reconcile — by SLICING it out of the
+   *  real source text and running it against a note with `blocks` embedded
+   *  investigation cards. Slicing beats transcribing: the bytes exercised
+   *  here are the bytes that ship, so a seed that stops covering something
+   *  cannot pass by leaving a correct copy of itself in the test. */
+  seedFreshMap(page: string, blocks: number): Record<string, boolean> {
+    const i = page.includes('setServerTouched({')
+      ? page.indexOf('setServerTouched({')
+      : page.indexOf('setServerTouched(Object');
+    if (i < 0) throw new Error('fresh-path seed not found — re-anchor this gate');
+    let depth = 0;
+    let end = -1;
+    for (let k = page.indexOf('(', i); k < page.length; k++) {
+      if (page[k] === '(') depth++;
+      else if (page[k] === ')') {
+        depth--;
+        if (depth === 0) { end = k + 1; break; }
+      }
+    }
+    if (end < 0) throw new Error('unbalanced seed call — re-anchor this gate');
+    const pre = page.match(/const blockCount = [\s\S]*?;\n/)?.[0] ?? '';
+    const keys = page.match(/const AI_TINT_KEYS = \[[\s\S]*?\] as const;/);
+    if (!keys) throw new Error('AI_TINT_KEYS literal not found — re-anchor this gate');
+    const shaped = { fields: { izsledvania_blocks: Array.from({ length: blocks }, () => ({})) } };
+    let out: Record<string, boolean> = {};
+    new Function(
+      'shaped',
+      'setServerTouched',
+      `${keys[0].replace(' as const', '')}\n${pre}\n${page.slice(i, end)};`,
+    )(shaped, (v: Record<string, boolean>) => { out = v; });
+    return out;
+  },
   /** FieldsTouched is declared read-only and outside TranscribeFields. */
   typeIsSibling(types: string): boolean {
     const tf = types.slice(types.indexOf('export interface TranscribeFields'), types.indexOf('\n}\n', types.indexOf('export interface TranscribeFields')));
@@ -374,6 +407,27 @@ test('every doctor-editable key has a tint host, and the host carries no text', 
   // Editing is the attestation: the optimistic clear must live in trackEdit.
   const i = RESULT.indexOf('const trackEdit = useCallback');
   assert.match(RESULT.slice(i, i + 1200), /setLocalTouched/);
+});
+
+test('the fresh-path seed marks the embedded investigation blocks, not only the flat keys', () => {
+  // 2026-08-25. The seed is what paints the note the INSTANT it is generated —
+  // the one moment the doctor reads it not yet knowing what is theirs. The
+  // server's derived map keys each embedded ЕКГ / ехо card separately
+  // (`izsledvania_blocks.<i>`, lib/fields-touched.js) and aiAuthoredBlock()
+  // demands the key be PRESENT and false, so a flat-keys-only seed left every
+  // fresh block unmarked until a reconcile or an F5 arrived.
+  const seeded = P.seedFreshMap(RESULT, 2);
+  for (const k of TINT_KEYS) assert.equal(seeded[k], false, `${k} must seed as untouched`);
+  assert.equal(seeded['izsledvania_blocks.0'], false, 'block 0 must seed as untouched, not undefined');
+  assert.equal(seeded['izsledvania_blocks.1'], false, 'block 1 must seed as untouched, not undefined');
+  assert.equal(
+    Object.keys(seeded).length,
+    TINT_KEYS.length + 2,
+    'the seed adds one key per rendered block and nothing else',
+  );
+  // A note with no embedded blocks seeds exactly the flat keys — a phantom
+  // `izsledvania_blocks.0` would tint a card that does not exist.
+  assert.equal(Object.keys(P.seedFreshMap(RESULT, 0)).length, TINT_KEYS.length);
 });
 
 // ── 3. Red proof ────────────────────────────────────────────────────────────
@@ -523,4 +577,20 @@ test('RED PROOF — every predicate rejects the regression it guards', () => {
   assert.equal(P.everyKeyHosted(RESULT.replace("aiAuthored('terapia')", "aiAuthored('terapia_')"), TINT_KEYS), false);
   assert.equal(P.hostCarriesNoText(RESULT.replace('data-ai-authored={aiAuthored || undefined}>', 'data-ai-authored={aiAuthored || undefined} title="AI">')), false);
   assert.equal(P.typeIsSibling(TYPES.replace('export interface TranscribeFields {', 'export interface TranscribeFields {\n  fields_touched?: FieldsTouched;')), false);
+  // The seed regression itself: put the flat-keys-only one-liner back and the
+  // per-block keys vanish — which is exactly what shipped unmarked ЕКГ cards.
+  const NEW_SEED = RESULT.match(/const blockCount = [\s\S]*?\n      \}\);\n/);
+  assert.ok(NEW_SEED, 'fresh-path seed drifted — re-anchor the red proof');
+  const FLAT_ONLY = RESULT.replace(
+    NEW_SEED![0],
+    'setServerTouched(Object.fromEntries(AI_TINT_KEYS.map((k) => [k, false])));\n',
+  );
+  assert.notEqual(FLAT_ONLY, RESULT, 'failed to restore the flat-only seed — the red proof would be vacuous');
+  const regressed = P.seedFreshMap(FLAT_ONLY, 2);
+  assert.equal(Object.keys(regressed).length, TINT_KEYS.length, 'the flat-only seed must carry no block key');
+  assert.equal(regressed['izsledvania_blocks.0'], undefined);
+  // …and the flat keys read identically before and after the fix, so this
+  // change is provably additive and not a quiet re-shaping of the map.
+  const fixed = P.seedFreshMap(RESULT, 2);
+  for (const k of TINT_KEYS) assert.equal(regressed[k], fixed[k]);
 });
