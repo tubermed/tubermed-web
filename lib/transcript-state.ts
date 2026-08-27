@@ -35,10 +35,28 @@
 /** Fetched, and really is empty. A true report — keep making it. */
 export const TRANSCRIPT_EMPTY = 'Транскриптът е празен.';
 
-/** Nothing was fetched. States what the product did, not what the record
- *  holds — there is no claim here about whether a transcript exists. */
-export const TRANSCRIPT_UNLOADED =
-  'Транскриптът не се зарежда при повторно отваряне на бележката.';
+/**
+ * Nothing was fetched. States OUR state and nothing else.
+ *
+ * ⚠ It deliberately does NOT name the mechanism. The first draft read „не се
+ * зарежда при повторно отваряне на бележката", which a refuter broke twice:
+ *
+ *   • „при повторно отваряне" is false on a FIRST open — a successful
+ *     retry-extraction pushes straight to the result page with no blob
+ *     (app/app/scribe/page.tsx, RecoveryPanel onSuccess), so the note lands on
+ *     the recovery path having never been opened before.
+ *   • naming the fetch implies there is something on the other end of it. For
+ *     any row past TRANSCRIPT_RETENTION_DAYS (backend lib/transcript-sweeper.js,
+ *     default 30) the transcript column has been NULLed while extracted_fields
+ *     lives to CLINICAL_RETENTION_DAYS (default 90) — so a note between 30 and
+ *     90 days old opens normally with its transcript permanently gone, and
+ *     „we just haven't loaded it" is then its own kind of false comfort.
+ *
+ * The client cannot tell those rows apart: GET /:id returns no transcript and
+ * no signal about whether one still exists. So this sentence claims neither.
+ * ⚠ RULING OWED — see the note in the result page's transcript panel.
+ */
+export const TRANSCRIPT_UNLOADED = 'Транскриптът не е зареден.';
 
 export type TranscriptPanel =
   | { kind: 'text'; text: string }

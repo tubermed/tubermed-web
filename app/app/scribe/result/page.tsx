@@ -500,10 +500,25 @@ function ResultPageInner() {
     // Visit-header context rides along only when it belongs to the same
     // consultation as the blob (null otherwise — render without the header).
     setPendingVisit(decision.pendingVisit);
-    // …and so does the лист date, subject to the same identity rule: this is
-    // the staging timestamp written at /app/new-visit, good enough to date the
-    // sheet on first paint. The reconcile below replaces it with the row's own
-    // created_at, which is the authority.
+    // …and so does the лист date, subject to the same identity rule.
+    //
+    // ⚠ PROVENANCE, be exact about it: this value is NOT the row's stored
+    // timestamp. It is `new Date().toISOString()` taken in the browser at
+    // staging (app/(workspace)/app/new-visit/page.tsx) — POST /api/visits/start
+    // answers with `{ consultation_id }` and nothing else, so the row's own
+    // created_at is not on the wire at that point. It is the right DAY for this
+    // consultation (identity-checked by resolveResultBootstrap, and frozen at
+    // staging so it never re-dates on reopen), but its authority is the
+    // doctor's device clock, not the database.
+    //
+    // The reconcile below overwrites it with `consultation.created_at` on every
+    // normal open — ?visit= is present on every route into this page — so the
+    // device value survives only until that lands, or permanently if the fetch
+    // fails. A refuter demonstrated it reaching all four export surfaces.
+    //
+    // ⚠ RULING OWED (Dimitar): making the first paint server-sourced too means
+    // /api/visits/start returning created_at — a payload change in the other
+    // repo, and not ours to make.
     setVisitCreatedAt(decision.pendingVisit?.created_at ?? null);
     // The blob is the AI output frozen at generation — it never carries the
     // doctor's later edits. Whenever ?visit= is present the server's
@@ -1921,7 +1936,29 @@ function ResultPageInner() {
 
         {/* ─── Center: document ─── */}
         <main className="min-w-0">
-          {/* Transcript collapsible */}
+          {/* Transcript collapsible.
+              SUPPRESSED ENTIRELY on an erased note. The Article-17 banner above
+              already says „Клиничният текст и транскрипцията са премахнати
+              необратимо" — the transcript is provably gone, on this row, by the
+              doctor's own request. A disclosure that opens onto „Транскриптът
+              не е зареден." would contradict that banner on the same screen and
+              point at a recovery that cannot exist. Found by a refuter; it is
+              the same mistake as the one this panel was fixed for, one row over.
+              Keyed on erasedAt ALONE — the only case where the client actually
+              knows the transcript is gone.
+
+              ⚠ RULING OWED (Dimitar). The retention sweeper NULLs
+              consultations.transcript at TRANSCRIPT_RETENTION_DAYS (backend
+              lib/transcript-sweeper.js, default 30) while extracted_fields
+              lives to CLINICAL_RETENTION_DAYS (default 90) — so a note between
+              30 and 90 days old opens normally with its transcript permanently
+              purged, and this panel says „не е зареден" over a record that has
+              none. The client cannot tell: GET /:id returns neither the
+              transcript nor any signal about whether one survives. Telling that
+              row the truth needs a backend field (a `has_transcript` boolean on
+              the detail response) — a payload change in the other repo, and
+              not ours to make. */}
+          {!isErased && (
           <details
             id="transcript-block"
             className="mb-4 no-print"
@@ -2000,6 +2037,7 @@ function ResultPageInner() {
               />
             </div>
           </details>
+          )}
 
           {/* Document — ONE calm sheet: sections inside read via label + hairline,
               NOT per-section boxes. Elevation stays RESERVED for the safety rail. */}
@@ -2981,8 +3019,13 @@ function PrintMedsBlock({ meds }: { meds: Medication[] }) {
 // cases where it was not:
 //
 //   1. NO TRANSCRIPT. The recovery paths (`?visit=` from the library, a reload,
-//      a cold start) set original.transcript = '' by design — the backend omits
-//      it. Length zero → storedSpanFor returns null for every field → seven
+//      a cold start) set original.transcript = null by design — the backend
+//      omits it. (It was '' until 2026-08-27; the transcript PANEL read that
+//      zero length as a fact about the record and published „Транскриптът е
+//      празен." — the same defect as this one, one surface over. `null` now
+//      means „never fetched", see lib/transcript-state.ts. Nothing here
+//      changed: both are falsy, and hasTranscript below is untouched.)
+//      Length zero → storedSpanFor returns null for every field → seven
 //      sections would each report „no source" having never been checked. „We
 //      can't check right now" is a different statement from „there is no
 //      source", and only the first one is true. The honest rendering of a

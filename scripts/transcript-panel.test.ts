@@ -152,22 +152,62 @@ const code = (src: string): string =>
   src.split('\n').filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l)).join('\n');
 
 const P = {
-  /** The recovery path must record the ABSENCE, not an empty string. */
+  /** The RECOVERY writer specifically must record the ABSENCE.
+   *
+   *  Round 1 grepped the whole file for `transcript: ''` (single quotes only)
+   *  and for `transcript: null` ANYWHERE. A refuter restored the shipped defect
+   *  as `transcript: ""` and parked a decoy `transcript: null` elsewhere — the
+   *  original bug, back, gate green. Scoped to the one object literal now, and
+   *  blind to neither quote style. */
   recoveryRecordsAbsence(src: string): boolean {
-    if (/transcript:\s*''/.test(code(src))) return false;
-    return /transcript:\s*null/.test(code(src));
+    const c = code(src);
+    if (/transcript:\s*(''|"")/.test(c)) return false;   // nowhere in the file
+    const i = c.indexOf('consultationId: recovery.pendingVisit.consultation_id');
+    if (i === -1) return false;
+    return /transcript:\s*null/.test(c.slice(i, i + 300));
   },
-  /** One decider. The two sentences may not be written into the page. */
+
+  /** The panel is actually RENDERED. Round 1 asked only whether the file
+   *  contained `transcriptPanel(` — which TranscriptBody's own definition
+   *  satisfies whether or not anything renders it, so deleting the element
+   *  left the panel silent on a genuinely empty transcript and the gate green.
+   *  A suppression gate that cannot see silence is not a gate. */
+  panelIsRendered(src: string): boolean {
+    const c = code(src);
+    return /<TranscriptBody\s/.test(c) && /transcript=\{original\.transcript\}/.test(c);
+  },
+
+  /** One decider, and it lives in TranscriptBody's own body. The two sentences
+   *  may not be written into the page. */
   panelDelegatesTheDecision(src: string): boolean {
     const c = code(src);
     if (c.includes('Транскриптът е празен.')) return false;
-    if (c.includes('Транскриптът не се зарежда')) return false;
-    return /transcriptPanel\(/.test(c);
+    if (c.includes('Транскриптът не е зареден')) return false;
+    const i = c.indexOf('function TranscriptBody(');
+    if (i === -1) return false;
+    const body = c.slice(i, i + 1400);
+    return /const panel = transcriptPanel\(transcript\)/.test(body)
+        && body.includes('panel.notice');
   },
+
+  /** An ERASED note gets no transcript disclosure at all — the Article-17
+   *  banner already says the transcript was irreversibly removed, and a panel
+   *  saying „не е зареден" beside it contradicts it on the same screen. */
+  erasedNoteHasNoPanel(src: string): boolean {
+    const c = code(src);
+    const i = c.indexOf('id="transcript-block"');
+    if (i === -1) return false;
+    return c.slice(Math.max(0, i - 400), i).includes('{!isErased && (');
+  },
+
   /** The source-label suppression is NOT part of this change: hasTranscript
-   *  keeps reading the transcript itself, unchanged. */
+   *  keeps reading the transcript itself, unchanged.
+   *
+   *  Round 1 was the ONE predicate here that read the raw source instead of
+   *  routing through code() — so a refuter commented the pinned line out,
+   *  wrote a widened one beside it, and the gate never noticed. */
   sourceSuppressionUntouched(src: string): boolean {
-    return src.includes(
+    return code(src).includes(
       "const hasTranscript = !!(original.transcript && original.transcript.trim());");
   },
 };
@@ -178,6 +218,14 @@ test('the recovery path records that nothing was fetched', () => {
 
 test('the panel delegates the three-state decision to one module', () => {
   assert.ok(P.panelDelegatesTheDecision(RESULT));
+});
+
+test('the panel is actually rendered', () => {
+  assert.ok(P.panelIsRendered(RESULT));
+});
+
+test('an erased note gets no transcript disclosure at all', () => {
+  assert.ok(P.erasedNoteHasNoPanel(RESULT));
 });
 
 test('the source-label suppression is untouched by this change', () => {
@@ -265,7 +313,7 @@ test('RED: the shipped page fails the single-decider predicate', () => {
 
 test('RED: writing the unloaded sentence inline also fails it', () => {
   const inlined = `
-  if (transcript === null) return <em>Транскриптът не се зарежда при повторно отваряне.</em>;
+  if (transcript === null) return <em>Транскриптът не е зареден.</em>;
   const p = transcriptPanel(transcript);
 `;
   assert.equal(P.panelDelegatesTheDecision(inlined), false);
@@ -282,11 +330,14 @@ test('RED: the comment stripper hides comments, never rendered copy', () => {
       "  const panel = transcriptPanel(t);\n  const s = 'Транскриптът е празен.';"),
     false);
   // … and must not be tripped by prose that quotes it, which is how the fix
-  // explains itself.
-  assert.equal(
-    P.panelDelegatesTheDecision(
-      "  // the panel published „Транскриптът е празен.\" over nothing\n  const panel = transcriptPanel(t);"),
-    true);
+  // explains itself. (Asserted on code() directly: the predicate above also
+  // demands a TranscriptBody definition, which a two-line snippet has not got.)
+  assert.ok(!code("  // the panel published „Транскриптът е празен.\" over nothing")
+    .includes('Транскриптът е празен.'));
+  // The real file exercises exactly that route — the fix quotes the sentence
+  // it removed, in a comment, and the predicate is still green on it.
+  assert.ok(RESULT.includes('Транскриптът е празен.'), 'the fix quotes it in prose');
+  assert.ok(P.panelDelegatesTheDecision(RESULT), 'and the predicate is not tripped by that');
   // A `//` inside a string may not swallow the rest of the file.
   assert.ok(code("const u = 'https://x';\n<em>Транскриптът е празен.</em>")
     .includes('Транскриптът е празен.'));
@@ -298,4 +349,69 @@ test('RED: touching the source-label suppression fails its predicate', () => {
   // to its neighbours.
   const widened = 'const hasTranscript = !!(original.transcript !== null);';
   assert.equal(P.sourceSuppressionUntouched(widened), false);
+});
+
+// ── 6. Red proof, round 2 — what a refuter got past round 1 ────────────────
+// Round 1's proofs all attacked the code AS IT SHIPPED. A standing gate exists
+// to stop a FUTURE edit, and three of these passed 22/22 against round 1 while
+// re-introducing the defect or silencing the panel. They run against the REAL
+// file, so they stay honest as it changes.
+
+function mutate(src: string, from: string, to: string): string {
+  const out = src.replace(from, to);
+  assert.notEqual(out, src, `mutation did not apply: ${from.slice(0, 60)}`);
+  return out;
+}
+
+test('RED-2 (M1): the panel is never rendered — the silent case', () => {
+  // Deleting the element leaves a genuinely empty transcript reported by
+  // nothing at all. Round 1 was green: TranscriptBody's own definition still
+  // contained `transcriptPanel(`.
+  const m = RESULT.replace(/<TranscriptBody[\s\S]*?\/>/, '');
+  assert.notEqual(m, RESULT, 'mutation did not apply');
+  assert.equal(P.panelIsRendered(m), false);
+});
+
+test('RED-2 (M2): the shipped defect restored with double quotes + a decoy', () => {
+  const m = mutate(RESULT, 'transcript: null,', 'transcript: "",')
+    .replace('const [visitCreatedAt', 'const _decoy = { transcript: null };\n  const [visitCreatedAt');
+  assert.equal(P.recoveryRecordsAbsence(m), false);
+});
+
+test('RED-2 (M2b): …and with no decoy at all', () => {
+  const m = mutate(RESULT, 'transcript: null,', 'transcript: "",');
+  assert.equal(P.recoveryRecordsAbsence(m), false);
+});
+
+test('RED-2 (M2c): …and a null parked somewhere other than the recovery writer', () => {
+  const m = mutate(RESULT, 'transcript: null,', 'transcript: undefined,')
+    .replace('const [visitCreatedAt', 'const _decoy = { transcript: null };\n  const [visitCreatedAt');
+  assert.equal(P.recoveryRecordsAbsence(m), false);
+});
+
+test('RED-2 (M3): hasTranscript widened, the pinned line left as a comment', () => {
+  // Widening it silences „виж източника" on a fresh note — a neighbour this
+  // change was explicitly forbidden to touch.
+  const m = mutate(RESULT,
+    'const hasTranscript = !!(original.transcript && original.transcript.trim());',
+    '// const hasTranscript = !!(original.transcript && original.transcript.trim());\n'
+    + '  const hasTranscript = !!(original.transcript !== null);');
+  assert.equal(P.sourceSuppressionUntouched(m), false);
+});
+
+test('RED-2 (M4): the erased-note suppression removed', () => {
+  const m = mutate(RESULT, '{!isErased && (\n          <details', '{(\n          <details');
+  assert.equal(P.erasedNoteHasNoPanel(m), false);
+});
+
+test('RED-2 (M5): the decision inlined back into the component', () => {
+  const m = mutate(RESULT,
+    'const panel = transcriptPanel(transcript);',
+    "const panel = transcript === null\n    ? { kind: 'unloaded' as const, notice: 'Транскриптът не е зареден.' }\n"
+    + "    : transcriptPanel(transcript);");
+  assert.equal(P.panelDelegatesTheDecision(m), false);
+});
+
+test('RED-2: mutate() refuses a mutation that did not apply', () => {
+  assert.throws(() => mutate('abc', 'not-present', 'x'), /mutation did not apply/);
 });

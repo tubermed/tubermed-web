@@ -262,16 +262,35 @@ function callArgs(src: string, name: string): string[][] {
   }
 }
 
+/** `src` with whole-line comments dropped. A gate a COMMENT can trip is a gate
+ *  that pressures the next reader into writing a worse comment — and the fix
+ *  for this bug has to be able to quote the code it removed. Only full comment
+ *  lines go; nothing inside a string literal is touched. */
+const code = (src: string): string =>
+  src.split('\n').filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l)).join('\n');
+
 /** The ONE name every dated surface must read. */
 const BINDING = 'listDateBg';
 /** The state holding the consultation's own stored timestamp. */
 const STAMP = 'visitCreatedAt';
 
 const P = {
-  /** No лист surface may read the wall clock for a date. */
+  /** No лист surface may synthesise a date from the clock.
+   *
+   *  A refuter broke the first version of this with a two-statement split —
+   *  `const now = new Date(); now.toLocaleDateString('bg-BG', …)` — because it
+   *  only matched the single-expression form. So the rule is now the CLASS,
+   *  not the shape: outside the two lifecycle fallbacks that legitimately mean
+   *  „just now" (an optimistic sealed_at / erased_at while the server answers),
+   *  the лист renderer may not construct a clock Date at all. */
   noClockDate(src: string): boolean {
-    return !/new Date\(\)\s*\.\s*toLocaleDateString/.test(src)
-        && !/new Date\(\)\s*\.\s*toISOString\(\)\s*\.\s*slice/.test(src);
+    const LIFECYCLE_OK = ['setSealedAt(', 'setErasedAt('];
+    for (const line of code(src).split('\n')) {
+      if (!/new Date\(\s*\)/.test(line)) continue;
+      if (LIFECYCLE_OK.some((ok) => line.includes(ok))) continue;
+      return false;
+    }
+    return true;
   },
 
   /** All five export call sites take the same binding as their date. */
@@ -287,37 +306,68 @@ const P = {
     return sites.every((a) => a[1] === BINDING);
   },
 
-  /** The on-screen header renders that same binding, and `todayBg` is gone. */
+  /** The on-screen header renders that binding — and NOTHING ELSE that could
+   *  be a date. A refuter added a second `<div>` next to it rendering
+   *  `Intl.DateTimeFormat(...).format(new Date())` and the first version of
+   *  this stayed green, because it only asked whether the right value was
+   *  PRESENT. Presence is not exclusivity on a document header. */
   headerRendersListDate(src: string): boolean {
     // ascii-safe: matches a JS identifier in this repo's own source, never
     // note text, product copy or anything a doctor typed.
-    if (/\btodayBg\b/.test(src)) return false;
+    if (/todayBg/.test(src)) return false;
     const i = src.indexOf("'Амбулаторен лист'");
     if (i === -1) return false;
-    return src.slice(i, i + 600).includes(`{${BINDING}}`);
+    const header = src.slice(i, i + 900);
+    if (!header.includes(`{${BINDING}}`)) return false;
+    // No other date machinery inside the header block.
+    if (/new Date\(|DateTimeFormat|toLocaleDate|formatDateBg|formatDateTimeBg/.test(header)) return false;
+    return true;
   },
 
-  /** The binding is the consultation's timestamp, formatted once. */
+  /** The binding is EXACTLY formatVisitDateBg(visitCreatedAt) — the whole
+   *  initialiser, not a substring of it. A refuter appended `|| wall`, which is
+   *  literally „if we do not know, print today" on a legal record, and the
+   *  substring test could not see it. Anchored to the end of the statement. */
   listDateFromVisit(src: string): boolean {
-    return new RegExp(`const ${BINDING} = formatVisitDateBg\\(${STAMP}\\)`).test(src);
+    const want = `const ${BINDING} = formatVisitDateBg(${STAMP});`;
+    // WHOLE LINE, not a substring: `… formatVisitDateBg(visitCreatedAt) || wall;`
+    // contains the substring and is the exact defect this gate exists to stop.
+    return code(src).split('\n').some((l) => l.trim() === want);
   },
 
-  /** Every writer of that timestamp is an identity-resolved server fact —
-   *  never the clock — and all four writers are present: the per-visit reset,
-   *  the painted blob's staging context, cold-start recovery, and the
-   *  authoritative reconcile. Miss the reset and a same-route ?visit= change
-   *  dates the new лист with the previous consultation's day. */
+  /** EVERY writer of the visit timestamp, and no others.
+   *
+   *  The first version counted writers (>= 4) and checked each argument for
+   *  `Date`. A refuter beat it three ways: a FIFTH writer whose argument was an
+   *  identifier holding a clock value; a `?? generatedAtIso` fallback on an
+   *  approved writer (substring `has()` still matched); and deleting the
+   *  per-visit reset while adding a never-called decoy to keep the count up.
+   *
+   *  So this is now an exact set membership, not a floor: the four writers'
+   *  arguments must be exactly these four expressions, in the file, once each.
+   *  Anything else — a new source, a fallback, a rename — is red by default and
+   *  has to be added here deliberately. */
   stampSourcesAreVisitFacts(src: string): boolean {
-    const args = callArgs(src, `set${STAMP[0].toUpperCase()}${STAMP.slice(1)}`).map((a) => a[0]);
-    if (args.length < 4) return false;
-    // ascii-safe: `args` are JS expression fragments read out of this repo's
-    // own source — identifiers and property paths, never Bulgarian text.
-    if (args.some((a) => /\bDate\b/.test(a))) return false;
-    const has = (frag: string) => args.some((a) => a.includes(frag));
-    return args.includes('null')
-        && has('decision.pendingVisit')
-        && has('recovery.pendingVisit')
-        && has('consultation.created_at');
+    const args = callArgs(code(src), `set${STAMP[0].toUpperCase()}${STAMP.slice(1)}`)
+      .map((a) => a[0].trim());
+    const EXPECTED = [
+      'null',                                        // the per-visit reset
+      'decision.pendingVisit?.created_at ?? null',   // painted staging context
+      'recovery.pendingVisit.created_at ?? null',    // cold-start recovery
+      'consultation.created_at ?? null',             // authoritative reconcile
+    ];
+    if (args.length !== EXPECTED.length) return false;
+    const sorted = [...args].sort();
+    return JSON.stringify(sorted) === JSON.stringify([...EXPECTED].sort());
+  },
+
+  /** The reset is ADJACENT to the rest of the per-visit teardown, so it cannot
+   *  be quietly relocated out of the effect that runs on a ?visit= change. */
+  resetSitsInTheTeardown(src: string): boolean {
+    const c = code(src);
+    const i = c.indexOf('setPendingVisit(null);');
+    if (i === -1) return false;
+    return c.slice(i, i + 400).includes(`set${STAMP[0].toUpperCase()}${STAMP.slice(1)}(null);`);
   },
 };
 
@@ -481,4 +531,88 @@ test('RED: callArgs reads calls, not the import list', () => {
     callArgs(`generateEchoHtml(fields as unknown as EchoFields, ${BINDING})`, 'generateEchoHtml'),
     [['fields as unknown as EchoFields', BINDING]],
   );
+});
+
+// ── 7. Red proof, round 2 — the six mutations a refuter got past round 1 ────
+// Round 1's red proofs all attacked the code AS IT SHIPPED, which is only half
+// the job: a standing gate exists to stop a FUTURE edit, and every one of these
+// six passed 30/30 against the round-1 predicates while re-dating the лист by
+// the clock or by the wrong consultation. They run against the REAL file, so
+// they stay honest as it changes.
+
+/** Apply a mutation to the real source; fail loudly if it did not apply (a
+ *  no-op replace would make the assertion below vacuous in a new way). */
+function mutate(src: string, from: string, to: string): string {
+  const out = src.replace(from, to);
+  assert.notEqual(out, src, `mutation did not apply: ${from.slice(0, 60)}`);
+  return out;
+}
+
+test('RED-2 (M1): a fifth stamp writer holding a clock value', () => {
+  // The argument is an IDENTIFIER, so scanning it for `Date` sees nothing.
+  const m = mutate(RESULT,
+    'setVisitCreatedAt(consultation.created_at ?? null);',
+    'const generatedAtIso = new Date().toISOString();\n        setVisitCreatedAt(generatedAtIso);');
+  assert.equal(P.stampSourcesAreVisitFacts(m), false);
+});
+
+test('RED-2 (M2): „if we do not know it, use today" on the paint writer', () => {
+  const m = mutate(RESULT,
+    'setVisitCreatedAt(decision.pendingVisit?.created_at ?? null);',
+    'setVisitCreatedAt(decision.pendingVisit?.created_at ?? new Date().toISOString());');
+  assert.equal(P.stampSourcesAreVisitFacts(m), false);
+});
+
+test('RED-2 (M3): the same fallback on the authoritative reconcile writer', () => {
+  const m = mutate(RESULT,
+    'setVisitCreatedAt(consultation.created_at ?? null);',
+    'setVisitCreatedAt(consultation.created_at ?? todayIso);');
+  assert.equal(P.stampSourcesAreVisitFacts(m), false);
+});
+
+test('RED-2 (M4): the per-visit reset deleted, a decoy keeping the count up', () => {
+  // Verbatim the regression this batch names: without the reset, a same-route
+  // ?visit= change dates the note being opened with the previous one's day.
+  const m = mutate(RESULT, '    setVisitCreatedAt(null);\n', '')
+    .replace('const listDateBg =',
+      'const clearStamp = () => setVisitCreatedAt(null);\n  void clearStamp;\n  const listDateBg =');
+  assert.equal(P.resetSitsInTheTeardown(m), false);
+});
+
+test('RED-2 (M5): the clock fallback, split across two statements', () => {
+  // `const now = new Date()` on one line, the format call on another — the
+  // single-expression regex of round 1 could not see this, and `|| wall` slid
+  // past a substring test. This is a FALSE DATE on a legal record.
+  const m = mutate(RESULT,
+    'const listDateBg = formatVisitDateBg(visitCreatedAt);',
+    "const now = new Date();\n  const wall = now.toLocaleDateString('bg-BG', { day: '2-digit', month: '2-digit', year: 'numeric' });\n"
+    + '  const listDateBg = formatVisitDateBg(visitCreatedAt) || wall;');
+  assert.equal(P.noClockDate(m), false, 'the clock must be caught');
+  assert.equal(P.listDateFromVisit(m), false, 'the `|| wall` fallback must be caught');
+});
+
+test('RED-2 (M6): a SECOND date in the header, beside the right one', () => {
+  const m = mutate(RESULT,
+    '              {listDateBg}',
+    "              {listDateBg}</div><div>{new Intl.DateTimeFormat('bg-BG').format(new Date())}");
+  assert.equal(P.headerRendersListDate(m), false);
+});
+
+test('RED-2: the lifecycle exemption in noClockDate is narrow', () => {
+  // setSealedAt/setErasedAt may hold an optimistic „just now" — nothing else
+  // may, and the exemption must not be a hole the next date can climb through.
+  assert.equal(P.noClockDate('const x = new Date().toISOString();'), false);
+  assert.equal(P.noClockDate('setSealedAt(body?.sealed_at ?? new Date().toISOString());'), true);
+  assert.equal(P.noClockDate('const d = new Date( );'), false);
+});
+
+test('RED-2: mutate() refuses a mutation that did not apply', () => {
+  // Round 2's proofs run against the real file, so a stale search string would
+  // silently turn every assertion above into „the unmutated file is red" —
+  // which it is not. Fail loudly instead.
+  assert.throws(() => mutate('abc', 'not-present', 'x'), /mutation did not apply/);
+});
+
+test('the per-visit reset sits inside the teardown', () => {
+  assert.ok(P.resetSitsInTheTeardown(RESULT));
 });
