@@ -33,6 +33,46 @@ export function formatDateTimeBg(iso: string | null | undefined): string {
 }
 
 /**
+ * ISO timestamp → `DD.MM.YYYY г.` in Europe/Sofia — the DOCUMENT date of an
+ * амбулаторен лист.
+ *
+ * Read off the consultation's own stored timestamp, NEVER off the clock. Every
+ * лист surface used to compute `new Date()` at render time, so a note recorded
+ * on 08.08 and reopened on 27.08 printed 27.08 — on screen, in the PDF, in
+ * Word and on paper. The date is a mandatory field on a legal medical record
+ * and what gets reported to НЗОК; a reprint may not re-date the преглед.
+ *
+ * Pinned to Europe/Sofia, not the browser's zone: the stored value is UTC, so
+ * an un-pinned formatter dates a 00:30 Sofia visit to the previous day for a
+ * reader west of Sofia. Same convention as the backend's day windows
+ * (tubermed-backend CLAUDE.md, „Time").
+ *
+ * Returns '' on empty / unparseable input — a лист may be visibly MISSING its
+ * date, but it may never carry a false one, so there is no fallback to today.
+ */
+export function formatVisitDateBg(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('bg-BG', {
+    timeZone: 'Europe/Sofia',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+  }).format(d);
+}
+
+/**
+ * ISO timestamp → the Sofia calendar day as ISO `YYYY-MM-DD` ('' when the
+ * timestamp is unknown or unparseable). The filename half of formatVisitDateBg
+ * — a downloaded лист is named after the преглед, not after the download.
+ */
+export function sofiaDayIso(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Sofia' }).format(d);
+}
+
+/**
  * Today's date in Europe/Sofia as ISO `YYYY-MM-DD`. Mirrors lib/egn.ts
  * dobFromEgn's convention (`en-CA` → ISO-shaped) so manual-DOB checks and ЕГН
  * decoding agree on what "today" is (a baby registered first thing in the

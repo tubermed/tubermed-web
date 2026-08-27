@@ -355,11 +355,17 @@ export function generateEchoHtml(f: EchoFields, dateStr: string): string {
     ? `<p style="font-size:8.5pt;color:#8A94A6;margin-top:28px;border-top:1px solid #ECEFF3;padding-top:8px">${esc(f._disclaimer)}</p>`
     : '';
 
+  // Empty dateStr = the visit's own timestamp is not known here (see
+  // formatVisitDateBg). Omit the element rather than render an empty one: a
+  // document must not show half a date any more than it may show a wrong one.
+  const dateHtml = dateStr
+    ? `\n  <span style="font-size:10pt;color:#5B6472">${esc(dateStr)}</span>`
+    : '';
+
   return `<!DOCTYPE html><html lang="bg"><head><meta charset="utf-8"><title>Ехокардиографско изследване</title></head>
 <body style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:800px;margin:24px auto;padding:0 24px;color:#1F2933">
 <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:16px;margin-bottom:8px">
-  <h1 style="font-size:20pt;color:#1F3A5F;font-weight:700;margin:0">Ехокардиографско изследване</h1>
-  <span style="font-size:10pt;color:#5B6472">${esc(dateStr)}</span>
+  <h1 style="font-size:20pt;color:#1F3A5F;font-weight:700;margin:0">Ехокардиографско изследване</h1>${dateHtml}
 </div>
 ${secHtml.join('\n')}
 ${conclusionHtml}
@@ -589,8 +595,18 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string, identity?:
       ? `<h2 style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14pt;color:#1F3A5F;font-weight:600;letter-spacing:-0.01em;margin:24px 0 6px;border-bottom:1px solid #DCE1E8;padding-bottom:4px">Издадени документи</h2>`
       : '';
 
+  // Empty dateStr = the visit's own timestamp is not known here (see
+  // formatVisitDateBg). The лист then shows NO date rather than today's: an
+  // auditor can see a missing mandatory field, but cannot see a wrong one.
+  // Both the title and the header slot drop out whole — never „Дата: " with
+  // nothing after it, which claims a date was lost.
+  const docTitle = dateStr ? `Амбулаторен лист — ${escapeHtml(dateStr)}` : 'Амбулаторен лист';
+  const dateHtml = dateStr
+    ? `<div style="text-align:right;font-size:10pt;color:#8893A1">Дата: ${escapeHtml(dateStr)}</div>`
+    : '';
+
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-    <title>Амбулаторен лист — ${escapeHtml(dateStr)}</title>
+    <title>${docTitle}</title>
     <style>
       body{margin:0;padding:32px 48px;font-family:'Inter','Segoe UI',Arial,sans-serif;font-size:11pt;color:#1C2733;background:#F3F5F8}
       h1{font-family:'Inter','Segoe UI',Arial,sans-serif;font-size:22pt;font-weight:600;letter-spacing:-0.01em;margin:0 0 4px;color:#1F3A5F}
@@ -634,7 +650,7 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string, identity?:
     <div class="doc">${idHeader}
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
         <h1>Амбулаторен лист</h1>
-        <div style="text-align:right;font-size:10pt;color:#8893A1">Дата: ${escapeHtml(dateStr)}</div>
+        ${dateHtml}
       </div>
       <hr style="border:none;border-top:2px solid #1F3A5F;margin:0 0 20px">
 
@@ -738,6 +754,10 @@ function wordIdentitySignature(id: ExportIdentity): string {
 }
 
 export function generateWordHtml(f: TranscribeFields, dateStr: string, identity?: ExportIdentity): string {
+  // Empty dateStr = the visit's own timestamp is not known here (see
+  // formatVisitDateBg). Drop the whole meta line rather than emit „Дата: " with
+  // nothing after it — absent, never half-written, and never today's.
+  const dateHtml = dateStr ? `<p class="meta">Дата: ${escapeHtml(dateStr)}</p>` : '';
   const hasId = !!identity && identityHasContent(identity);
   const idHeader = hasId ? wordIdentityHeader(identity!) : '';
   const idSignature = hasId ? wordIdentitySignature(identity!) : '';
@@ -792,7 +812,7 @@ export function generateWordHtml(f: TranscribeFields, dateStr: string, identity?
 </head>
 <body>${idHeader}
 <h1>АМБУЛАТОРЕН ЛИСТ</h1>
-<p class="meta">Дата: ${escapeHtml(dateStr)}</p>
+${dateHtml}
 
 ${
   wordMain.hasContent

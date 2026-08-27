@@ -22,6 +22,7 @@ import { api, ApiError, getSession } from '@/lib/api';
 import type { DoctorInfo } from '@/lib/api';
 import { useColdStartRecovery } from '@/lib/use-cold-start-recovery';
 import { resolveResultBootstrap } from '@/lib/result-identity';
+import { formatVisitDateBg, sofiaDayIso } from '@/lib/date';
 import type {
   TranscribeResult,
   TranscribeFields,
@@ -294,6 +295,13 @@ function ResultPageInner() {
   // a failed /me leaves this undefined and the export renders the old header.
   const [exportIdentity, setExportIdentity] = useState<ExportIdentity | undefined>(undefined);
   const [pendingVisit, setPendingVisit] = useState<PendingVisit | null>(null);
+  // The consultation's own stored timestamp — the day of the ПРЕГЛЕД, and the
+  // only thing the лист may be dated by. Written from three identity-resolved
+  // sources below (painted staging context, cold-start recovery, and the
+  // server reconcile, which is authoritative), reset to null on every visit
+  // change. null = not known: the лист then renders WITHOUT a date rather than
+  // falling back to the clock, which is the bug this exists to close.
+  const [visitCreatedAt, setVisitCreatedAt] = useState<string | null>(null);
   const [original, setOriginal] = useState<TranscribeResult | null>(null);
   const [fields, setFields] = useState<TranscribeFields>({});
   // AI-provenance tint state (2026-08-21). serverTouched is the backend's
@@ -421,6 +429,10 @@ function ResultPageInner() {
     setSealedAt(null);
     setErasedAt(null);
     setPendingVisit(null);
+    // The лист date is per-consultation like everything else here: leave it
+    // behind on a same-route ?visit= change and the note being opened is dated
+    // with the PREVIOUS one's day until the reconcile lands.
+    setVisitCreatedAt(null);
     setRecoverVisitId(null);
     setReconcileVisitId(null);
     // The source SESSION is per-consultation too, and it was missing from this
@@ -487,6 +499,11 @@ function ResultPageInner() {
     // Visit-header context rides along only when it belongs to the same
     // consultation as the blob (null otherwise — render without the header).
     setPendingVisit(decision.pendingVisit);
+    // …and so does the лист date, subject to the same identity rule: this is
+    // the staging timestamp written at /app/new-visit, good enough to date the
+    // sheet on first paint. The reconcile below replaces it with the row's own
+    // created_at, which is the authority.
+    setVisitCreatedAt(decision.pendingVisit?.created_at ?? null);
     // The blob is the AI output frozen at generation — it never carries the
     // doctor's later edits. Whenever ?visit= is present the server's
     // extracted_fields is the source of truth: we just painted the blob for an
@@ -555,6 +572,10 @@ function ResultPageInner() {
       // undefined (older backend) and null (no snapshot) both mean: no tint.
       setServerTouched(recovery.fieldsTouched ?? null);
       setPendingVisit(recovery.pendingVisit);
+      // Server-sourced: useColdStartRecovery builds pendingVisit.created_at
+      // straight from the consultation row. This is the path a reopened лист
+      // takes, and the one that printed today's date for weeks.
+      setVisitCreatedAt(recovery.pendingVisit.created_at ?? null);
       // Restore the SERVER's lifecycle state. Without this the page reopened
       // every filed note as unconfirmed and locked Копирай/Печат/PDF on a note
       // the doctor had already approved — /approve is idempotent, so the
@@ -613,6 +634,10 @@ function ResultPageInner() {
         setReviewStatus(consultation.note_approved ? 'confirmed' : 'pending');
         setSealedAt(consultation.sealed_at ?? null);
         setErasedAt(consultation.erased_at ?? null);
+        // The лист date is a server fact about the row, like the lifecycle
+        // marks above it — adopted BEFORE either bail-out on purpose, so an
+        // erased or note-less visit is still dated by the day it happened.
+        setVisitCreatedAt(consultation.created_at ?? null);
 
         if (!consultation.note) {
           // An erased note legitimately has none — blank the stale blob so the
@@ -1483,6 +1508,20 @@ function ResultPageInner() {
     [original]
   );
 
+  // ── The document date ────────────────────────────────────────
+  // ONE value, read by the screen and by all four export paths. The лист is
+  // dated by the ПРЕГЛЕД it records — the consultation's own stored timestamp,
+  // resolved in Europe/Sofia — never by the clock at render time. Every one of
+  // these surfaces used to compute `new Date()` for itself, so a note recorded
+  // on 08.08 and reopened on 27.08 printed 27.08 in the header, in the PDF, in
+  // Word and on paper. That field is mandatory on a legal medical record, it is
+  // what НЗОК is told, and it is the first thing an auditor reads.
+  //
+  // '' when the timestamp is not known (see formatVisitDateBg): the лист then
+  // shows NO date. Absent is a visible gap the doctor can act on; today's date
+  // is a false statement they cannot see.
+  const listDateBg = formatVisitDateBg(visitCreatedAt);
+
   // ── Export handlers ──────────────────────────────────────────
   const handleCopy = useCallback(async () => {
     if (isLocked) return;
@@ -1513,35 +1552,28 @@ function ResultPageInner() {
 
   const handleEchoPdf = useCallback(() => {
     if (isLocked) return;
-    const dateStr = new Date().toLocaleDateString('bg-BG', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const html = generateEchoHtml(fields as unknown as EchoFields, dateStr);
+    const html = generateEchoHtml(fields as unknown as EchoFields, listDateBg);
     if (openPdfPreview(html)) {
       showToast('success', 'Преглед отворен — Запази като PDF от бутона');
       signalExport('pdf');
     } else {
       showToast('error', 'Изскачащият прозорец е блокиран — разрешете го за този сайт');
     }
-  }, [fields, isLocked, showToast, signalExport]);
+  }, [fields, isLocked, listDateBg, showToast, signalExport]);
 
   const handleEchoPrint = useCallback(() => {
     if (isLocked) return;
-    const dateStr = new Date().toLocaleDateString('bg-BG', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const html = generateEchoHtml(fields as unknown as EchoFields, dateStr);
+    const html = generateEchoHtml(fields as unknown as EchoFields, listDateBg);
     if (openPdfPreview(html, { autoPrint: true })) {
       signalExport('print');
     } else {
       showToast('error', 'Изскачащият прозорец е блокиран — разрешете го за този сайт');
     }
-  }, [fields, isLocked, showToast, signalExport]);
+  }, [fields, isLocked, listDateBg, showToast, signalExport]);
 
   const handlePdf = useCallback(() => {
     if (isLocked) return;
-    const dateStr = new Date().toLocaleDateString('bg-BG', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-    const html = generatePdfHtml(fields, dateStr, exportIdentity);
+    const html = generatePdfHtml(fields, listDateBg, exportIdentity);
     const opened = openPdfPreview(html);
     if (opened) {
       showToast('success', 'Преглед отворен — Запази като PDF от бутона');
@@ -1552,20 +1584,15 @@ function ResultPageInner() {
         'Изскачащият прозорец е блокиран — разрешете го за този сайт'
       );
     }
-  }, [fields, isLocked, showToast, signalExport, exportIdentity]);
+  }, [fields, isLocked, listDateBg, showToast, signalExport, exportIdentity]);
 
   const handleWord = useCallback(() => {
     if (isLocked) return;
-    const dateStr = new Date().toLocaleDateString('bg-BG', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-    const html = generateWordHtml(fields, dateStr, exportIdentity);
-    const filename =
-      'ambulatoren-list-' +
-      new Date().toISOString().slice(0, 10) +
-      '.doc';
+    const html = generateWordHtml(fields, listDateBg, exportIdentity);
+    // Named after the преглед, not after the download: a лист re-saved in
+    // three months must not arrive on disk called ambulatoren-list-<today>.
+    const day = sofiaDayIso(visitCreatedAt);
+    const filename = 'ambulatoren-list' + (day ? '-' + day : '') + '.doc';
     try {
       downloadWord(html, filename);
       showToast('success', 'Word файлът е свален');
@@ -1573,16 +1600,11 @@ function ResultPageInner() {
     } catch {
       showToast('error', 'Грешка при генериране на Word файла');
     }
-  }, [fields, isLocked, showToast, signalExport, exportIdentity]);
+  }, [fields, isLocked, listDateBg, visitCreatedAt, showToast, signalExport, exportIdentity]);
 
   const handlePrint = useCallback(() => {
     if (isLocked) return;
-    const dateStr = new Date().toLocaleDateString('bg-BG', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-    const html = generatePdfHtml(fields, dateStr, exportIdentity);
+    const html = generatePdfHtml(fields, listDateBg, exportIdentity);
     const opened = openPdfPreview(html, { autoPrint: true });
     if (opened) {
       signalExport('print');
@@ -1592,7 +1614,7 @@ function ResultPageInner() {
         'Изскачащият прозорец е блокиран — разрешете го за този сайт'
       );
     }
-  }, [fields, isLocked, showToast, signalExport, exportIdentity]);
+  }, [fields, isLocked, listDateBg, showToast, signalExport, exportIdentity]);
 
   // ── Visible-section bookkeeping ──────────────────────────────
   const visibleSections = useMemo(() => {
@@ -1635,12 +1657,6 @@ function ResultPageInner() {
   // NOT CHECKED, never as a pass. It is not a fail either, so the affordance
   // goes quiet for the whole note (see SourceButton, silence 3).
   const provenanceArmed = sourcesArmed(fields.field_sources);
-
-  const todayBg = new Date().toLocaleDateString('bg-BG', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
 
   // Document-type branch. note_type rides on the PendingVisit (set at staging,
   // rebuilt from the backend on cold-start recovery). Echo has a different JSONB
@@ -1997,7 +2013,7 @@ function ResultPageInner() {
               className="text-sm tabular-nums"
               style={{ color: 'var(--color-text-muted)' }}
             >
-              {todayBg}
+              {listDateBg}
             </div>
           </div>
 
