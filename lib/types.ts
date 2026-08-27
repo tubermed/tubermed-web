@@ -268,7 +268,20 @@ export interface NoteShapeRepair {
 
 export interface TranscribeResult {
   consultationId: string;
-  transcript: string;
+  /**
+   * The raw transcript — or `null`, meaning NO transcript value was ever
+   * obtained for this note. Not the same thing as `''`, which means the
+   * transcript was fetched and really is empty.
+   *
+   * The distinction is load-bearing, not decorative. Every recovery path
+   * (`?visit=` from the library, a reload, a cold start) rebuilds the note from
+   * GET /api/consultations/:id, which does not return the transcript by
+   * design — and while that hole was filled with `''`, the transcript panel
+   * published „Транскриптът е празен." on a consultation nothing had been read
+   * from. See lib/transcript-state.ts; same principle as the source-label
+   * suppression in lib/field-sources.ts.
+   */
+  transcript: string | null;
   fields: TranscribeFields;
 }
 

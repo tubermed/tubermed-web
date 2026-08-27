@@ -45,6 +45,16 @@ function parseBlob(raw: string): TranscribeResult | null {
     if (!parsed || typeof parsed.consultationId !== 'string' || !parsed.fields) {
       return null;
     }
+    // A blob whose transcript key is missing (an older shape) or not a string
+    // carries no transcript — say so as `null`, the value that MEANS „never
+    // obtained". Left as `undefined` it falls through the panel's falsy test
+    // and is reported as an EMPTY transcript, which is a claim about the
+    // recording that nothing here supports (lib/transcript-state.ts).
+    // `''` is preserved exactly: fetched-and-empty is a different state and
+    // normalising it up to null would re-collapse the two.
+    if (typeof parsed.transcript !== 'string') {
+      return { ...parsed, transcript: null };
+    }
     return parsed;
   } catch {
     return null;

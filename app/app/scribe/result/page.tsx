@@ -23,6 +23,7 @@ import type { DoctorInfo } from '@/lib/api';
 import { useColdStartRecovery } from '@/lib/use-cold-start-recovery';
 import { resolveResultBootstrap } from '@/lib/result-identity';
 import { formatVisitDateBg, sofiaDayIso } from '@/lib/date';
+import { transcriptPanel } from '@/lib/transcript-state';
 import type {
   TranscribeResult,
   TranscribeFields,
@@ -554,14 +555,18 @@ function ResultPageInner() {
     }
     if (recovery.phase === 'recovered') {
       const note = recovery.note ?? {};
-      // No transcript on recovery — the backend omits it by design; '' lets the
-      // transcript viewer fall back to its existing "unavailable" state.
+      // NOTHING WAS FETCHED — `null`, not `''`. The backend omits the
+      // transcript from GET /:id by design, so this path has no transcript
+      // VALUE, which is a different thing from an empty one. While it was ''
+      // the panel published „Транскриптът е празен." over a consultation
+      // nothing had been read from, and a doctor reads that as „the recording
+      // was lost". See lib/transcript-state.ts.
       // ACCEPTED (not a bug): originalFieldLengths derives the edit-diff baseline
       // from `original.fields`, which on recovery is the ALREADY-FILED note — so
       // chars_changed measures edits-since-recovery, not edits-since-AI-output.
       setOriginal({
         consultationId: recovery.pendingVisit.consultation_id,
-        transcript: '',
+        transcript: null,
         fields: note,
       });
       {
@@ -3115,7 +3120,10 @@ function TranscriptBody({
   span,
   variant = 'stored',
 }: {
-  transcript: string;
+  // `null` = nothing was ever fetched (every recovery path). Distinct from
+  // '' = fetched and really empty; only one of those may be reported as a
+  // fact about the record. transcriptPanel is the single decider.
+  transcript: string | null;
   span: SourceSpan | null;
   // 'stored' = backend-resolved offsets (confident: solid brand highlight);
   // 'guess' = alias-bridge opt-in (tentative: dashed underline, no fill —
@@ -3123,18 +3131,21 @@ function TranscriptBody({
   // for AI-uncertainty and red for vital ranges).
   variant?: 'stored' | 'guess';
 }) {
-  if (!transcript) {
-    return (
-      <em style={{ color: 'var(--color-text-muted)' }}>Транскриптът е празен.</em>
-    );
+  // Three states, one decider (lib/transcript-state.ts). Anything that is not
+  // readable text renders as its own honest sentence — a report about the
+  // record only when we actually have the record to report on.
+  const panel = transcriptPanel(transcript);
+  if (panel.kind !== 'text') {
+    return <em style={{ color: 'var(--color-text-muted)' }}>{panel.notice}</em>;
   }
-  if (!span || span.tokens.length === 0) return <>{transcript}</>;
+  const text = panel.text;
+  if (!span || span.tokens.length === 0) return <>{text}</>;
 
   // Merge matched tokens separated only by whitespace into clean phrase-boxes.
   const ranges: { start: number; end: number }[] = [];
   for (const tk of span.tokens) {
     const last = ranges[ranges.length - 1];
-    if (last && /^\s*$/.test(transcript.slice(last.end, tk.start))) last.end = tk.end;
+    if (last && /^\s*$/.test(text.slice(last.end, tk.start))) last.end = tk.end;
     else ranges.push({ start: tk.start, end: tk.end });
   }
 
@@ -3144,7 +3155,7 @@ function TranscriptBody({
     if (r.start > cursor) {
       out.push(
         <span key={`g${cursor}`} style={{ color: 'var(--color-text-muted)' }}>
-          {transcript.slice(cursor, r.start)}
+          {text.slice(cursor, r.start)}
         </span>
       );
     }
@@ -3173,15 +3184,15 @@ function TranscriptBody({
               }
         }
       >
-        {transcript.slice(r.start, r.end)}
+        {text.slice(r.start, r.end)}
       </mark>
     );
     cursor = r.end;
   });
-  if (cursor < transcript.length) {
+  if (cursor < text.length) {
     out.push(
       <span key={`g${cursor}`} style={{ color: 'var(--color-text-muted)' }}>
-        {transcript.slice(cursor)}
+        {text.slice(cursor)}
       </span>
     );
   }
