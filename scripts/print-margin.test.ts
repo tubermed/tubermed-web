@@ -20,25 +20,44 @@
 //     removes the header and keeps the footer; `margin:15mm 15mm 8mm 15mm`
 //     does the reverse. Only the TOP edge carries a date, so only the top edge
 //     has to move.
-//   · `@page { size: … }` FORFEITS margin control. When the CSS page size does
-//     not match the destination paper, Chrome discards the CSS margins and uses
-//     the printer's own — and draws its header inside them. Verified on the
-//     резюме at `size:A5; margin-top:6mm` (header drawn), at
-//     `size:A5; margin:6mm` (header drawn), and with `size` removed (header
-//     gone). No margin value wins while `size` stands.
+//   · `@page { size: … }` costs margin control on the WRONG PAPER. Where the
+//     CSS page size does not match the destination, Chrome ignores the CSS
+//     margin and uses the printer's own. Full matrix on the резюме, three
+//     destinations each:
+//
+//        size:A5; margin:14mm              (shipped)   A5 —  A4 ✗  Letter ✗
+//        size:A5; margin:6mm                           A5 ✓  A4 ✗  Letter ✗
+//        margin:14mm            (size dropped)         A5 ✗  A4 ✗  Letter ✗
+//        size:A5; margin:14mm; margin-top:6mm          A5 ✓  A4 ✗  Letter ✗
+//        margin:14mm; margin-top:6mm                   A5 ✓  A4 ✓  Letter ✓
+//                                              (✓ = no header, ✗ = header drawn)
+//
+//     So BOTH changes are needed on the резюме, and neither alone is enough:
+//     dropping `size: A5` on its own leaves 14mm, which is over the threshold
+//     and still draws the stamp. The first version of this note said `size` was
+//     the operative cause; the matrix says the top margin is, and `size` is what
+//     stops the margin from being honoured off-A5.
 //
 // WHAT THIS GATE HOLDS
 //
-// That the top edge of every browser-printed document stays under the measured
+// That the top edge of EVERY print surface in the repo stays under the measured
 // threshold, and that the лист's first page gives back exactly what the page
 // box gave up — so „suppress the stamp" can never quietly become „restyle the
 // document". The резюме is pinned as NOT protected, with the trade written
 // down, because dropping `size: A5` is Dimitar's call and not this batch's.
+//
+// It sweeps rather than enumerates, because enumerating already failed once:
+// the first version held the three documents the „Печат" button builds and
+// missed Ctrl+P on the result page, whose page box sits in app/globals.css —
+// a file no builder imports, printing the визит date in the body and today's
+// in the margin.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import Module from 'node:module';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 type NextResolve = (specifier: string, context?: unknown) => unknown;
 const { registerHooks } = Module as unknown as {
@@ -58,7 +77,10 @@ registerHooks({
   },
 });
 
-const { generatePdfHtml, generateEchoHtml } = await import('../lib/exporters.ts');
+const ROOT = join(import.meta.dirname, '..');
+const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
+
+const { generatePdfHtml, generateEchoHtml, generateWordHtml } = await import('../lib/exporters.ts');
 const { buildPatientSummaryHtml } = await import('../lib/patient-summary-doc.ts');
 
 /** Measured on Chrome 1xx/A4 by sweeping the лист's @page margin 0→20mm:
@@ -85,20 +107,41 @@ function lengthMm(tok: string): number | null {
   return n * TO_MM[m[2].toLowerCase()];
 }
 
-/** The declared `@page` blocks of a document, innermost text only. Finds them
- *  wherever they sit, including nested inside `@media print { … }` — the лист's
- *  is nested, and a gate that only looked at top level would read it as absent
- *  and pass the document as unprotected-but-unnoticed. */
-function pageBlocks(html: string): string[] {
-  const out: string[] = [];
+/** The declared `@page` blocks, innermost text only, with their SELECTOR. Finds
+ *  them wherever they sit, including nested inside `@media print { … }` — the
+ *  лист's is nested, and a gate that only looked at top level would read it as
+ *  absent.
+ *
+ *  The selector is kept, not discarded: `@page :first { … }` applies to the
+ *  first page ONLY, so reading it as the general rule would report a page box
+ *  that most pages never get. A selector other than the bare one is refused
+ *  outright below rather than guessed at. */
+function pageBlocks(css: string): Array<{ selector: string; body: string }> {
+  const out: Array<{ selector: string; body: string }> = [];
+  // Comments first, and this is not tidiness. The word „@page" appears in the
+  // prose EXPLAINING these rules, in both the stylesheet and lib/exporters.ts,
+  // and the scan below would then read the next unrelated `{ … }` as the page
+  // box with a garbage selector — which is exactly what it did the first time
+  // this walk ran. A gate a comment can trip is a gate that pressures the next
+  // reader into deleting the explanation.
+  const src = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
   // ascii-safe: CSS at-rule syntax
   const re = /@page\b([^{]*)\{([^{}]*)\}/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(html)) !== null) out.push(m[2]);
+  while ((m = re.exec(src)) !== null) out.push({ selector: m[1].trim(), body: m[2] });
   return out;
 }
 
-export interface PageBox { topMm: number | null; declaresSize: boolean; blocks: number }
+export interface PageBox {
+  topMm: number | null;
+  declaresSize: boolean;
+  blocks: number;
+  /** A selector we cannot reason about (`:first`, `:left`, …). Such a rule
+   *  governs SOME pages, so the general page box is still whatever the
+   *  unqualified rule says — and if there is no unqualified rule, the browser's
+   *  default. Never treated as protection. */
+  qualified: boolean;
+}
 
 /** The effective top margin of the page box, in mm — shorthand and longhand
  *  resolved in source order, exactly as the cascade would. `null` means the
@@ -109,7 +152,9 @@ function pageBox(html: string): PageBox {
   const blocks = pageBlocks(html);
   let topMm: number | null = null;
   let declaresSize = false;
-  for (const body of blocks) {
+  let qualified = false;
+  for (const { selector, body } of blocks) {
+    if (selector !== '') { qualified = true; continue; }  // :first / :left / :right
     for (const decl of body.split(';')) {
       const i = decl.indexOf(':');
       if (i < 0) continue;
@@ -123,11 +168,11 @@ function pageBox(html: string): PageBox {
       }
     }
   }
-  return { topMm, declaresSize, blocks: blocks.length };
+  return { topMm, declaresSize, blocks: blocks.length, qualified };
 }
 
 const protectedFromHeader = (b: PageBox) =>
-  b.topMm !== null && b.topMm < HEADER_THRESHOLD_MM && !b.declaresSize;
+  b.topMm !== null && b.topMm < HEADER_THRESHOLD_MM && !b.declaresSize && !b.qualified;
 
 // ── The documents ───────────────────────────────────────────────────────────
 
@@ -159,13 +204,94 @@ test('the ехокардиография does not leave room for the browser\'s 
   assert.ok(protectedFromHeader(box));
 });
 
+// ── Every print surface in the repo, found rather than listed ───────────────
+// The first version of this gate held the three documents the „Печат" button
+// builds. It missed a fourth printed surface entirely — Ctrl+P on the result
+// page, whose page box lives in app/globals.css, a file no builder imports and
+// no gate read. It printed the визит date in the body and today's in the margin
+// for a whole round. So the gate no longer takes a list: it walks the repo,
+// finds every `@page` there is, and holds all of them.
+
+/** Every tracked source file that could declare a page box. */
+function filesWithPageRule(): string[] {
+  const out: string[] = [];
+  const skip = new Set(['node_modules', '.next', '.git', '.claude', 'out', 'dist']);
+  const walk = (rel: string) => {
+    for (const e of readdirSync(join(ROOT, rel), { withFileTypes: true })) {
+      if (skip.has(e.name)) continue;
+      const child = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) { walk(child); continue; }
+      if (!/\.(css|scss|ts|tsx|js|jsx|html)$/.test(e.name)) continue;
+      if (/\.test\.tsx?$/.test(e.name)) continue;   // fixtures, not surfaces
+      if (read(child).includes('@page')) out.push(child);
+    }
+  };
+  walk('');
+  return out.sort();
+}
+
+const PAGE_RULE_FILES = filesWithPageRule();
+
+/** Files whose `@page` is NOT held to the threshold, each with its reason.
+ *  An exception has to be written down here to exist. */
+const PAGE_RULE_EXCEPTIONS: Record<string, string> = {
+  // Downloaded as a .doc and opened in Word. Word draws no browser header, and
+  // its own headers are off by default; this document never passes through
+  // Chrome's print path. It has no @page at all, which is why it is named here
+  // rather than silently absent — see the Word test below.
+  'lib/exporters.ts:generateWordHtml': 'opened in Word, never printed by the browser',
+  // The one document still carrying the stamp. See the pin below.
+  'lib/patient-summary-doc.ts': 'blocked by @page size: A5 — ruling owed',
+};
+
+test('every @page in the repo is under the browser\'s header threshold', () => {
+  assert.ok(PAGE_RULE_FILES.length >= 3,
+    `the walk found only ${PAGE_RULE_FILES.length} file(s) with an @page rule: ${PAGE_RULE_FILES}`);
+  const unprotected: string[] = [];
+  for (const f of PAGE_RULE_FILES) {
+    if (f in PAGE_RULE_EXCEPTIONS) continue;
+    const box = pageBox(read(f));
+    if (!protectedFromHeader(box)) {
+      unprotected.push(`${f} (top ${box.topMm}mm, size:${box.declaresSize}, qualified:${box.qualified})`);
+    }
+  }
+  assert.deepEqual(unprotected, [],
+    'these print surfaces leave room for the browser\'s own header, which is dated today:\n' +
+    unprotected.join('\n') +
+    `\nBring the page box\'s TOP margin under ${HEADER_THRESHOLD_MM}mm, or add a written exception.`);
+});
+
+test('the result page\'s own Ctrl+P surface is one of them', () => {
+  // Named explicitly as well as swept, because this is the one that was missed:
+  // it is a documented print path (see the block comment in app/globals.css and
+  // PrintMedsBlock in the result page), and it prints the визит date.
+  assert.ok(PAGE_RULE_FILES.includes('app/globals.css'),
+    'the walk no longer reaches app/globals.css — the surface that was missed');
+  const box = pageBox(read('app/globals.css'));
+  assert.ok(box.topMm !== null && box.topMm < HEADER_THRESHOLD_MM,
+    `Ctrl+P on the result page has a ${box.topMm}mm top margin`);
+});
+
+test('the Word document is exempt for a written reason, not by omission', () => {
+  // It genuinely has no page box. That is fine — and it is recorded, so nobody
+  // has to rediscover why the fourth builder is not in the sweep.
+  const html = generateWordHtml(
+    { osnovna_diagnoza: 'Остър фарингит' } as never, '08.08.2026 г.', {},
+  );
+  assert.equal(pageBlocks(html).length, 0, 'the Word document has grown a page box — hold it too');
+  assert.ok('lib/exporters.ts:generateWordHtml' in PAGE_RULE_EXCEPTIONS);
+});
+
 test('the резюме за пациента is NOT protected, and is pinned as such', () => {
-  // Not an oversight and not a passing test dressed as one. `size: A5` forfeits
-  // CSS margin control whenever the destination paper is not A5 — measured
-  // three ways on a real print preview — so this sheet still carries
-  // „8/28/26, 9:12 AM" in its margin, next to the преглед's date, in the
-  // patient's hand. Removing `size: A5` removes the stamp AND the A5 page, and
-  // that trade is Dimitar's.
+  // Not an oversight and not a passing test dressed as one. This sheet still
+  // carries „8/28/26, 9:12 AM" in its margin, on every page, next to the
+  // преглед's date, in the patient's hand — and also when the визит date is
+  // unknown, in which case today's is the ONLY date on it.
+  //
+  // Fixing it takes BOTH `margin-top: 6mm` AND dropping `size: A5` (see the
+  // matrix at the top of this file): 14mm is over the threshold on any paper,
+  // and while `size` stands the margin is ignored off-A5 anyway. Dropping A5
+  // changes the page the patient is handed, so the trade is Dimitar's.
   //
   // Pinned in BOTH directions: if `size` is dropped, this test goes red and
   // whoever dropped it must bring the top margin under the threshold and
@@ -249,6 +375,53 @@ test('RED: an @page nested inside @media print is still found', () => {
   assert.equal(pageBlocks(nested).length, 1);
   // And the real document is the nested shape, not a top-level one.
   assert.ok(/@media print\{[\s\S]*@page\{/.test(LIST()));
+});
+
+test('RED: a page-selector rule is never mistaken for the general page box', () => {
+  // `@page :first { margin: 6mm }` protects page ONE. Reading it as the general
+  // rule would report every continuation page as safe while the browser stamps
+  // each of them.
+  const first = '<style>@page :first{margin:6mm}</style>';
+  assert.equal(pageBox(first).qualified, true);
+  assert.equal(protectedFromHeader(pageBox(first)), false);
+  // A qualified rule alongside a good general one is still not protection: the
+  // parser refuses to reason about the combination rather than guessing.
+  assert.equal(protectedFromHeader(pageBox('<style>@page{margin-top:6mm}@page :left{margin:20mm}</style>')), false);
+  // …and the bare selector is not treated as qualified.
+  assert.equal(pageBox('<style>@page  {margin-top:6mm}</style>').qualified, false);
+});
+
+test('RED: a comment mentioning @page does not become a page box', () => {
+  // This is not hypothetical — the prose in app/globals.css and lib/exporters.ts
+  // explaining these very rules says „@page", and the first version of the walk
+  // read the next `{ … }` after each mention as the rule, with a garbage
+  // selector. It reported app/globals.css as unprotected while the file was
+  // correct: a gate a comment can trip.
+  const commented = `
+    /* Do not add size: to this @page — see the note above. */
+    body { padding-top: 12mm }
+    @media print { @page { margin: 15mm; margin-top: 6mm } }`;
+  assert.equal(pageBlocks(commented).length, 1, 'exactly one real page box');
+  assert.equal(pageBox(commented).topMm, 6);
+  assert.equal(protectedFromHeader(pageBox(commented)), true);
+});
+
+test('RED: the repo walk finds surfaces, and would notice if it stopped', () => {
+  // The walk is the whole point — a hand-list is what missed Ctrl+P. If it ever
+  // silently matches nothing, every sweep above passes on an empty set.
+  assert.ok(PAGE_RULE_FILES.includes('app/globals.css'));
+  assert.ok(PAGE_RULE_FILES.includes('lib/exporters.ts'));
+  assert.ok(PAGE_RULE_FILES.includes('lib/patient-summary-doc.ts'));
+  // And it reaches OUTSIDE lib/ — the miss was a stylesheet, not a builder.
+  assert.ok(PAGE_RULE_FILES.some((f) => !f.startsWith('lib/')),
+    'the walk only reaches lib/, which is exactly the blind spot it exists to remove');
+  // Every exception names a file the walk actually found, or the exception is
+  // stale and is hiding nothing while looking like it hides something.
+  for (const key of Object.keys(PAGE_RULE_EXCEPTIONS)) {
+    const file = key.split(':')[0];
+    assert.ok(PAGE_RULE_FILES.includes(file) || file === 'lib/exporters.ts',
+      `stale exception: ${key} names a file with no @page rule`);
+  }
 });
 
 test('RED: the threshold constant is the measured one, not a rounded guess', () => {

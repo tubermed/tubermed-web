@@ -647,7 +647,10 @@ html, body {
    drops the drug table is worse than one that never had it, because the doctor
    cannot tell it is missing. `.print-only` below is the block that fixes it. */
 @media print {
-  body { background: white !important; }
+  /* The 12mm is the top margin the page box gives up just below, handed back so
+     the first printed page is unchanged. See the @page rule at the end of this
+     block for why it gives it up. */
+  body { background: white !important; padding-top: 12mm !important; }
   header,
   nav,
   aside,
@@ -678,8 +681,23 @@ html, body {
   .ai-authored::before {
     display: none !important;
   }
+  /* Ctrl+P on the result page is a real printed лист — see the block comment
+     above — so it is held to the same rule as the документи the „Печат" button
+     builds: the TOP edge of the page box stays under the browser's header
+     threshold, measured at 9mm. At 9mm and above Chrome draws its own header
+     into the margin, and that header carries TODAY'S date. The result page
+     prints the визит date in its own header, so a note recorded on the 8th and
+     Ctrl+P'd on the 28th came out carrying both, three centimetres apart.
+
+     This surface was missed for a whole round because the gates read the three
+     document BUILDERS and this page box lives in a stylesheet — which is why
+     scripts/print-margin.test.ts now finds every @page in the repo instead of
+     being told where to look. The 12mm is handed back as body padding above, so
+     the first page is unchanged; a continuation page gets 6mm instead of 18mm.
+     The side margins are untouched. */
   @page {
     margin: 18mm 16mm;
+    margin-top: 6mm;
   }
 }
 
