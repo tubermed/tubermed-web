@@ -223,9 +223,40 @@ test('an unknown date leaves no dangling „Дата:" label', () => {
   assert.ok(!/Амбулаторен лист —\s*<\/title>/.test(generatePdfHtml(NOTE, '')), 'PDF title separator');
 });
 
+// The exact hole a refuter walked through. `!/new Date\(/` is a denylist of one
+// spelling, and the class has at least six: `Date()` with no `new` is legal JS
+// returning today, `Date.now()` never says „Date(" with a space in the right
+// place, and `toLocaleDateString` / `Intl.DateTimeFormat` / `getFullYear()`
+// never say it at all. Held here to the same class as the sibling gates, so
+// there is ONE definition of „reaches for the clock" across the три date tests.
+const DATE_MACHINERY =
+  // ascii-safe: JS source identifiers in our own files, never Bulgarian input
+  /\bDate\s*\(|\bDate\s*\.\s*(?:now|parse|UTC)|toLocaleDate|toLocaleTime|toLocaleString|DateTimeFormat|formatVisitDateBg|formatDateTimeBg|formatDateBg|sofiaDayIso|todaySofiaIso|getFullYear\(|getMonth\(|getDate\(/;
+
+const withoutComments = (src: string) =>
+  src.split('\n').filter((l) => !/^\s*(?:\/\/|\/\*|\*)/.test(l)).join('\n');
+
 test('the exporters never invent a date of their own', () => {
-  assert.ok(!/new Date\(/.test(EXPORTERS),
+  assert.ok(!DATE_MACHINERY.test(withoutComments(EXPORTERS)),
     'lib/exporters.ts must render the date it is handed and nothing else');
+});
+
+test('RED: the spellings the old one-spelling denylist let through', () => {
+  const old = /new Date\(/;
+  const mutations = [
+    'const stamp = Date();',                                  // no `new` — returns today
+    'const t = Date.now();',
+    'const s = d.toLocaleDateString("bg-BG");',
+    'const f = new Intl.DateTimeFormat("bg-BG").format(x);',
+    'const y = x.getFullYear();',
+    "import { todaySofiaIso } from './date';",
+  ];
+  for (const m of mutations) {
+    assert.equal(old.test(m), false, `precondition: the old gate should have missed ${m}`);
+    assert.ok(DATE_MACHINERY.test(withoutComments(m)), `still not caught: ${m}`);
+  }
+  // …and the one spelling the old gate DID catch is still caught.
+  assert.ok(DATE_MACHINERY.test('const d = new Date();'));
 });
 
 // ── 5. The render bindings (source-text predicates; section 6 proves them) ──
