@@ -32,6 +32,25 @@
 // took: a NAMED, documented, patient-identity parameter sitting on a document
 // builder waiting for a call site — and it stops it at review time, in the
 // diff, which is where that one is caught.
+//
+// WHAT IS STILL OPEN, CONFIRMED RATHER THAN ASSUMED
+//
+// An adversarial pass drove these through and they are NOT closable by this
+// mechanism. They are written down because a gate whose limits are unstated
+// gets read as a guarantee:
+//
+//   1. A generically-named parameter. A 4th argument `subject?: string` on
+//      generatePdfHtml, rendering „Пациент: <име>", is green here and always
+//      will be. Only review catches it.
+//   2. Identity through the DOCTOR-side allowlist. `address` and `phone` are
+//      allowed unconditionally because the practice's own address belongs on a
+//      лист; a call site that puts the patient's there instead is invisible.
+//   3. Free text. Whatever the доктор dictates into `anamneza` reaches paper,
+//      the clipboard, the Word file and the summary prompt verbatim. That is
+//      by design and is a product question, not a parser one.
+//
+// The two routes that ARE closed and might look like these: a default parameter
+// value (`patientName = ''`) and a relative re-export both go red.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { test } from 'node:test';
@@ -77,6 +96,15 @@ const IDENTITY_LATIN = [
   'dob', 'dateofbirth', 'birthdate', 'birth_date', 'birthday',
   'patientaddress', 'patientphone', 'patientemail', 'patientdob',
   'homeaddress', 'mobilenumber', 'healthinsurancenumber', 'insurednumber',
+  // Latin spellings of the Bulgarian words. A verification pass got `pacient`
+  // and `imeNaPacienta` onto a document builder with the first list — this
+  // codebase names things in transliterated Bulgarian constantly
+  // (`osnovna_diagnoza`, `pridruzhavashti`, `napravlenia`), so these are the
+  // NATURAL spellings here, not exotic ones.
+  'pacient', 'patsient', 'imena', 'imenapacienta', 'imepacient', 'trioimena',
+  'egnpacient', 'datanarazhdane', 'rozhdenadata', 'adrespacient', 'lichnakarta',
+  // Reversed word order, which defeats a `patientname` substring outright.
+  'nameofpatient', 'nameofthepatient', 'egnofpatient', 'patientsname',
 ];
 const IDENTITY_CYRILLIC = [
   'егн', 'име на пациент', 'имена', 'пациентско име', 'дата на раждане',
@@ -110,38 +138,82 @@ export function isPatientIdentity(name: string): boolean {
  *  check alone would have counted the deleted channel as absent. */
 function exportedSignatures(src: string): Array<{ fn: string; params: string[] }> {
   const out: Array<{ fn: string; params: string[] }> = [];
-  // ascii-safe: a TS function declaration in our own source
-  const re = /export\s+function\s+([A-Za-z0-9_$]+)\s*\(([\s\S]*?)\)\s*:/g;
+  // Three shapes, because a verification pass got a builder past each of the
+  // ones the first version did not read:
+  //   · `export function f<T>(…)`  — a generic. It was ALREADY losing the
+  //     shipped `setEchoPath<T>` in lib/echo-template.ts, so the sweep was
+  //     quietly narrower than the file set it claimed to cover.
+  //   · `export const f = (…) =>`  — an arrow builder.
+  //   · a function with NO return-type annotation. The old pattern required
+  //     `): `, and its non-greedy body then ran on to the NEXT function's `):`,
+  //     so parameters were reported under the wrong function's name — the same
+  //     shape as an earlier round reporting the neighbouring field's key.
+  // ascii-safe: TS declaration syntax in our own source
+  const re =
+    /export\s+(?:async\s+)?(?:function\s+([A-Za-z0-9_$]+)\s*(?:<[^>]*>)?\s*\(|const\s+([A-Za-z0-9_$]+)\s*(?::[^=]*)?=\s*(?:async\s*)?(?:<[^>]*>)?\s*\()/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(src)) !== null) {
-    const params = m[2]
-      .split(/,(?![^<(]*[>)])/)          // top-level commas only
+    // Balanced to the matching `)`, so the parameter list ends where it really
+    // ends whether or not a return type follows.
+    const open = re.lastIndex - 1;
+    let depth = 0, close = -1;
+    for (let i = open; i < src.length; i++) {
+      const c = src[i];
+      if (c === '(' || c === '[' || c === '{' || c === '<') depth++;
+      else if (c === ')' || c === ']' || c === '}' || c === '>') {
+        if (c === ')' && depth === 1) { close = i; break; }
+        depth--;
+      }
+    }
+    if (close < 0) continue;
+    const params = src.slice(open + 1, close)
+      .split(/,(?![^<([{]*[>)\]}])/)     // top-level commas only
       .map((p) => p.trim())
       .filter(Boolean)
-      // ascii-safe: a TS parameter name
-      .map((p) => (/^([A-Za-z0-9_$]+)\s*\??\s*:?/.exec(p)?.[1] ?? p));
-    out.push({ fn: m[1], params });
+      // ascii-safe: a TS parameter name, optionally destructured or defaulted
+      .map((p) => (/^([A-Za-z0-9_$]+)\s*[?:=]?/.exec(p)?.[1] ?? p));
+    out.push({ fn: m[1] ?? m[2], params });
   }
   return out;
 }
 
-/** Field names of every `interface X { … }` in `src`. A builder that takes an
- *  options OBJECT hides its parameters from the signature reader above, so the
- *  fields are read too. */
+/** The `{ … }` starting at `from`, brace-balanced. `[^}]*` stops at the FIRST
+ *  closing brace, so one nested object type — `logo?: { url: string }` — ends
+ *  the body early and every field after it becomes invisible. A verification
+ *  pass walked `patientName / egn / dateOfBirth` in behind exactly that. */
+function balancedBlock(src: string, from: number): { body: string; end: number } | null {
+  if (src[from] !== '{') return null;
+  let depth = 0;
+  for (let i = from; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}' && --depth === 0) return { body: src.slice(from + 1, i), end: i };
+  }
+  return null;
+}
+
+/** Field names of every object TYPE in `src` — `interface X { … }` and
+ *  `type X = { … }` alike. A builder that takes an options OBJECT hides its
+ *  parameters from the signature reader above, so the fields are read too, and
+ *  `type` is read because the gate's own first red proof used `interface` and
+ *  a `type` alias therefore sailed straight through it. */
 function interfaceFields(src: string): Array<{ iface: string; field: string }> {
   const out: Array<{ iface: string; field: string }> = [];
-  // ascii-safe: a TS interface declaration in our own source
-  const re = /(?:export\s+)?interface\s+([A-Za-z0-9_$]+)\s*\{([^}]*)\}/g;
+  // ascii-safe: a TS interface / type-alias declaration in our own source
+  const re = /(?:export\s+)?(?:interface\s+([A-Za-z0-9_$]+)[^{]*|type\s+([A-Za-z0-9_$]+)\s*=\s*)\{/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(src)) !== null) {
-    // Split on `;` as well as on newlines. Splitting on newlines alone reads
-    // only the FIRST field of a single-line interface — which is how the red
-    // proof below, `{ dateBg: string; patientEgn?: string }`, went green on its
-    // own mutation the first time this file ran.
-    for (const line of m[2].split(/[;\n]/)) {
-      // ascii-safe: a TS interface member name
-      const f = /^\s*(?:readonly\s+)?([A-Za-z0-9_$]+)\s*\??\s*:/.exec(line);
-      if (f) out.push({ iface: m[1], field: f[1] });
+    const block = balancedBlock(src, re.lastIndex - 1);
+    if (!block) continue;
+    const name = m[1] ?? m[2];
+    // Split on `;`, `,` and newlines: newlines alone read only the FIRST field
+    // of a single-line type, which is how the red proof below,
+    // `{ dateBg: string; patientEgn?: string }`, went green on its own mutation.
+    for (const line of block.body.split(/[;,\n]/)) {
+      // A quoted key is a key. `'patientName'?: string` is legal TS and the
+      // bare-identifier form missed it.
+      // ascii-safe: a TS member name, optionally quoted
+      const f = /^\s*(?:readonly\s+)?['"`]?([A-Za-z0-9_$]+)['"`]?\s*\??\s*:/.exec(line);
+      if (f) out.push({ iface: name, field: f[1] });
     }
   }
   return out;
@@ -169,11 +241,17 @@ function importGraph(entry: string): string[] {
     if (seen.has(rel)) continue;
     seen.add(rel);
     const src = read(rel);
+    // Relative AND `@/`-aliased. The alias resolves to the repo root and is the
+    // ordinary way a .tsx imports from lib/ — a verification pass put a whole
+    // new identity-taking builder in `lib/handout-doc.ts`, imported it as
+    // `@/lib/handout-doc`, and the walk never reached the file.
     // ascii-safe: an ES import specifier
-    const re = /(?:from|import)\s*['"](\.[^'"]+)['"]/g;
+    const re = /(?:from|import)\s*['"]((?:\.|@\/)[^'"]+)['"]/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(src)) !== null) {
-      const base = norm(dirname(rel) + '/' + m[1]);
+      const base = m[1].startsWith('@/')
+        ? norm(m[1].slice(2))
+        : norm(dirname(rel) + '/' + m[1]);
       const cand = [base, base + '.ts', base + '.tsx', base + '/index.ts']
         .find((c) => /\.tsx?$/.test(c) && existsSync(join(ROOT, c)));
       if (cand) stack.push(cand);
@@ -228,12 +306,19 @@ test('the modal that prints the summary has no identity prop, and its page passe
   for (const { iface, field } of interfaceFields(modal)) {
     assert.equal(isPatientIdentity(field), false, `${iface}.${field} is an identity channel`);
   }
-  // ascii-safe: a JSX attribute name in our own source
-  const props = [...page.matchAll(/<PatientSummaryModal([\s\S]*?)\/>/g)]
-    .flatMap((m) => [...m[1].matchAll(/([A-Za-z0-9_$]+)\s*=/g)].map((a) => a[1]));
-  assert.ok(props.length > 0, 'the modal is no longer rendered where this gate can read its props');
-  const bad = props.filter(isPatientIdentity);
-  assert.deepEqual(bad, [], `the page passes an identity prop into the printed sheet: ${bad}`);
+  const tags = [...page.matchAll(/<PatientSummaryModal([\s\S]*?)\/>/g)];
+  assert.ok(tags.length > 0, 'the modal is no longer rendered where this gate can read its props');
+  for (const t of tags) {
+    // A SPREAD defeats every name check at once: `{...{ patientName: … }}`
+    // passes props this reader never sees. The prop set on this element is
+    // small and explicit, so a spread is refused outright rather than parsed.
+    assert.ok(!/\{\s*\.\.\./.test(t[1]),
+      'a spread on <PatientSummaryModal> hides its prop names — pass props explicitly');
+    // ascii-safe: a JSX attribute name in our own source
+    const props = [...t[1].matchAll(/([A-Za-z0-9_$]+)\s*=/g)].map((a) => a[1]);
+    const bad = props.filter(isPatientIdentity);
+    assert.deepEqual(bad, [], `the page passes an identity prop into the printed sheet: ${bad}`);
+  }
 });
 
 test('the document a patient is handed contains no identity element', () => {
@@ -346,4 +431,120 @@ test('RED: the graph walk is not empty, so the two sweeps are not vacuous', () =
   assert.ok(ifaces.length >= 5, `only ${ifaces.length} interface field(s) read across the graph`);
   assert.ok(sigs.some((s) => s.fn === 'generatePdfHtml'));
   assert.ok(ifaces.some((f) => f.iface === 'ExportIdentity' && f.field === 'doctorName'));
+});
+
+// ── Red proof — the nine routes a verification pass drove past this gate ────
+// Every one of these was demonstrated GREEN against the first version of this
+// file, by writing the mutation into the tree and running `npm test`. They are
+// held here as fixtures so the readers can never quietly narrow again.
+
+test('RED: a nested object type no longer unroofs the fields after it', () => {
+  // `[^}]*` stopped at the first `}`, so ONE inline object type ended the body
+  // early and everything below it became invisible.
+  const src = `
+export interface ExportIdentity {
+  doctorName?: string | null;
+  logo?: { url: string; alt: string };
+  patientName?: string | null;
+  egn?: string | null;
+  dateOfBirth?: string | null;
+}`;
+  const fields = interfaceFields(src).map((f) => f.field);
+  for (const f of ['patientName', 'egn', 'dateOfBirth']) {
+    assert.ok(fields.includes(f), `${f} sits after a nested object type and was not read`);
+  }
+  assert.ok(fields.includes('logo'), 'the nested field itself is still read');
+});
+
+test('RED: a `type` alias is read, not only an `interface`', () => {
+  // The gate's own first red proof used `interface`, so a `type` alias walked
+  // straight through the thing that was supposed to be proving it.
+  const src = `export type PdfOpts = { dateBg: string; patientName?: string; egn?: string };`;
+  assert.ok(interfaceFields(src).some((f) => isPatientIdentity(f.field)));
+});
+
+test('RED: a quoted key is a key', () => {
+  const src = `export interface O { 'patientName'?: string; "egn"?: string; \`dateOfBirth\`?: string }`;
+  const fields = interfaceFields(src).map((f) => f.field);
+  for (const f of ['patientName', 'egn', 'dateOfBirth']) assert.ok(fields.includes(f), f);
+});
+
+test('RED: a GENERIC exported function is read', () => {
+  const src = `
+export function buildSheetHeader<T extends TranscribeFields>(
+  f: T, dateStr: string, patientName: string, egn: string, dateOfBirth: string,
+): string { return ''; }`;
+  const sig = exportedSignatures(src)[0];
+  assert.equal(sig.fn, 'buildSheetHeader');
+  assert.ok(sig.params.some(isPatientIdentity), sig.params.join(','));
+});
+
+test('RED: the shipped generic the reader was already losing is now read', () => {
+  // Not a fixture — the real file. The old pattern silently dropped
+  // `setEchoPath<T>`, so the sweep was narrower than the file set it claimed,
+  // and the vacuity guard could not tell (it only counted >= 5 signatures).
+  const sigs = exportedSignatures(read('lib/echo-template.ts')).map((x) => x.fn);
+  assert.ok(sigs.includes('setEchoPath'),
+    `generic exports are still invisible; read: ${sigs.join(', ')}`);
+});
+
+test('RED: an arrow-function builder is read', () => {
+  const src =
+    `export const buildIdBlockHtml = (patientName: string, egn: string): string => '';`;
+  const sig = exportedSignatures(src)[0];
+  assert.equal(sig.fn, 'buildIdBlockHtml');
+  assert.ok(sig.params.some(isPatientIdentity));
+});
+
+test('RED: a function with no return-type annotation is read, and attributed right', () => {
+  // The old pattern required `): `, and its non-greedy body ran on to the NEXT
+  // function's — so params were reported under the wrong function's name.
+  const src = `
+export function buildWhoLine(patientName?: string) { return ''; }
+export function generatePdfHtml(f: TranscribeFields, dateStr: string): string { return ''; }`;
+  const sigs = exportedSignatures(src);
+  const who = sigs.find((x) => x.fn === 'buildWhoLine');
+  const pdf = sigs.find((x) => x.fn === 'generatePdfHtml');
+  assert.ok(who && who.params.includes('patientName'), 'the params landed on the wrong function');
+  assert.ok(pdf && !pdf.params.some(isPatientIdentity), 'and bled into its neighbour');
+  assert.deepEqual(pdf!.params, ['f', 'dateStr']);
+});
+
+test('RED: transliterated Bulgarian and reversed word order are caught', () => {
+  for (const n of [
+    'pacient', 'pacientImena', 'imeNaPacienta', 'egnPacient', 'dataNaRazhdane',
+    'rozhdenaData', 'adresPacient', 'lichnaKarta', 'nameOfPatient', 'patientsName',
+  ]) {
+    assert.ok(isPatientIdentity(n), `not caught: ${n}`);
+  }
+  // …and the transliterated field names the лист legitimately carries are not.
+  for (const n of ['osnovna_diagnoza', 'pridruzhavashti', 'napravlenia', 'naznacheni',
+                   'izsledvania', 'obektivno', 'anamneza', 'terapia', 'zaklyuchenie']) {
+    assert.equal(isPatientIdentity(n), false, `false positive: ${n}`);
+  }
+});
+
+test('RED: a builder reached only through the @/ alias is in the graph', () => {
+  // A whole new identity-taking builder in lib/handout-doc.ts, imported by the
+  // modal as `@/lib/handout-doc`, was outside the walk entirely: it followed
+  // only specifiers starting with `.`.
+  const modal = read('components/PatientSummaryModal.tsx');
+  assert.ok(/@\/lib\//.test(modal), 'the modal no longer uses the alias this test is about');
+  // The walk resolves the alias, so a file imported that way is reachable.
+  const fromModal = importGraph('components/PatientSummaryModal.tsx');
+  assert.ok(fromModal.includes('lib/patient-summary-doc.ts'),
+    `the @/ alias is still unresolved: ${fromModal.join(', ')}`);
+  assert.ok(fromModal.includes('lib/exporters.ts'),
+    'and it does not reach transitively through the aliased file');
+});
+
+test('RED: a spread on the modal element is refused', () => {
+  const spread = `<PatientSummaryModal isOpen={o} visitDateBg={d} {...{ patientName: n }} />`;
+  const tag = /<PatientSummaryModal([\s\S]*?)\/>/.exec(spread)!;
+  assert.ok(/\{\s*\.\.\./.test(tag[1]), 'the spread must be detectable at all');
+  // …and the shipped call site has none.
+  const page = read('app/app/scribe/result/page.tsx');
+  const shipped = [...page.matchAll(/<PatientSummaryModal([\s\S]*?)\/>/g)];
+  assert.equal(shipped.length, 1);
+  assert.ok(!/\{\s*\.\.\./.test(shipped[0][1]));
 });

@@ -155,10 +155,46 @@ function dateRuns(html: string): DateRun[] {
   return hits.sort((a, b) => a.index - b.index);
 }
 
-/** A run is the консултация's own if the визит's digits contain it — the визит
- *  date `08.08.2026` legitimately yields the run `08.08.2026` and the run
- *  `2026`, and nothing else. */
-const isVisits = (r: DateRun) => VISIT_DIGITS.includes(r.text);
+/** Every date-shaped run inside a value the builder was HANDED, at any depth.
+ *
+ *  This is what makes the rule below a conservation law instead of a false one.
+ *  „Every date in the document is the визит's" is simply not true of a real
+ *  лист: `lib/pacemaker-template.ts` renders „Дата на имплантация", so a note
+ *  with a pacemaker block correctly prints 12.03.2019 in its body. The first
+ *  version of this gate would have gone red on correct output the day anyone
+ *  put a realistic fixture in front of it — it passed only because its fixture
+ *  happened to contain no dates, which is a gate agreeing with itself.
+ *
+ *  So the question is not „is this run the визит's" but „did the builder INVENT
+ *  this run". A date the доктор dictated belongs on the document; a date that
+ *  appears in the output and in no input came from the clock. */
+function runsInInput(value: unknown, into: Set<string> = new Set()): Set<string> {
+  if (typeof value === 'string') {
+    for (const r of dateRuns(value)) into.add(r.text);
+  } else if (Array.isArray(value)) {
+    for (const v of value) runsInInput(v, into);
+  } else if (value && typeof value === 'object') {
+    for (const v of Object.values(value)) runsInInput(v, into);
+  }
+  return into;
+}
+
+/** A run is accounted for if it is the визит's own date, or a fragment of it,
+ *  or something the builder was handed.
+ *
+ *  Fragments are matched against the визит string ANCHORED, not by substring:
+ *  `VISIT_DIGITS.includes('2026')` is true, so a bare „2026" arriving from
+ *  anywhere at all used to read as „the визит's". It now has to actually be a
+ *  piece of the визит date at the position it claims. */
+function accountedFor(r: DateRun, allowed: Set<string>): boolean {
+  if (r.text === VISIT_DIGITS) return true;
+  if (allowed.has(r.text)) return true;
+  // A fragment of the визит date, in place: '08.08.2026' → '2026', '08.08'…
+  const i = VISIT_DIGITS.indexOf(r.text);
+  return i >= 0 && VISIT_BG.includes(r.text) &&
+    (i === 0 || !/\d/.test(VISIT_DIGITS[i - 1])) &&
+    (i + r.text.length >= VISIT_DIGITS.length || !/\d/.test(VISIT_DIGITS[i + r.text.length]));
+}
 
 const describe = (rs: DateRun[]) =>
   rs.map((r) => `${r.region}/${r.kind}: ${JSON.stringify(r.text)} … ${r.ctx}`).join('\n');
@@ -166,19 +202,41 @@ const describe = (rs: DateRun[]) =>
 // ── 2. The documents, built whole ───────────────────────────────────────────
 // Synthetic content throughout: no stored clinical text, no identity, and the
 // probe prints none of either.
+//
+// The fixture deliberately CONTAINS dates — a pacemaker implantation date, a
+// referral date, a date the doctor dictated into the анамнеза. A fixture with
+// no dates in it lets „every date in the document is the визит's" pass while
+// being false about every real note, which is the shape a gate takes when it
+// has only ever been shown the case it was written for.
 
 const FIELDS = {
   osnovna_diagnoza: 'Остър фарингит',
   osnovna_mkb: 'J02.9',
   osnovna_mkb_term: 'Остър фарингит, неуточнен',
   pridruzhavashti: [{ diagnoza: 'Есенциална хипертония', mkb: 'I10' }],
-  anamneza: 'Оплаквания от болки в гърлото от три дни.',
+  // A date the doctor dictated. It belongs on the лист and is not the визит's.
+  anamneza: 'Оплаквания от болки в гърлото от три дни. Последен преглед 14.02.2025 г.',
   obektivno: 'Хиперемирана фаринкс.',
-  izsledvania: 'CRP 12 mg/L.',
+  izsledvania: 'CRP 12 mg/L, взета на 07.08.2026 г.',
   naznacheni: 'ПКК с ДКК.',
   terapia: 'Симптоматично лечение.',
   medications_list: [{ name: 'парацетамол', dose: '500 mg', regimen: '3 пъти дневно' }],
   napravlenia: 'Бл. 3 — за консултация с УНГ.',
+  // The embedded block that renders „Дата на имплантация" — see
+  // lib/pacemaker-template.ts. This row is why the rule below had to become a
+  // conservation law: the лист prints 12.03.2019 here, correctly.
+  izsledvania_blocks: [{
+    type: 'pacemaker',
+    template: 'pacemaker-v1',
+    fields: {
+      ustroistvo: {
+        tip: 'двукамерен пейсмейкър',
+        data_implantatsia: '12.03.2019 г.',
+        rezhim: 'DDD',
+      },
+      bateria: { status: 'OK' },
+    },
+  }],
   alergii: [],
   _disclaimer: 'Изготвен с помощта на софтуер и прегледан от лекар.',
 };
@@ -191,29 +249,50 @@ const IDENTITY = {
 const SUMMARY_BODY = 'Прегледът мина добре.\n\nПийте много течности.';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/** Every document the product emits, built under a clock that is NOT the визит.
+/** Every document the product emits, built under a clock that is NOT the визит,
+ *  each paired with the inputs it was handed.
+ *
  *  Built INSIDE the freeze so a builder that reaches for the clock reaches for
  *  23.11.2027 and is caught, rather than silently agreeing with today. */
-const documents = (): Array<{ id: string; html: string }> => atClock(CLOCK_ISO, () => [
-  { id: 'амбулаторен лист (Печат/PDF)', html: generatePdfHtml(FIELDS as any, VISIT_BG, IDENTITY) },
-  { id: 'амбулаторен лист (Word)', html: generateWordHtml(FIELDS as any, VISIT_BG, IDENTITY) },
-  { id: 'ехокардиография', html: generateEchoHtml(ECHO_FIELDS as any, VISIT_BG) },
-  { id: 'резюме за пациента', html: buildPatientSummaryHtml(SUMMARY_BODY, VISIT_BG) },
-]);
+const documents = (): Array<{ id: string; html: string; input: unknown }> =>
+  atClock(CLOCK_ISO, () => [
+    { id: 'амбулаторен лист (Печат/PDF)', input: [FIELDS, IDENTITY],
+      html: generatePdfHtml(FIELDS as any, VISIT_BG, IDENTITY) },
+    { id: 'амбулаторен лист (Word)', input: [FIELDS, IDENTITY],
+      html: generateWordHtml(FIELDS as any, VISIT_BG, IDENTITY) },
+    { id: 'ехокардиография', input: ECHO_FIELDS,
+      html: generateEchoHtml(ECHO_FIELDS as any, VISIT_BG) },
+    { id: 'резюме за пациента', input: SUMMARY_BODY,
+      html: buildPatientSummaryHtml(SUMMARY_BODY, VISIT_BG) },
+  ]);
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 for (const doc of documents()) {
-  test(`every date-shaped run in the ${doc.id} is the консултация's own`, () => {
+  test(`the ${doc.id} introduces no date it was not given`, () => {
+    const allowed = runsInInput(doc.input);
     const runs = dateRuns(doc.html);
-    const foreign = runs.filter((r) => !isVisits(r));
-    assert.equal(foreign.length, 0,
-      `the document carries ${foreign.length} date-shaped run(s) that are not the визит's:\n${describe(foreign)}`);
+    const invented = runs.filter((r) => !accountedFor(r, allowed));
+    assert.equal(invented.length, 0,
+      `the document carries ${invented.length} date-shaped run(s) that are neither the визит's ` +
+      `nor anything it was handed:\n${describe(invented)}`);
     // A document that suddenly has NO date at all is a different defect, and
     // this assertion is what stops the enumeration above from passing vacuously.
     assert.ok(runs.some((r) => r.text === VISIT_DIGITS),
       `the ${doc.id} carries no визит date at all — the enumeration above passed on an empty document`);
   });
 }
+
+test('the лист really does print the dates it was given, so the law is not vacuous', () => {
+  // The conservation law is only worth having if content dates actually reach
+  // the document — otherwise „allowed" is unused and the rule is the old, false
+  // one wearing a new name. All three fixture dates must be on the лист.
+  const list = documents()[0].html;
+  for (const d of ['12.03.2019', '14.02.2025', '07.08.2026']) {
+    assert.ok(list.includes(d), `the fixture's ${d} does not reach the лист — pick a field that prints`);
+  }
+  assert.ok(runsInInput(FIELDS).has('12.03.2019'),
+    'the input reader does not descend into izsledvania_blocks');
+});
 
 test('the clock is genuinely frozen while the documents are built', () => {
   // Without this the four assertions above prove nothing: if `atClock` did not
@@ -231,7 +310,19 @@ test('the clock is genuinely frozen while the documents are built', () => {
 /** openPdfPreview's transformation, applied to a real document. The gate reads
  *  the funnel's OUTPUT, not its source: the previous round asserted the source
  *  and a mutation to the same file is what it was asked to catch. */
-test('openPdfPreview adds no date to any document it opens', () => {
+test('openPdfPreview adds no date to any document, on EITHER of its branches', () => {
+  // Both branches, not one. `autoPrint` selects between two different documents:
+  // with it the funnel injects `hideActionsCss`, without it that string is ''.
+  // „Печат" passes { autoPrint: true }; „Преглед / PDF" (result page 1597) and
+  // the echo preview (1576) pass NOTHING. The first version of this test
+  // exercised only the autoPrint branch — so a stamp put in the else-branch
+  // stayed green, in the file written precisely because a refuter mutated this
+  // function. One call is not coverage of a function with a branch in it.
+  const CALLS: Array<[string, { autoPrint?: boolean } | undefined]> = [
+    ['Печат (autoPrint)', { autoPrint: true }],
+    ['Преглед / PDF (no options)', undefined],
+    ['explicit autoPrint: false', { autoPrint: false }],
+  ];
   const opened: string[] = [];
   const realOpen = (globalThis as { window?: unknown }).window;
   // A window stub thin enough that openPdfPreview's whole body runs and the
@@ -244,13 +335,23 @@ test('openPdfPreview adds no date to any document it opens', () => {
   };
   try {
     for (const doc of documents()) {
-      opened.length = 0;
-      const ok = atClock(CLOCK_ISO, () => openPdfPreview(doc.html, { autoPrint: true }));
-      assert.equal(ok, true, `openPdfPreview refused to open the ${doc.id}`);
-      assert.equal(opened.length, 1, `the ${doc.id} was not written exactly once`);
-      const foreign = dateRuns(opened[0]).filter((r) => !isVisits(r));
-      assert.equal(foreign.length, 0,
-        `after the funnel, the ${doc.id} carries a foreign date run:\n${describe(foreign)}`);
+      const allowed = runsInInput(doc.input);
+      const written: string[] = [];
+      for (const [label, opts] of CALLS) {
+        opened.length = 0;
+        const ok = atClock(CLOCK_ISO, () => openPdfPreview(doc.html, opts));
+        assert.equal(ok, true, `openPdfPreview refused to open the ${doc.id} for ${label}`);
+        assert.equal(opened.length, 1, `the ${doc.id} was not written exactly once for ${label}`);
+        written.push(opened[0]);
+        const invented = dateRuns(opened[0]).filter((r) => !accountedFor(r, allowed));
+        assert.equal(invented.length, 0,
+          `after the funnel (${label}), the ${doc.id} carries an invented date run:\n${describe(invented)}`);
+      }
+      // …and the two branches really do produce different documents, or the
+      // three calls above are one call repeated and prove nothing extra.
+      assert.notEqual(written[0], written[1],
+        'autoPrint made no difference to the written document — the branch is not being exercised');
+      assert.equal(written[1], written[2], 'no-options and autoPrint:false are the same branch');
     }
   } finally {
     (globalThis as { window?: unknown }).window = realOpen;
@@ -261,7 +362,7 @@ test('openPdfPreview adds no date to any document it opens', () => {
 
 const DATE_MACHINERY =
   // ascii-safe: JS source identifiers in our own files, never Bulgarian input
-  /\bDate\s*\(|\bDate\s*\.\s*(?:now|parse|UTC)|toLocaleDate|toLocaleTime|toLocaleString|DateTimeFormat|formatVisitDateBg|formatDateTimeBg|formatDateBg|sofiaDayIso|todaySofiaIso|getFullYear\(|getMonth\(|getDate\(/;
+  /\bDate\s*\(|\bDate\s*\.\s*(?:now|parse|UTC)|toLocaleDate|toLocaleTime|toLocaleString|DateTimeFormat|formatVisitDateBg|formatDateTimeBg|formatDateBg|sofiaDayIso|todaySofiaIso|getFullYear\(|getMonth\(|getDate\(|\bTemporal\s*\./;
 
 const stripComments = (src: string) =>
   src.split('\n').filter((l) => !/^\s*(?:\/\/|\/\*|\*)/.test(l)).join('\n');
@@ -334,37 +435,42 @@ test('no file that builds a document owns any date machinery', () => {
 // Every shape below is one that the substring gates of rounds 1 and 2 let past.
 
 const listHtml = () => documents()[0].html;
+/** What the лист was legitimately handed — the fixture's own content dates.
+ *  Every RED below adds a run that is in neither this set nor the визит date. */
+const listAllowed = () => runsInInput(documents()[0].input);
+const invented = (html: string) =>
+  dateRuns(html).filter((r) => !accountedFor(r, listAllowed()));
 
 test('RED: a stamp in <title>, which Chrome draws into the printed margin', () => {
   const mutant = listHtml().replace('</title>', ` · издаден ${CLOCK_DIGITS}</title>`);
-  const foreign = dateRuns(mutant).filter((r) => !isVisits(r));
-  assert.ok(foreign.length > 0, 'a date in <title> went unseen');
-  assert.ok(foreign.some((r) => r.region === 'title'), 'the run was found but not located in <title>');
+  const found = invented(mutant);
+  assert.ok(found.length > 0, 'a date in <title> went unseen');
+  assert.ok(found.some((r) => r.region === 'title'), 'the run was found but not located in <title>');
 });
 
 test('RED: the corner element the report named — <div class="issued">', () => {
   // Verbatim the shape that „passed all three" gates in the summary-date round.
   const mutant = listHtml().replace('<div class="doc">',
     `<div class="doc"><div class="issued">2026-08-28</div>`);
-  const foreign = dateRuns(mutant).filter((r) => !isVisits(r));
-  assert.ok(foreign.length > 0, 'the corner stamp went unseen');
-  assert.ok(foreign.some((r) => r.text === '2026-08-28'));
+  const found = invented(mutant);
+  assert.ok(found.length > 0, 'the corner stamp went unseen');
+  assert.ok(found.some((r) => r.text === '2026-08-28'));
 });
 
 test('RED: a date hidden in an attribute rather than in text', () => {
   const mutant = listHtml().replace('<div class="doc">',
     `<div class="doc" data-issued="23/11/2027" title="издаден 23.11.2027">`);
-  const foreign = dateRuns(mutant).filter((r) => !isVisits(r));
-  assert.ok(foreign.length > 0, 'a date in an attribute went unseen');
-  assert.ok(foreign.some((r) => r.region === 'attribute'),
-    `the run was found but not located in an attribute: ${describe(foreign)}`);
+  const found = invented(mutant);
+  assert.ok(found.length > 0, 'a date in an attribute went unseen');
+  assert.ok(found.some((r) => r.region === 'attribute'),
+    `the run was found but not located in an attribute: ${describe(found)}`);
 });
 
 test('RED: a date written out in words rather than in digits', () => {
   const mutant = listHtml().replace('</body>', '<p>Отпечатан на 28 август 2026 г.</p></body>');
-  const foreign = dateRuns(mutant).filter((r) => !isVisits(r));
-  assert.ok(foreign.some((r) => r.kind === 'bg month name'),
-    `a Bulgarian month name went unseen: ${describe(foreign)}`);
+  const found = invented(mutant);
+  assert.ok(found.some((r) => r.kind === 'bg month name'),
+    `a Bulgarian month name went unseen: ${describe(found)}`);
 });
 
 test('RED: a stamp injected by the shared funnel itself', () => {
@@ -372,8 +478,8 @@ test('RED: a stamp injected by the shared funnel itself', () => {
   // funnel's OUTPUT. Round 1 read three files and none of them was this one.
   const asFunnelWould = (html: string) =>
     html.replace('</body>', `<div style="position:fixed;top:4px;right:6px;font-size:7pt">${CLOCK_DIGITS}</div></body>`);
-  const foreign = dateRuns(asFunnelWould(listHtml())).filter((r) => !isVisits(r));
-  assert.ok(foreign.length > 0, 'a corner stamp added by the funnel went unseen');
+  assert.ok(invented(asFunnelWould(listHtml())).length > 0,
+    'a corner stamp added by the funnel went unseen');
 });
 
 test('RED: the graph rule fires on a date reached through an import, not a name', () => {
@@ -400,4 +506,36 @@ test('RED: the enumerator is not blind to the визит date itself', () => {
   const runs = dateRuns(listHtml());
   assert.ok(runs.filter((r) => r.text === VISIT_DIGITS).length >= 2,
     'the лист should carry its визит date at least twice — <title> and the header slot');
+});
+
+test('RED: the conservation law does not fire on a date the doctor dictated', () => {
+  // The inverse failure, and the reason this rule replaced „every run is the
+  // визит's". lib/pacemaker-template.ts prints „Дата на имплантация", so a real
+  // лист carries content dates that are correct and are not the визит's. A gate
+  // that reddens on those is a gate someone will delete.
+  const allowed = listAllowed();
+  for (const d of ['12.03.2019', '14.02.2025', '07.08.2026']) {
+    assert.ok(allowed.has(d), `the fixture date ${d} was not read out of the input`);
+    assert.ok(accountedFor({ kind: 'numeric d.m.y', text: d, index: 0, region: 'text', ctx: '' }, allowed),
+      `${d} is on the document because it was dictated, and must not be called invented`);
+  }
+  // But a date in NEITHER the input nor the визит is still invented, or the
+  // rule above has simply been widened into permitting everything.
+  assert.equal(
+    accountedFor({ kind: 'numeric d.m.y', text: CLOCK_DIGITS, index: 0, region: 'text', ctx: '' }, allowed),
+    false);
+});
+
+test('RED: a bare year is not waved through just because the визит contains one', () => {
+  // `VISIT_DIGITS.includes('2026')` is TRUE, so the first version of this rule
+  // accepted a bare „2026" arriving from anywhere at all — including a stamp
+  // that rendered nothing but a year. Fragments must sit at a digit boundary of
+  // the визит date, not merely appear inside it.
+  const empty = new Set<string>();
+  const run = (text: string): DateRun => ({ kind: 'bare year', text, index: 0, region: 'text', ctx: '' });
+  assert.ok(accountedFor(run('2026'), empty), '2026 IS the визит\'s year');
+  assert.equal(accountedFor(run('202'), empty), false, '202 is a substring, not a fragment');
+  assert.equal(accountedFor(run('8.08'), empty), false, 'cuts across the day boundary');
+  assert.equal(accountedFor(run('2025'), empty), false);
+  assert.ok(accountedFor(run('2025'), new Set(['2025'])), '…unless it was handed in');
 });
