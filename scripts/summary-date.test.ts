@@ -444,17 +444,24 @@ const P = {
       .test(c);
   },
 
-  /** The ONE call site's arguments are EXACTLY these three names.
+  /** The ONE call site's arguments are EXACTLY these two names — and there is
+   *  no third.
    *
    *  Round 1 checked argument 1 alone, and a refuter went round it twice
    *  without touching it: once by prepending „Отпечатано: <today>" to argument
-   *  0 (the whole document body), once by passing a clock string as argument 2
-   *  (the `who` line directly above the date cell). Binding one argument of a
-   *  document builder is not binding the document. */
+   *  0 (the whole document body), once by passing a clock string as argument 2,
+   *  which was `patientName` and rendered the `who` line directly above the
+   *  date cell. Binding one argument of a document builder is not binding the
+   *  document.
+   *
+   *  Argument 2 is now gone from the builder entirely — it was a dead
+   *  patient-identity channel into a patient-facing printed sheet — so the
+   *  exact-arity check keeps that route closed here as well as in
+   *  scripts/document-identity.test.ts. */
   printTakesVisitDate(src: string): boolean {
     const sites = callArgs(code(src), DOC);
     if (sites.length !== 1) return false;
-    return JSON.stringify(sites[0]) === JSON.stringify(['finalText', PROP, 'patientName']);
+    return JSON.stringify(sites[0]) === JSON.stringify(['finalText', PROP]);
   },
 
   /** The prop is never shadowed. `printTakesVisitDate` reads an identifier
@@ -475,7 +482,7 @@ const P = {
     if (FOREIGN_EXITS.test(c)) return false;
     const opens = callArgs(c, 'openPdfPreview');
     if (opens.length !== 1) return false;
-    return opens[0][0] === `${DOC}(finalText, ${PROP}, patientName)`;
+    return opens[0][0] === `${DOC}(finalText, ${PROP})`;
   },
 
   /** The modal builds no document of its own. `builderIsImported` forbids two
@@ -658,7 +665,7 @@ const TWO_STATEMENT_CLOCK = `
   function handlePrint() {
     const now = new Date();
     const wall = now.toLocaleDateString('bg-BG');
-    const opened = openPdfPreview(${DOC}(finalText, ${PROP}, patientName), { autoPrint: true });
+    const opened = openPdfPreview(${DOC}(finalText, ${PROP}), { autoPrint: true });
   }
 `;
 
@@ -701,12 +708,12 @@ test('RED: the shipped call site fails the visit-date predicate', () => {
 });
 
 test('RED: „|| wall" on the builder argument fails — the fallback IS the defect', () => {
-  const mutated = `openPdfPreview(${DOC}(finalText, ${PROP} || wall, patientName), { autoPrint: true });`;
+  const mutated = `openPdfPreview(${DOC}(finalText, ${PROP} || wall), { autoPrint: true });`;
   assert.equal(P.printTakesVisitDate(mutated), false);
 });
 
 test('RED: „?? today" on the builder argument fails as well', () => {
-  const mutated = `openPdfPreview(${DOC}(finalText, ${PROP} ?? todayBg, patientName), {});`;
+  const mutated = `openPdfPreview(${DOC}(finalText, ${PROP} ?? todayBg), {});`;
   assert.equal(P.printTakesVisitDate(mutated), false);
 });
 
@@ -716,8 +723,8 @@ test('RED: deleting the call site does not make the predicate vacuously true', (
 
 test('RED: a SECOND print call site fails — one document, one date', () => {
   const two =
-    `openPdfPreview(${DOC}(finalText, ${PROP}, patientName), {});\n` +
-    `openPdfPreview(${DOC}(finalText, ${PROP}, patientName), {});`;
+    `openPdfPreview(${DOC}(finalText, ${PROP}), {});\n` +
+    `openPdfPreview(${DOC}(finalText, ${PROP}), {});`;
   assert.equal(P.printTakesVisitDate(two), false);
 });
 
@@ -725,8 +732,8 @@ test('RED: callArgs reads calls, not the import list', () => {
   const importOnly = `import {\n  ${DOC},\n} from '@/lib/patient-summary-doc';`;
   assert.deepEqual(callArgs(importOnly, DOC), []);
   assert.deepEqual(
-    callArgs(`${DOC}(finalText, ${PROP}, patientName)`, DOC),
-    [['finalText', PROP, 'patientName']],
+    callArgs(`${DOC}(finalText, ${PROP}, extra)`, DOC),
+    [['finalText', PROP, 'extra']],
   );
 });
 
@@ -848,7 +855,7 @@ test('R2/2: the prop rebound inside handlePrint, hiding a bare Date()', () => {
   const stampedDate = ${PROP};
   function handlePrint() {
     const ${PROP} = stampedDate || String(Date()).slice(4, 15);
-    const opened = openPdfPreview(${DOC}(finalText, ${PROP}, patientName), { autoPrint: true });
+    const opened = openPdfPreview(${DOC}(finalText, ${PROP}), { autoPrint: true });
   }`;
   assert.equal(P.propIsNeverRebound(mutated), false, 'the shadowing');
   assert.equal(P.modalOwnsNoDate(mutated), false, 'and the bare Date() behind it');
@@ -864,7 +871,7 @@ test('R2/3: a clock date prepended to the document BODY (argument 0)', () => {
   const mutated = `
   function handlePrint() {
     const printed = finalText + 'Отпечатано: ' + String(Date()).slice(4, 15);
-    const opened = openPdfPreview(${DOC}(printed, ${PROP}, patientName), { autoPrint: true });
+    const opened = openPdfPreview(${DOC}(printed, ${PROP}), { autoPrint: true });
   }`;
   assert.equal(P.printTakesVisitDate(mutated), false, 'argument 0 is bound too');
   assert.equal(P.modalOwnsNoDate(mutated), false);
@@ -882,7 +889,7 @@ test('R2/4: a whole second pipeline — its own builder, print and copy exits', 
     navigator.clipboard.writeText(finalText + ' — ' + String(Date()));
   }
   function handlePrint() {
-    const opened = openPdfPreview(${DOC}(finalText, ${PROP}, patientName), { autoPrint: true });
+    const opened = openPdfPreview(${DOC}(finalText, ${PROP}), { autoPrint: true });
   }`;
   assert.equal(P.oneWayOut(mutated), false, 'two print exits and a foreign clipboard exit');
   assert.equal(P.modalBuildsNoDocument(mutated), false, 'and it builds its own document');
@@ -895,7 +902,7 @@ test('R2/4b: a foreign exit alone is enough to fail, with no date in sight', () 
     navigator.clipboard.writeText(finalText);
   }
   function handlePrint() {
-    const opened = openPdfPreview(${DOC}(finalText, ${PROP}, patientName), { autoPrint: true });
+    const opened = openPdfPreview(${DOC}(finalText, ${PROP}), { autoPrint: true });
   }`;
   assert.equal(P.oneWayOut(mutated), false,
     'the exits are enumerated, not merely inspected for dates — an unpinned door is the hazard');
@@ -939,7 +946,7 @@ test('R2/6: a SECOND <PatientSummaryModal> after the correct one', () => {
   assert.equal(P.pageBindsTheListDate(mutated), false, 'the element is counted, not indexOf-ed');
 });
 
-test('R2/7: a clock string smuggled in through patientName', () => {
+test('R2/7: any extra prop fails — the identity channel cannot come back', () => {
   const mutated = `
       <PatientSummaryModal
         isOpen={summaryOpen}
@@ -950,7 +957,9 @@ test('R2/7: a clock string smuggled in through patientName', () => {
         patientName={issuedLine}
       />`;
   assert.equal(P.pageBindsTheListDate(mutated), false,
-    'the prop SET is exact — a channel into the document above the date cell is not free');
+    'the prop SET is exact. `patientName` was a real prop when this was written, and a clock ' +
+    'string passed through it rendered above the date cell; the prop is deleted now, and this ' +
+    'is what stops it — or any other new channel into the sheet — being added back here');
 });
 
 test('R2/8: deleting the per-visit reset fails THIS gate too, not just the sibling', () => {
@@ -1045,15 +1054,37 @@ test('RED: the shipped builder always emits a date block, with nothing to show o
     'it has no absent state at all — which is why „absent, never wrong" needed a new builder');
 });
 
-test('the extraction changed the date binding and NOTHING else', () => {
-  // The boundary on this batch was: no other change to the patient summary —
-  // not its content, its wording, its disclaimer. Byte equality is the only
-  // form of that claim worth making. Handed the day it was printed on, the new
-  // module emits the shipped document exactly.
+test('the extraction changed the date binding, and the deletion changed only `who`', () => {
+  // The boundary was: no other change to the patient summary — not its content,
+  // its wording, its disclaimer. Byte equality is the only form of that claim
+  // worth making, so it is still made here, against the shipped builder.
+  //
+  // ONE difference is now expected and is named exactly. `patientName` was
+  // deleted: a dead patient-identity channel into a patient-facing printed
+  // sheet, rendered directly above the date cell. With no name to show the
+  // shipped builder emitted an EMPTY `who` slot — a bare newline — and the new
+  // module emits no slot at all. That newline is the whole delta, and it is
+  // subtracted here by name rather than normalised away with a whitespace
+  // trim, which would have hidden any other change alongside it.
   const shipped = atZone('Europe/Sofia', () =>
     atClock('2026-08-08T09:12:00.000Z', () => shippedBuilder(BODY)));
+  const EMPTY_WHO_SLOT = '<h1>Резюме за пациента</h1>\n\n';
+  assert.ok(shipped.startsWith(EMPTY_WHO_SLOT),
+    'the shipped builder no longer opens with an empty who slot — re-derive the delta');
+  const shippedWithoutWhoSlot = shipped.replace(EMPTY_WHO_SLOT, '<h1>Резюме за пациента</h1>\n');
+  assert.equal(shipped.length - shippedWithoutWhoSlot.length, 1, 'exactly one byte, the newline');
+
   const now = buildPatientSummaryHtml(BODY, AUG_8_BG);
-  assert.ok(now.includes(shipped), 'same h1 / who / date / text block, byte for byte');
+  assert.ok(now.includes(shippedWithoutWhoSlot),
+    'same h1 / date / text block as shipped, byte for byte, minus the empty who slot');
+
+  // And the slot is GONE, not merely empty: nothing renders it, and nothing can
+  // be handed to it. Both halves — the markup and the arity — because either
+  // one alone leaves the channel half-open.
+  assert.ok(!/class="who"/.test(now), 'the who element is gone from the document');
+  assert.ok(!/\.who\s*\{/.test(now), 'and so is its style rule');
+  assert.equal(buildPatientSummaryHtml.length, 2,
+    'the builder takes exactly (summary, dateBg) — a third parameter is a channel');
 });
 
 /** The `|| today` shape, inside the builder this time — the third site the

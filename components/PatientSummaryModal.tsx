@@ -42,8 +42,6 @@ interface PatientSummaryModalProps {
    * the лист. See scripts/summary-date.test.ts.
    */
   visitDateBg: string;
-  /** Optional patient display name for the printable header. */
-  patientName?: string;
 }
 
 type Phase =
@@ -98,7 +96,6 @@ export default function PatientSummaryModal({
   onClose,
   onToast,
   visitDateBg,
-  patientName,
 }: PatientSummaryModalProps) {
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
   const [regenerating, setRegenerating] = useState(false);
@@ -220,7 +217,7 @@ export default function PatientSummaryModal({
     // Dated by the преглед the summary was written from — never by the clock at
     // print time. A reprint in three months is the SAME visit.
     const opened = openPdfPreview(
-      buildPatientSummaryHtml(finalText, visitDateBg, patientName),
+      buildPatientSummaryHtml(finalText, visitDateBg),
       { autoPrint: true },
     );
     if (!opened) {

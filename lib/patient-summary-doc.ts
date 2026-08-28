@@ -17,6 +17,18 @@ import { escapeHtml } from './exporters';
 /**
  * Minimal, A5-friendly printable summary.
  *
+ * There is NO patient parameter here, and there must not be one. This builder
+ * took a `patientName` that rendered into the printed sheet directly above the
+ * date cell; nothing ever passed it, so it was a dead channel — but a dead
+ * channel into a patient-facing printed document is one call site away from a
+ * live one, and the Trust Pack tells doctors, in these words: „В приложението
+ * няма поле за ЕГН, име или дата на раждане — не можете да ги въведете, дори да
+ * поискате." That sentence was true only because nobody had filled the argument
+ * in. Removing the parameter is what makes it true because it cannot be.
+ *
+ * The summary identifies its визит by DATE and by nothing else. Held by
+ * scripts/document-identity.test.ts, which reads the builders' signatures.
+ *
  * `dateBg` is the day of the ПРЕГЛЕД, already formatted in Europe/Sofia by
  * lib/date.ts formatVisitDateBg — handed in, never computed here. This used to
  * open with `new Date().toLocaleDateString('bg-BG', …)`, so a summary generated
@@ -32,9 +44,7 @@ import { escapeHtml } from './exporters';
 export function buildPatientSummaryHtml(
   summary: string,
   dateBg: string,
-  patientName?: string,
 ): string {
-  const who = patientName ? `<div class="who">${escapeHtml(patientName)}</div>` : '';
   // The whole element, not just its text: an empty `.date` div still draws its
   // 14px margin, which reads as a document that lost its date.
   const dateHtml = dateBg ? `<div class="date">${escapeHtml(dateBg)}</div>\n` : '';
@@ -44,12 +54,10 @@ export function buildPatientSummaryHtml(
   @page { size: A5; margin: 14mm; }
   body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #1a1a2e; line-height: 1.5; max-width: 520px; margin: 0 auto; padding: 16px; }
   h1 { font-size: 18px; margin: 0 0 2px; }
-  .who { color: #555; font-size: 13px; margin-bottom: 2px; }
   .date { color: #888; font-size: 12px; margin-bottom: 14px; }
   .text { white-space: pre-wrap; font-size: 14px; }
 </style></head><body>
 <h1>Резюме за пациента</h1>
-${who}
 ${dateHtml}<div class="text">${escapeHtml(summary)}</div>
 </body></html>`;
 }
