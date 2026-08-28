@@ -2615,11 +2615,14 @@ function ResultPageInner() {
         }
       />
 
+      {/* The patient's own copy is dated by the same ONE value as the лист —
+          the консултация's stored timestamp in Europe/Sofia, not the clock. */}
       <PatientSummaryModal
         isOpen={summaryOpen}
         consultationId={original.consultationId}
         onClose={() => setSummaryOpen(false)}
         onToast={showToast}
+        visitDateBg={listDateBg}
       />
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />

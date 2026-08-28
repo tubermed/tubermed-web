@@ -18,7 +18,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, patientSummaryLimitFromError } from '@/lib/api';
-import { copyToClipboard, escapeHtml, openPdfPreview } from '@/lib/exporters';
+import { copyToClipboard, openPdfPreview } from '@/lib/exporters';
+import { buildPatientSummaryHtml } from '@/lib/patient-summary-doc';
 import SkeletonInput from '@/components/SkeletonInput';
 import { Icon } from '@/components/ui/Icon';
 import { Dialog } from '@/components/ui/Dialog';
@@ -29,6 +30,18 @@ interface PatientSummaryModalProps {
   onClose: () => void;
   /** Reuses the result page's Toast wiring for copy/print/error feedback. */
   onToast: (kind: 'success' | 'error', message: string) => void;
+  /**
+   * The day of the ПРЕГЛЕД, `DD.MM.YYYY г.` in Europe/Sofia — the result page's
+   * `listDateBg`, the same one value the лист header and all five export paths
+   * read. '' when the consultation's timestamp is unknown, and then the printed
+   * summary shows no date at all.
+   *
+   * Required, and pre-formatted on purpose. This modal owns no date machinery:
+   * an optional prop lets a future call site quietly omit it, and a second
+   * formatter here would be a second date pipeline to keep in agreement with
+   * the лист. See scripts/summary-date.test.ts.
+   */
+  visitDateBg: string;
   /** Optional patient display name for the printable header. */
   patientName?: string;
 }
@@ -75,37 +88,16 @@ function composeFinal(body: string, disclaimer: string): string {
   return b ? `${b}\n\n${d}` : d;
 }
 
-// Minimal, A5-friendly printable document. openPdfPreview injects the
-// afterprint-close script + hides any `.actions` block (none here).
-function buildPrintHtml(summary: string, patientName?: string): string {
-  const dateStr = new Date().toLocaleDateString('bg-BG', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
-  const who = patientName ? `<div class="who">${escapeHtml(patientName)}</div>` : '';
-  return `<!doctype html><html lang="bg"><head><meta charset="utf-8">
-<title>Резюме за пациента</title>
-<style>
-  @page { size: A5; margin: 14mm; }
-  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #1a1a2e; line-height: 1.5; max-width: 520px; margin: 0 auto; padding: 16px; }
-  h1 { font-size: 18px; margin: 0 0 2px; }
-  .who { color: #555; font-size: 13px; margin-bottom: 2px; }
-  .date { color: #888; font-size: 12px; margin-bottom: 14px; }
-  .text { white-space: pre-wrap; font-size: 14px; }
-</style></head><body>
-<h1>Резюме за пациента</h1>
-${who}
-<div class="date">${dateStr}</div>
-<div class="text">${escapeHtml(summary)}</div>
-</body></html>`;
-}
+// The printable document itself now lives in lib/patient-summary-doc.ts — a
+// pure module, so `npm test` can execute it. It used to be a local
+// buildPrintHtml that dated the sheet off the wall clock.
 
 export default function PatientSummaryModal({
   isOpen,
   consultationId,
   onClose,
   onToast,
+  visitDateBg,
   patientName,
 }: PatientSummaryModalProps) {
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
@@ -225,7 +217,12 @@ export default function PatientSummaryModal({
   }
 
   function handlePrint() {
-    const opened = openPdfPreview(buildPrintHtml(finalText, patientName), { autoPrint: true });
+    // Dated by the преглед the summary was written from — never by the clock at
+    // print time. A reprint in three months is the SAME visit.
+    const opened = openPdfPreview(
+      buildPatientSummaryHtml(finalText, visitDateBg, patientName),
+      { autoPrint: true },
+    );
     if (!opened) {
       onToast('error', 'Изскачащият прозорец е блокиран — разрешете го за този сайт');
     }
