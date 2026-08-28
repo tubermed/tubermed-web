@@ -86,9 +86,13 @@ registerHooks({
 const ROOT = join(import.meta.dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
-const MODAL  = read('components/PatientSummaryModal.tsx');
-const RESULT = read('app/app/scribe/result/page.tsx');
-const DOCSRC = read('lib/patient-summary-doc.ts');
+const MODAL     = read('components/PatientSummaryModal.tsx');
+const RESULT    = read('app/app/scribe/result/page.tsx');
+const DOCSRC    = read('lib/patient-summary-doc.ts');
+// The shared funnel every print and PDF in the app passes through. Read here
+// because a gate that stops at its own three files does not cover its own
+// claim — see P.sharedFunnelInventsNoDate.
+const EXPORTERS = read('lib/exporters.ts');
 
 // Dynamic import so a MISSING export fails the assertion that needs it rather
 // than the module link, which would take the source gates below down with it.
@@ -109,19 +113,33 @@ const BODY = 'Прегледът мина добре.\n\nПийте много �
 const code = (src: string): string =>
   src.split('\n').filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l)).join('\n');
 
-/** Run `fn` with the wall clock frozen at `iso`. `new Date(x)` still parses. */
+/** Run `fn` with the wall clock frozen at `iso`. `new Date(x)` still parses.
+ *
+ *  A Proxy, not the obvious `class Frozen extends Date`. The subclass is not a
+ *  faithful Date: `Date()` called WITHOUT `new` is legal JS returning today as
+ *  a string, and a class constructor throws on it — so the subclass version of
+ *  this helper killed a mutation by TypeError instead of by assertion, which is
+ *  an instrument reporting a pass it did not earn. `Date()` is exactly the
+ *  spelling that slipped past the first round's denylist, so the instrument had
+ *  to be able to execute it. */
 function atClock<T>(iso: string, fn: () => T): T {
   const Real = globalThis.Date;
   const fixed = Real.parse(iso);
-  class Frozen extends Real {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    constructor(...args: any[]) {
-      if (args.length === 0) super(fixed);
-      // @ts-expect-error — forwarding the real constructor's overloads
-      else super(...args);
-    }
-    static now() { return fixed; }
-  }
+  const Frozen = new Proxy(Real, {
+    construct(target, args: unknown[]) {
+      return args.length === 0
+        ? new target(fixed)
+        : Reflect.construct(target, args);
+    },
+    apply() {
+      // Date() with no `new` — a string, per spec, and today's.
+      return new Real(fixed).toString();
+    },
+    get(target, prop, recv) {
+      if (prop === 'now') return () => fixed;
+      return Reflect.get(target, prop, recv);
+    },
+  });
   globalThis.Date = Frozen as unknown as DateConstructor;
   try { return fn(); } finally { globalThis.Date = Real; }
 }
@@ -152,6 +170,36 @@ function dateCell(html: string): string | null {
   return m ? m[1] : null;
 }
 
+/** The document with its `<style>` block removed — everything a patient can
+ *  actually read. The stylesheet is full of digits (`A5`, `14mm`, `#1a1a2e`,
+ *  `18px`) that would drown any digit-based assertion. */
+function readable(html: string): string {
+  return html.replace(/<style>[\s\S]*?<\/style>/g, '');
+}
+
+/** Every date-shaped run in the readable document, in ANY notation.
+ *
+ *  Shape-free ON PURPOSE, and this replaced three assertions that were not. The
+ *  first version asked „no `class="date"`", „no `DD.MM.YYYY`", „no the word
+ *  Дата" — all bound to the shape the fix happens to use. A refuter emitted
+ *  `<div class="issued">2026-08-28</div>` on the absent path and all three
+ *  stayed true: an ISO date, under a different class, with no Bulgarian
+ *  anywhere. „Absent, never wrong" had been narrowed to „absent, never wrong in
+ *  Bulgarian, in that one div".
+ *
+ *  BODY is deliberately digit-free so this can be exhaustive. Real summary text
+ *  carries doses and counts; that is why this runs against a fixture and not
+ *  against a note. */
+function dateLikeRuns(html: string): string[] {
+  const text = readable(html);
+  const found = [
+    ...text.matchAll(/\d{1,4}[.\-/]\d{1,2}[.\-/]\d{1,4}/g),   // 08.08.2026, 2026-08-28, 8/8/26
+    ...text.matchAll(/\b\d{4}\b/g),                            // ascii-safe: a bare 4-digit year, digits only
+    ...text.matchAll(/\d{1,2}:\d{2}/g),                        // a clock time
+  ].map((m) => m[0]);
+  return [...new Set(found)];
+}
+
 test('a known визит date reaches the printed summary', () => {
   assert.equal(dateCell(buildPatientSummaryHtml(BODY, AUG_8_BG)), AUG_8_BG,
     'the patient\'s sheet must show the day of the преглед');
@@ -178,12 +226,12 @@ test('the summary body and disclaimer still reach the document unchanged', () =>
 
 // ── 2. Absent, never wrong ─────────────────────────────────────────────────
 
-test('an unknown timestamp prints no date at all', () => {
+test('an unknown timestamp prints no date at all, in any notation', () => {
   const html = buildPatientSummaryHtml(BODY, '');
+  assert.deepEqual(dateLikeRuns(html), [],
+    'nothing date-shaped may survive anywhere a patient can read — not in Bulgarian, not in ISO, not under another class name');
   assert.ok(!html.includes('class="date"'),
     'the whole date block drops out — an empty grey line is a document that lost its date');
-  assert.ok(!/\d{2}\.\d{2}\.\d{4}/.test(html),
-    'no date-shaped text may survive anywhere in the document');
 });
 
 test('an unknown timestamp leaves no dangling „Дата:" label', () => {
@@ -198,9 +246,18 @@ test('the whole absent chain: no stored timestamp → no date on the sheet', () 
       BODY,
       formatVisitDateBg(missing as string | null | undefined),
     );
-    assert.ok(!/\d{2}\.\d{2}\.\d{4}/.test(html),
+    assert.deepEqual(dateLikeRuns(html), [],
       `expected no date for ${JSON.stringify(missing)} — a summary may be missing its date, never carry a false one`);
   }
+});
+
+test('a KNOWN timestamp puts exactly one date on the sheet, in the date cell', () => {
+  // The other half of shape-freedom: not „the right date is present" but „the
+  // right date is the ONLY one". A second, clock-derived line anywhere in the
+  // document is the same defect wearing a different label.
+  const html = buildPatientSummaryHtml(BODY, AUG_8_BG);
+  assert.deepEqual(dateLikeRuns(html), ['08.08.2026', '2026']);
+  assert.equal(dateCell(html), AUG_8_BG);
 });
 
 // ── 3. Europe/Sofia and a moving clock ─────────────────────────────────────
@@ -332,12 +389,34 @@ function openTag(src: string, name: string): string | null {
 const DOC = 'buildPatientSummaryHtml';
 /** The modal's date prop. */
 const PROP = 'visitDateBg';
-/** The result page's ONE date value — already gated by scripts/list-date.test.ts
- *  as exactly `formatVisitDateBg(visitCreatedAt)`, whole statement. */
+/** The result page's ONE date value. */
 const BINDING = 'listDateBg';
-/** Every way a file could make itself a date. The modal owns none of them. */
+/** The state holding the consultation's own stored timestamp. */
+const STAMP = 'visitCreatedAt';
+
+/** Every way a file could make itself a date. ONE list, shared by the modal,
+ *  the builder module and the shared export funnel — they used to be two lists
+ *  that disagreed, and the narrower one let a fallback through.
+ *
+ *  `\bDate\s*\(` rather than `new Date\(`: **`Date()` without `new` is legal
+ *  JS** returning today as a string, and `String(Date()).slice(4, 15)` walked
+ *  past round 1's denylist into the `.date` cell of a document handed to a
+ *  patient. A denylist of SPELLINGS is not a rule about dates; this is the
+ *  constructor itself, however it is invoked.
+ *
+ *  Every \b here is matched against JS source identifiers in this repo's own
+ *  files — never against note text, product copy or doctor input. */
 const DATE_MACHINERY =
-  /new Date\(|Date\.now\(|toLocaleDate|toLocaleTimeString|toLocaleString|DateTimeFormat|formatVisitDateBg|formatDateTimeBg|formatDateBg|sofiaDayIso|todaySofiaIso/;
+  // ascii-safe: JS source identifiers in our own files, never Bulgarian input
+  /\bDate\s*\(|\bDate\s*\.\s*(now|parse|UTC)|toLocaleDate|toLocaleTime|toLocaleString|DateTimeFormat|formatVisitDateBg|formatDateTimeBg|formatDateBg|sofiaDayIso|todaySofiaIso|getFullYear\(|getMonth\(|getDate\(/;
+
+/** The ways a document can leave this modal. Named so the gate binds the EXITS
+ *  and not just the builder: round 1 counted calls to `buildPatientSummaryHtml`
+ *  and to `copyToClipboard`, so a second `openPdfPreview(myOwnHtml)` and a
+ *  `navigator.clipboard.writeText(text + today)` both walked out of a file the
+ *  gate believed it had enumerated. */
+const FOREIGN_EXITS =
+  /navigator\s*\.\s*clipboard|execCommand|window\s*\.\s*open|document\s*\.\s*write|createObjectURL|downloadWord|<a\s+download/;
 
 const P = {
   /** The modal constructs no date. Not „not with the clock" — none at all: its
@@ -365,14 +444,45 @@ const P = {
       .test(c);
   },
 
-  /** The ONE call site takes the prop as its date — the WHOLE argument, so
-   *  `${PROP} || wall` („if we do not know, print today", on a document that
-   *  leaves the building) is red. The count check keeps it from passing
-   *  vacuously once the call is deleted or renamed. */
+  /** The ONE call site's arguments are EXACTLY these three names.
+   *
+   *  Round 1 checked argument 1 alone, and a refuter went round it twice
+   *  without touching it: once by prepending „Отпечатано: <today>" to argument
+   *  0 (the whole document body), once by passing a clock string as argument 2
+   *  (the `who` line directly above the date cell). Binding one argument of a
+   *  document builder is not binding the document. */
   printTakesVisitDate(src: string): boolean {
     const sites = callArgs(code(src), DOC);
     if (sites.length !== 1) return false;
-    return sites[0][1] === PROP;
+    return JSON.stringify(sites[0]) === JSON.stringify(['finalText', PROP, 'patientName']);
+  },
+
+  /** The prop is never shadowed. `printTakesVisitDate` reads an identifier
+   *  NAME, and a refuter re-bound that name inside handlePrint —
+   *  `const visitDateBg = stampedDate || String(Date()).slice(4, 15);` — so the
+   *  call site still read `visitDateBg` while printing the wall clock. A name
+   *  check is only a value check while the name means one thing. */
+  propIsNeverRebound(src: string): boolean {
+    const c = code(src);
+    return !new RegExp(`(const|let|var)\\s+${PROP}\\b|${PROP}\\s*=[^=>]`).test(c); // ascii-safe: JS identifier
+  },
+
+  /** The document leaves by exactly ONE door, and that door is handed exactly
+   *  the builder's output. Everything else that could push bytes at a printer,
+   *  a clipboard or a disk is forbidden outright. */
+  oneWayOut(src: string): boolean {
+    const c = code(src);
+    if (FOREIGN_EXITS.test(c)) return false;
+    const opens = callArgs(c, 'openPdfPreview');
+    if (opens.length !== 1) return false;
+    return opens[0][0] === `${DOC}(finalText, ${PROP}, patientName)`;
+  },
+
+  /** The modal builds no document of its own. `builderIsImported` forbids two
+   *  NAMES; this forbids the whole activity, so a fresh local `buildSheetHtml`
+   *  emitting its own `<div class="date">` has nowhere to hide. */
+  modalBuildsNoDocument(src: string): boolean {
+    return !/<!doctype|<style|class="date"|<html/i.test(code(src));
   },
 
   /** The prop is REQUIRED and a plain string — an optional one lets a future
@@ -408,13 +518,59 @@ const P = {
   },
 
   /** The result page hands the modal its ONE date value — the same binding the
-   *  лист header and all five export paths read. Scoped to that element's own
-   *  opening tag, and exclusive: no date machinery may ride along beside it. */
+   *  лист header and all five export paths read.
+   *
+   *  An EXACT prop set, not a presence check, and the element is counted. Round
+   *  1 asked „does the first `<PatientSummaryModal>` carry the right prop, and
+   *  no date machinery beside it". A refuter answered yes twice over: a SECOND
+   *  element after the real one (indexOf reads the first and stops), and
+   *  `patientName={issuedLine}` where `issuedLine` was built from the clock
+   *  three lines up, so the tag itself was innocent. Anything not on this list
+   *  is red by default and has to be added here on purpose. */
   pageBindsTheListDate(src: string): boolean {
-    const tag = openTag(code(src), 'PatientSummaryModal');
+    const c = code(src);
+    const mounts = c.split('<PatientSummaryModal').length - 1;
+    if (mounts !== 1) return false;
+    const tag = openTag(c, 'PatientSummaryModal');
     if (!tag) return false;
+    if (DATE_MACHINERY.test(tag)) return false;
     if (!tag.includes(`${PROP}={${BINDING}}`)) return false;
-    return !DATE_MACHINERY.test(tag);
+    const props = [...tag.matchAll(/(\w+)=\{/g)].map((m) => m[1]); // ascii-safe: JSX prop names
+    const EXPECTED = ['isOpen', 'consultationId', 'onClose', 'onToast', PROP];
+    return JSON.stringify([...props].sort()) === JSON.stringify([...EXPECTED].sort());
+  },
+
+  /** The upstream binding, asserted HERE and not only in the sibling gate.
+   *
+   *  Deleting the per-visit reset `setVisitCreatedAt(null)` — which is what
+   *  stops consultation A's day surviving a same-route `?visit=` change to B —
+   *  left this whole file green while list-date.test.ts went red. A gate that
+   *  inherits its safety from another file certifies a claim it cannot check:
+   *  if that file is ever weakened, this one alone would still pass a summary
+   *  dated by the previous consultation. Same two assertions, deliberately
+   *  duplicated. */
+  stampIsTheConsultationsOwn(src: string): boolean {
+    const c = code(src);
+    const want = `const ${BINDING} = formatVisitDateBg(${STAMP});`;
+    if (!c.split('\n').some((l) => l.trim() === want)) return false;
+    const args = callArgs(c, `set${STAMP[0].toUpperCase()}${STAMP.slice(1)}`).map((a) => a[0].trim());
+    const EXPECTED = [
+      'null',                                        // the per-visit reset
+      'decision.pendingVisit?.created_at ?? null',   // painted staging context
+      'recovery.pendingVisit.created_at ?? null',    // cold-start recovery
+      'consultation.created_at ?? null',             // authoritative reconcile
+    ];
+    return JSON.stringify([...args].sort()) === JSON.stringify([...EXPECTED].sort());
+  },
+
+  /** The SHARED funnel. Every print and PDF in the app — лист, echo, and this
+   *  summary — goes through `openPdfPreview` in lib/exporters.ts, and round 1
+   *  never read that file at all. A refuter added six lines there that stamped
+   *  a corner date onto every document the product emits, and 375/375 stayed
+   *  green. The sibling gate reads it but only bans `new Date(`, which is not
+   *  the class. */
+  sharedFunnelInventsNoDate(src: string): boolean {
+    return !DATE_MACHINERY.test(code(src));
   },
 };
 
@@ -438,8 +594,28 @@ test('the clipboard path carries no date (pinned — adding one needs a ruling)'
   assert.ok(P.clipboardCarriesNoDate(MODAL));
 });
 
+test('the date prop is never rebound inside the modal', () => {
+  assert.ok(P.propIsNeverRebound(MODAL));
+});
+
+test('the summary leaves by exactly one door, carrying the built document', () => {
+  assert.ok(P.oneWayOut(MODAL));
+});
+
+test('the modal builds no document of its own', () => {
+  assert.ok(P.modalBuildsNoDocument(MODAL));
+});
+
 test('the result page hands the summary the same binding the лист uses', () => {
   assert.ok(P.pageBindsTheListDate(RESULT));
+});
+
+test('the binding upstream of the prop is the consultation\'s own timestamp', () => {
+  assert.ok(P.stampIsTheConsultationsOwn(RESULT));
+});
+
+test('the shared print funnel stamps no date onto any document', () => {
+  assert.ok(P.sharedFunnelInventsNoDate(EXPORTERS));
 });
 
 // ── 5. Red proof — every predicate above, against the shipped code and the
@@ -602,9 +778,16 @@ test('RED: the tag scan stops at its own „>" and cannot read a neighbour prop'
       <SomethingElse ${PROP}={${BINDING}} />
 `;
   assert.equal(P.pageBindsTheListDate(neighbour), false);
-  // …and the same tag WITH the prop is green, so the scan is not just strict.
+  // …and a non-self-closing tag that DOES carry the full prop set is green, so
+  // the scan is strict about the right thing and not simply always-red.
   const correct = `
-      <PatientSummaryModal isOpen={summaryOpen} ${PROP}={${BINDING}}></PatientSummaryModal>
+      <PatientSummaryModal
+        isOpen={summaryOpen}
+        consultationId={original.consultationId}
+        onClose={() => setSummaryOpen(false)}
+        onToast={showToast}
+        ${PROP}={${BINDING}}
+      ></PatientSummaryModal>
       <SomethingElse />
 `;
   assert.equal(P.pageBindsTheListDate(correct), true);
@@ -636,6 +819,178 @@ test('RED: callArgs counts a DECLARATION as a call — which is why the pin is a
   const decl = `function composeFinal(body: string, disclaimer: string): string {}`;
   assert.equal(callArgs(decl, 'composeFinal').length, 1);
   assert.deepEqual(callArgs(decl, 'composeFinal'), [['body: string', 'disclaimer: string']]);
+});
+
+// ── 5b. Red proof, round 2 — the seven mutations a refuter got past round 1 ─
+// Every one of these passed 45/45 AND 375/375 with a clean `npx tsc --noEmit`,
+// and five of them re-dated the `.date` cell or the document body of a sheet
+// handed to a patient. Round 1's red proofs all attacked the code AS IT
+// SHIPPED, which is only half the job: a standing gate exists to stop a FUTURE
+// edit. These are that half.
+
+test('R2/1: a corner date stamped into the SHARED print funnel', () => {
+  // lib/exporters.ts openPdfPreview — one edit re-dates лист, echo AND summary.
+  // Round 1 never read this file; the sibling gate reads it but bans only
+  // `new Date(`, which `todaySofiaIso()` is not.
+  const mutated = `
+export function openPdfPreview(html: string, opts?: OpenPreviewOpts): boolean {
+  const win = window.open('', '_blank');
+  const stamp = '<div style="position:fixed;top:4mm">' + todaySofiaIso() + '</div>';
+  const finalHtml = html.replace('</body>', stamp + closeScript + '</body>');
+}`;
+  assert.equal(P.sharedFunnelInventsNoDate(mutated), false);
+});
+
+test('R2/2: the prop rebound inside handlePrint, hiding a bare Date()', () => {
+  // `Date()` with no `new` — legal JS, returns today as a string, and matched
+  // neither `new Date\(` nor `Date\.now\(` in round 1's denylist.
+  const mutated = `
+  const stampedDate = ${PROP};
+  function handlePrint() {
+    const ${PROP} = stampedDate || String(Date()).slice(4, 15);
+    const opened = openPdfPreview(${DOC}(finalText, ${PROP}, patientName), { autoPrint: true });
+  }`;
+  assert.equal(P.propIsNeverRebound(mutated), false, 'the shadowing');
+  assert.equal(P.modalOwnsNoDate(mutated), false, 'and the bare Date() behind it');
+});
+
+test('R2/2b: bare Date() is caught wherever it appears', () => {
+  for (const shape of ['Date()', 'Date ()', 'String(Date())', 'new Date()', 'Date.now()', 'Date.parse(x)']) {
+    assert.equal(P.modalOwnsNoDate(`const x = ${shape};`), false, shape);
+  }
+});
+
+test('R2/3: a clock date prepended to the document BODY (argument 0)', () => {
+  const mutated = `
+  function handlePrint() {
+    const printed = finalText + 'Отпечатано: ' + String(Date()).slice(4, 15);
+    const opened = openPdfPreview(${DOC}(printed, ${PROP}, patientName), { autoPrint: true });
+  }`;
+  assert.equal(P.printTakesVisitDate(mutated), false, 'argument 0 is bound too');
+  assert.equal(P.modalOwnsNoDate(mutated), false);
+});
+
+test('R2/4: a whole second pipeline — its own builder, print and copy exits', () => {
+  const mutated = `
+  function buildSheetHtml(summary: string): string {
+    return '<div class="date">' + String(Date()).slice(4, 15) + '</div>';
+  }
+  function handleReprint() {
+    openPdfPreview(buildSheetHtml(finalText), { autoPrint: true });
+  }
+  function handleCopyWithDate() {
+    navigator.clipboard.writeText(finalText + ' — ' + String(Date()));
+  }
+  function handlePrint() {
+    const opened = openPdfPreview(${DOC}(finalText, ${PROP}, patientName), { autoPrint: true });
+  }`;
+  assert.equal(P.oneWayOut(mutated), false, 'two print exits and a foreign clipboard exit');
+  assert.equal(P.modalBuildsNoDocument(mutated), false, 'and it builds its own document');
+  assert.equal(P.modalOwnsNoDate(mutated), false);
+});
+
+test('R2/4b: a foreign exit alone is enough to fail, with no date in sight', () => {
+  const mutated = `
+  function handleCopy() {
+    navigator.clipboard.writeText(finalText);
+  }
+  function handlePrint() {
+    const opened = openPdfPreview(${DOC}(finalText, ${PROP}, patientName), { autoPrint: true });
+  }`;
+  assert.equal(P.oneWayOut(mutated), false,
+    'the exits are enumerated, not merely inspected for dates — an unpinned door is the hazard');
+});
+
+test('R2/5: the builder\'s own fallback, in ISO, under a different class name', () => {
+  // `<div class="issued">2026-08-28</div>` on the absent path. All three of
+  // round 1's absent-case assertions stayed true: no `class="date"`, no
+  // `DD.MM.YYYY`, no „Дата". The module denylist was also five names narrower
+  // than the modal's, so `todaySofiaIso()` was invisible there.
+  const mutantSrc = `
+export function ${DOC}(summary: string, dateBg: string): string {
+  const dateHtml = dateBg
+    ? \`<div class="date">\${dateBg}</div>\`
+    : \`<div class="issued">\${todaySofiaIso()}</div>\`;
+  return dateHtml;
+}`;
+  assert.equal(P.sharedFunnelInventsNoDate(mutantSrc), false,
+    'one shared DATE_MACHINERY — the module is held to the modal\'s standard');
+  // …and the behavioural half now catches the OUTPUT too, whatever it is called.
+  const mutantOut = '<div class="issued">2026-08-28</div><div class="text">Тест</div>';
+  assert.deepEqual(dateLikeRuns(mutantOut), ['2026-08-28', '2026']);
+});
+
+test('R2/6: a SECOND <PatientSummaryModal> after the correct one', () => {
+  const mutated = `
+      <PatientSummaryModal
+        isOpen={summaryOpen}
+        consultationId={original.consultationId}
+        onClose={() => setSummaryOpen(false)}
+        onToast={showToast}
+        ${PROP}={${BINDING}}
+      />
+      <PatientSummaryModal
+        isOpen={reprintOpen}
+        consultationId={original.consultationId}
+        onClose={() => setReprintOpen(false)}
+        onToast={showToast}
+        ${PROP}={reprintDateBg}
+      />`;
+  assert.equal(P.pageBindsTheListDate(mutated), false, 'the element is counted, not indexOf-ed');
+});
+
+test('R2/7: a clock string smuggled in through patientName', () => {
+  const mutated = `
+      <PatientSummaryModal
+        isOpen={summaryOpen}
+        consultationId={original.consultationId}
+        onClose={() => setSummaryOpen(false)}
+        onToast={showToast}
+        ${PROP}={${BINDING}}
+        patientName={issuedLine}
+      />`;
+  assert.equal(P.pageBindsTheListDate(mutated), false,
+    'the prop SET is exact — a channel into the document above the date cell is not free');
+});
+
+test('R2/8: deleting the per-visit reset fails THIS gate too, not just the sibling', () => {
+  const noReset = `
+  const ${BINDING} = formatVisitDateBg(${STAMP});
+  setVisitCreatedAt(decision.pendingVisit?.created_at ?? null);
+  setVisitCreatedAt(recovery.pendingVisit.created_at ?? null);
+  setVisitCreatedAt(consultation.created_at ?? null);`;
+  assert.equal(P.stampIsTheConsultationsOwn(noReset), false,
+    'without the reset, consultation A\'s day survives a ?visit= change to B');
+  const clockStamp = `
+  const ${BINDING} = formatVisitDateBg(${STAMP});
+  setVisitCreatedAt(null);
+  setVisitCreatedAt(new Date().toISOString());
+  setVisitCreatedAt(recovery.pendingVisit.created_at ?? null);
+  setVisitCreatedAt(consultation.created_at ?? null);`;
+  assert.equal(P.stampIsTheConsultationsOwn(clockStamp), false);
+  const orFallback = `
+  const ${BINDING} = formatVisitDateBg(${STAMP}) || wall;
+  setVisitCreatedAt(null);
+  setVisitCreatedAt(decision.pendingVisit?.created_at ?? null);
+  setVisitCreatedAt(recovery.pendingVisit.created_at ?? null);
+  setVisitCreatedAt(consultation.created_at ?? null);`;
+  assert.equal(P.stampIsTheConsultationsOwn(orFallback), false, 'the „|| wall" shape, one file up');
+});
+
+test('R2/instrument: atClock is a faithful Date — Date() without `new` works', () => {
+  // The subclass version of atClock threw `TypeError: Class constructor cannot
+  // be invoked without 'new'` on exactly the spelling that beat round 1, so a
+  // mutation died by instrument accident rather than by assertion. An
+  // instrument that has never been shown to execute the hazard is not evidence.
+  const asString = atClock('2026-08-28T08:00:00.000Z', () => String(Date()));
+  assert.ok(asString.includes('2026'), asString);
+  assert.equal(atClock('2026-08-28T08:00:00.000Z', () => Date.now()),
+    Date.parse('2026-08-28T08:00:00.000Z'));
+  assert.equal(
+    atClock('2026-08-28T08:00:00.000Z', () => new Date('2026-08-08T09:12:00.000Z').toISOString()),
+    '2026-08-08T09:12:00.000Z',
+    'an explicit argument must still parse normally',
+  );
 });
 
 // ── 6. Red proof — the behavioural half ───────────────────────────────────
