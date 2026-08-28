@@ -362,7 +362,15 @@ export function generateEchoHtml(f: EchoFields, dateStr: string): string {
     ? `\n  <span style="font-size:10pt;color:#5B6472">${esc(dateStr)}</span>`
     : '';
 
-  return `<!DOCTYPE html><html lang="bg"><head><meta charset="utf-8"><title>Ехокардиографско изследване</title></head>
+  // The echo report is the one document here that never declared a page box at
+  // all, so its margins have always been whatever the browser defaults to. Only
+  // the TOP edge is named, and only to bring it under the browser's header
+  // threshold (measured at 9mm) — at 9mm and above Chrome draws its own header
+  // into the margin, carrying today's date. The other three edges stay at the
+  // browser default, untouched, and nothing is added to compensate: there is no
+  // designed inset here to preserve, and inventing one would be the restyle.
+  return `<!DOCTYPE html><html lang="bg"><head><meta charset="utf-8"><title>Ехокардиографско изследване</title>
+<style>@page{margin-top:6mm}</style></head>
 <body style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:800px;margin:24px auto;padding:0 24px;color:#1F2933">
 <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:16px;margin-bottom:8px">
   <h1 style="font-size:20pt;color:#1F3A5F;font-weight:700;margin:0">Ехокардиографско изследване</h1>${dateHtml}
@@ -545,6 +553,38 @@ function pdfSignatureLine(id: ExportIdentity): string {
       </div>`;
 }
 
+/**
+ * The амбулаторен лист as printed and as saved to PDF — one document, because
+ * the browser's print dialog is the only PDF path there is.
+ *
+ * ── Why the print page box has a 6mm top and a 15mm everything-else ──
+ *
+ * Chrome draws its OWN header and footer into the page margin: the wall clock
+ * at top-left, the document title at top-right, the URL and page number at the
+ * bottom. None of it is in this markup, so no assertion over this string could
+ * ever see it — a лист printed three weeks after the преглед carried the визит
+ * date in the body and TODAY'S date in the margin, two inches apart, and the
+ * margin is where the eye lands. Confirmed on a real Chrome print preview.
+ *
+ * Measured, by sweeping this @page margin from 0mm to 20mm through Chrome's own
+ * print pipeline: the header is ABSENT at 0–8mm and DRAWN at 9–20mm. The two
+ * edges are decided independently, and only the top one carries a date, so only
+ * the top one moves — the sides and the bottom keep their 15mm exactly. 6mm
+ * leaves 3mm of headroom under the measured threshold and still clears a
+ * consumer printer's unprintable band.
+ *
+ * The 9mm the page box gives up is handed straight back as body padding, so the
+ * FIRST page is unchanged to the pixel and the page count does not move (both
+ * verified on the preview). A CONTINUATION page gets 6mm of top margin instead
+ * of 15mm — that is the entire cost of removing the stamp, and it is the one
+ * thing about the лист this change alters.
+ *
+ * Do not add `size:` to this @page. On the резюме, which declares `size: A5`,
+ * Chrome discards the CSS margins whenever the destination paper is not A5 and
+ * prints its header inside the printer's own margins instead — measured at
+ * `margin-top:6mm` and at `margin:6mm`, header drawn both times. A page size
+ * here would silently undo all of the above. Held by scripts/print-margin.test.ts.
+ */
 export function generatePdfHtml(f: TranscribeFields, dateStr: string, identity?: ExportIdentity): string {
   const hasId = !!identity && identityHasContent(identity);
   const idHeader = hasId ? pdfIdentityHeader(identity!) : '';
@@ -637,10 +677,12 @@ export function generatePdfHtml(f: TranscribeFields, dateStr: string, identity?:
       .doc{background:white;max-width:780px;margin:0 auto;padding:0}
 
       @media print{
-        body{background:white;padding:16px 24px}
+        /* margin-top is under the browser's header threshold — see the note
+           above generatePdfHtml. The padding hands back what it gives up. */
+        body{background:white;padding:calc(16px + 9mm) 24px 16px}
         .actions{display:none !important}
         .doc{max-width:none;padding:0}
-        @page{margin:15mm}
+        @page{margin:15mm;margin-top:6mm}
       }
     </style></head><body>
     <div class="actions">

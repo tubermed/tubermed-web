@@ -144,6 +144,7 @@ function dateRuns(html: string): DateRun[] {
       let region = 'text';
       if (lastOpen > lastClose) region = 'attribute';
       if (/<title>[^<]*$/i.test(before)) region = 'title';
+      // ascii-safe: an HTML tag name, which is Latin by the HTML spec
       else if (/<style\b[^>]*>(?:(?!<\/style>)[\s\S])*$/i.test(before)) region = 'style';
       hits.push({
         kind, text: m[0], index: m.index, region,
