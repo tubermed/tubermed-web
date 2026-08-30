@@ -27,7 +27,7 @@ function parseDecimal(s: string): number {
 
 // ── Vital rules ───────────────────────────────────────────────
 
-interface VitalRule {
+export interface VitalRule {
   category: string;
   label: string;
   pattern: RegExp;
@@ -36,7 +36,10 @@ interface VitalRule {
   ) => { kind: 'vital-warn' | 'vital-critical'; message: string } | null;
 }
 
-const VITAL_RULES: VitalRule[] = [
+// Exported so scripts/vital-rules.test.ts can assert it is non-empty and that
+// every keyword spelling in every rule is exercised — a gate that silently
+// probes a subset of the rules is the vacuity shape this repo keeps finding.
+export const VITAL_RULES: VitalRule[] = [
   // Temperature
   {
     category: 'temp',
@@ -150,12 +153,36 @@ const VITAL_RULES: VitalRule[] = [
   },
 ];
 
+// ── Left boundary ─────────────────────────────────────────────
+// Every VITAL_RULES pattern starts with a keyword alternation, and none of them
+// carried a left boundary: the `t` of `t°?` matched inside Hct/PLT/ALT/GGT and
+// the `АН` of the blood-pressure rule matched inside лозартан/валсартан, so a
+// haematology line and an antihypertensive dose range both rendered as red
+// clinical criticals. Red is this product's reserved medication-safety colour.
+//
+// The boundary is an explicit test on the PRECEDING CHARACTER, never `\b`.
+// JS `\b` is defined over `[A-Za-z0-9_]` and the `u` flag does not change that,
+// so `/\bт/u` is true in the middle of a Cyrillic word and false at the start of
+// one — the exact inversion `scripts/ascii-boundary.test.ts` exists to catch.
+const BOUNDARY_WORD_CHAR = /[\p{L}\p{N}]/u;
+
+function startsAtWordStart(text: string, index: number): boolean {
+  if (index <= 0) return true;
+  return !BOUNDARY_WORD_CHAR.test(text[index - 1]);
+}
+
 function findVitalMatches(text: string): HighlightMatch[] {
   const out: HighlightMatch[] = [];
   for (const rule of VITAL_RULES) {
     rule.pattern.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = rule.pattern.exec(text))) {
+      if (!startsAtWordStart(text, m.index)) {
+        // Resume one character past the rejected start, not past the whole
+        // rejected span: a legitimate keyword may begin inside it.
+        rule.pattern.lastIndex = m.index + 1;
+        continue;
+      }
       const cls = rule.classify(m);
       if (cls) {
         out.push({
