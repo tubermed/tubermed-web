@@ -49,6 +49,11 @@ export function scrubUrl(url: string): string {
 }
 
 export function scrubEvent(event: ErrorEvent): ErrorEvent {
+  // Totality, not just fields. A cross-implementation diff over 33 adversarial
+  // events found exactly one disagreement: the backend returned a null event,
+  // this threw `Cannot read properties of null`. The contract specifies WHICH
+  // fields are scrubbed and structurally cannot state that — so it is stated here.
+  if (!event) return event;
   if (event.request) {
     delete event.request.data; // bodies — could contain transcript / ЕГН
     delete event.request.cookies;

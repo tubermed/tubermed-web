@@ -1,7 +1,8 @@
 {
   "_comment": "CANONICAL contract for the Sentry PII scrub. tubermed-web/lib/sentry-scrub.ts and tubermed-backend/lib/sentry-scrub.js are two independent implementations of THIS document; each repo's own gate executes its implementation against it, and tubermed-backend/scripts/verify-mirror.js byte-compares its copy against this one. That composition is what makes 'the two scrubbers agree' a checked fact instead of a comment. Do NOT let an implementation read this file — an implementation that reads its own spec agrees with it by construction.",
-  "version": 1,
+  "version": 2,
   "why": "This is a medical product handling special-category data. An error payload must never carry a transcript, a request body, credentials, identity, or console context. sendDefaultPii:false prevents most of it; this contract makes it a guarantee.",
+  "_floor_warning": "A refuter deleted entries from BOTH copies of this file and from the web implementation only: the copies stayed byte-identical, verify-mirror stayed green, and the web gate — which is contract-driven — weakened in lockstep with the spec it was checking. Each gate therefore carries its OWN hardcoded minimum set of channels, written in the gate source, and fails if this file drops below it. Mirroring proves the two specs are IDENTICAL; it can never prove either is STRONG.",
   "delete": [
     "request.data",
     "request.cookies",
@@ -17,6 +18,11 @@
     "policy": "origin_and_pathname",
     "drop": ["search", "hash"],
     "why": "On the browser SDK path query_string is never emitted at all — the query lives INSIDE request.url. What rides there: ?visit=<consultation uuid>, ?q=<free-text admin search>, and ?session=<sessionId>, which is the phone-upload credential. Deleting query_string and leaving request.url alone closed a channel that was never open and left the one that was."
+  },
+  "known_residuals": {
+    "path_segments": "origin_and_pathname KEEPS every path segment, and the same two identifiers also travel as path params: routes/sessions.js takes the session id as req.params.id on /:id/status, /:id/audio, /:id/poll, /:id/stream-key and /:id/stream-transcript — only one route reads it from the query — and routes/consultations.js has 13 /:id/... routes carrying the consultation uuid. So this policy removes one of that credential's two homes. Reducing to origin alone would remove the route from every error, which is most of what makes a Sentry event actionable; a route-template substitution (/api/sessions/:id) is the real answer and is a larger change. RULING OWED — do not read the gates' path assertions as a claim that path segments are safe.",
+    "encoded_query": "A query encoded into the path (%3F) stays in pathname by definition, so it survives. Subsumed by path_segments.",
+    "unscrubbed_event_fields": "This contract governs request/user/breadcrumbs/extra/contexts only. event.message and event.logentry are live today — lib/usage-caps.js calls Sentry.captureMessage — and are neither deleted nor asserted, along with tags, transaction, server_name, fingerprint, threads, spans and debug_meta. Safe by discipline, not by construction, which is the argument this contract uses to justify dropping breadcrumbs. RULING OWED."
   },
   "keep": [
     "exception",

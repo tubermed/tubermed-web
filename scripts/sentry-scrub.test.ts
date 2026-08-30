@@ -41,6 +41,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import type { ErrorEvent } from '@sentry/nextjs';
 import { scrubEvent, scrubUrl } from '../lib/sentry-scrub.ts';
@@ -58,7 +59,36 @@ const CONTRACT: Contract = JSON.parse(
   readFileSync(path.join(REPO, 'public', 'sentry-scrub-contract.json'), 'utf8'),
 );
 
+// ── The floor, hardcoded HERE and not read from the contract ─────────────────
+// A refuter deleted `user` and `request.headers` from BOTH copies of the
+// contract and from this repo's implementation only. The copies stayed
+// byte-identical, verify-mirror stayed green, this gate stayed green — and a
+// JWT and a doctor identity went onto the wire. Mirroring proves the two specs
+// are IDENTICAL; it can never prove either is STRONG, and a gate that derives
+// its whole strength from the file it is checking has none of its own.
+const REQUIRED_CHANNELS = [
+  'request.data',
+  'request.cookies',
+  'request.headers',
+  'request.query_string',
+  'user',
+  'breadcrumbs',
+  'extra',
+  'contexts',
+];
+
 // ── Contract sanity ──────────────────────────────────────────────────────────
+test('the contract never drops below this gate\'s own floor', () => {
+  const missing = REQUIRED_CHANNELS.filter((c) => !CONTRACT.delete.includes(c));
+  assert.deepStrictEqual(
+    missing,
+    [],
+    `the contract no longer requires ${missing.join(', ')} to be scrubbed. ` +
+      'Weakening the spec weakens every contract-driven assertion with it — ' +
+      'that is why this list is written here and not read from the file.',
+  );
+});
+
 test('the contract loaded and is the policy this gate knows how to check', () => {
   assert.ok(
     Array.isArray(CONTRACT.delete) && CONTRACT.delete.length >= 6,
@@ -234,8 +264,98 @@ test('the scrub does not throw on the shapes Sentry really sends', () => {
     ['request with no url', { request: { method: 'GET' } } as unknown as ErrorEvent],
     ['url that is not a string', { request: { url: 12345 } } as unknown as ErrorEvent],
     ['an already-scrubbed event', scrubEvent(fixture())],
+    // Totality. The two implementations disagreed here and nothing could see it:
+    // the backend returned a null event, this one threw.
+    ['a null event', null as unknown as ErrorEvent],
+    ['an undefined event', undefined as unknown as ErrorEvent],
   ];
   for (const [why, e] of shapes) {
     assert.doesNotThrow(() => scrubEvent(e), why);
   }
+});
+
+// ── The layers a refuter walked through ──────────────────────────────────────
+
+test('the scrub takes ONE argument — Sentry calls beforeSend(event, hint)', () => {
+  // ARGUMENT-INDEX BINDING. A refuter added a second parameter defaulting to
+  // "scrub everything"; every gate called scrubEvent(event) with one argument,
+  // so all four stayed green while the real call site — which passes a hint —
+  // leaked the session credential on 100% of events. The identity assertion in
+  // the backend's wiring test made it worse: it proved the right function was
+  // wired, then never called it at the real arity.
+  assert.ok(
+    scrubEvent.length <= 1,
+    `scrubEvent declares ${scrubEvent.length} parameters; Sentry passes (event, hint), ` +
+      'so a second parameter changes behaviour at the real call site and no fixture would see it',
+  );
+  // And exercise it at the real arity, not just the convenient one.
+  const hint = { originalException: new Error('boom'), syntheticException: null };
+  // Cast the FUNCTION, not the argument: tsc rejects a 2-arg call on a 1-arg
+  // signature (TS2554) — which is itself part of the guarantee — but the runtime
+  // call at the real arity still has to be exercised.
+  const atRealArity = scrubEvent as unknown as (e: ErrorEvent, h?: unknown) => ErrorEvent;
+  const out = atRealArity(fixture(), hint);
+  assert.strictEqual(out.request?.url, CLEAN_URL, 'called with a hint, the URL was not reduced');
+  assert.ok(!JSON.stringify(out).includes(SESSION_CREDENTIAL));
+});
+
+test('no query parameter survives, whatever it is called', () => {
+  // DENYLIST OF SPELLINGS. The URL cases enumerate ?visit / ?q / ?session, so a
+  // refuter stripped exactly those four names and passed every gate while
+  // ?egn=, ?token= and ?search= survived verbatim. The ASCII variant — delete
+  // only params matching /^[a-zA-Z0-9_]+$/ — passed too, leaving ?пациент=
+  // intact in a Bulgarian medical product. State the rule, not the spellings.
+  const names = [
+    'visit', 'q', 'session', 'egn', 'token', 'search', 'redirect_uri', 'x',
+    'пациент', 'диагноза', 'търсене', 'ЕГН', 'a'.repeat(64), '1', '_', 'a-b',
+  ];
+  for (const n of names) {
+    const url = `https://app.tubermed.com/app/x?${encodeURIComponent(n)}=SENTINEL_VALUE`;
+    const out = scrubUrl(url);
+    assert.strictEqual(out, 'https://app.tubermed.com/app/x', `param "${n}" survived`);
+    assert.ok(!out.includes('SENTINEL_VALUE'), `param "${n}" leaked its value`);
+  }
+});
+
+test('a RELATIVE url is reduced through scrubEvent, not only through scrubUrl', () => {
+  // A refuter guarded the reduction on url.startsWith("https://") and passed
+  // every gate: the relative cases only ever called scrubUrl directly, and the
+  // shapes list only asserted doesNotThrow.
+  for (const [url, expect] of [
+    ['/api/sessions/abc?session=SENTINEL_VALUE', '/api/sessions/abc'],
+    ['/app/scribe/result?visit=SENTINEL_VALUE#h', '/app/scribe/result'],
+    ['//cdn.example.test/x?q=SENTINEL_VALUE', '//cdn.example.test/x'],
+    ['http://localhost:3000/x?q=SENTINEL_VALUE', 'http://localhost:3000/x'],
+  ] as Array<[string, string]>) {
+    const e = { request: { url, method: 'GET' } } as unknown as ErrorEvent;
+    const out = scrubEvent(e);
+    assert.strictEqual(out.request?.url, expect, `relative/other-scheme url not reduced: ${url}`);
+    assert.ok(!JSON.stringify(out).includes('SENTINEL_VALUE'), `value leaked from: ${url}`);
+  }
+});
+
+test('the scrub behaves identically under NODE_ENV=production', () => {
+  // DISABLED CONTROL. Gating the reduction on NODE_ENV passed every gate,
+  // because none of them sets it — green in CI, leaking in the deployed build.
+  const probe = [
+    "const { scrubEvent } = await import(process.argv[1]);",
+    "const e = { request: { url: 'https://a.tubermed.com/p?session=CRED', method: 'GET' }, user: { id: 'd' }, extra: { x: 1 }, contexts: { y: {} }, breadcrumbs: [], exception: { values: [] } };",
+    "const out = scrubEvent(e);",
+    "const bad = [];",
+    "if (out.request.url !== 'https://a.tubermed.com/p') bad.push('url=' + out.request.url);",
+    "for (const k of ['user','extra','contexts','breadcrumbs']) if (out[k] !== undefined) bad.push(k + ' survived');",
+    "console.log(bad.join(' | '));",
+    "process.exit(bad.length ? 1 : 0);",
+  ].join('\n');
+  const modUrl = new URL('../lib/sentry-scrub.ts', import.meta.url).href;
+  const res = spawnSync(
+    process.execPath,
+    ['--input-type=module', '--eval', probe, modUrl],
+    { env: { ...process.env, NODE_ENV: 'production' }, encoding: 'utf8' },
+  );
+  assert.ok(
+    res.status === 0 || res.status === 1,
+    `VACUOUS: the NODE_ENV probe did not run (status ${res.status}): ${res.stderr}`,
+  );
+  assert.strictEqual(res.status, 0, `the scrub behaves differently in production: ${res.stdout.trim()}`);
 });
