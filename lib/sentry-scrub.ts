@@ -63,22 +63,45 @@ function isIdShaped(seg: string): boolean {
   return UUID_RE.test(seg) || HEX_RE.test(seg) || DIGITS_RE.test(seg);
 }
 
-/** Replace identifier-shaped path segments with `:id`, by shape and by position. */
+/**
+ * Replace identifier-shaped path segments with `:id`, by shape and by position.
+ *
+ * ⚠ `prev` is the previous NON-EMPTY segment. A double slash used to defeat the
+ * position rule outright: for the segment after `//` the previous segment was
+ * the empty string, so no collection matched and `/api/consultations//ivanov`
+ * came through untouched. One extra slash — trivially produced by joining a
+ * trailing-slash base to a leading-slash path — turned the rule off.
+ *
+ * ⚠ The collection comparison is case-INSENSITIVE. Express routing is not
+ * case-sensitive by default, so `/api/Sessions/<id>` reaches the same handler.
+ */
 export function scrubPath(pathname: string): string {
   const parts = pathname.split("/");
+  let prev = "";
   for (let i = 0; i < parts.length; i++) {
     const seg = parts[i];
     if (!seg) continue;
-    if (isIdShaped(seg)) { parts[i] = ":id"; continue; }
-    const prev = i > 0 ? parts[i - 1] : "";
-    if (COLLECTIONS.includes(prev) && !COLLECTION_LITERALS.includes(seg)) parts[i] = ":id";
+    if (isIdShaped(seg)) { parts[i] = ":id"; prev = ":id"; continue; }
+    if (COLLECTIONS.includes(prev.toLowerCase()) && !COLLECTION_LITERALS.includes(seg.toLowerCase())) {
+      parts[i] = ":id";
+      prev = ":id";
+      continue;
+    }
+    prev = seg;
   }
   return parts.join("/");
 }
 
+// A URL whose origin is not http(s) has no meaningful origin/pathname split:
+// `new URL('data:text/plain,PATIENT…').origin` is the literal string "null", and
+// concatenating that onto the path produced `nulltext/plain,PATIENT…` with the
+// free text intact. Same for blob:, file:, javascript: and mailto:.
+const REDACTED_URL = "[redacted: non-http url]";
+
 export function scrubUrl(url: string): string {
   try {
     const u = new URL(url);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return REDACTED_URL;
     // `origin` also drops any user:password@ prefix — another credential channel.
     return u.origin + scrubPath(u.pathname);
   } catch {
@@ -95,26 +118,42 @@ export function scrubUrl(url: string): string {
 // it empty" is not available on that side, and this side must implement the same
 // contract. The commit that dropped breadcrumbs argued that a guarantee resting
 // on every caller's discipline is not a guarantee; that applies here identically.
-const ALLOWED_MESSAGE_TAGS = ["[usage-caps]"];
+// ⚠ FULL-STRING PATTERNS, NOT PREFIXES (contract v4). v3 matched
+// `text.startsWith(tag)` and a refuter rode arbitrary text in behind an allowed
+// tag: „[usage-caps] пациент Иванов ЕГН 7501010010" survived verbatim. A prefix
+// allowlist IS the caller-discipline guarantee this contract exists to replace —
+// the same argument that dropped breadcrumbs. Each pattern admits counts and
+// closed enums and nothing else.
+//
+// ⚠ These are DUPLICATED from the contract on purpose. An implementation that
+// read its own spec would satisfy it by construction; the gates hold the floor.
+// ascii-safe: these match machine-generated alert strings built from ASCII
+// enums and digits. The one non-ASCII character is the em dash, matched
+// literally.
+const ALLOWED_MESSAGE_PATTERNS: RegExp[] = [
+  /^\[usage-caps\] [a-z_]+ on [a-z]+: \d+\/\d+ in the rolling 24h window$/,
+  /^\[account-status\] UNANSWERABLE — revocation NOT ENFORCED\. kind=[a-z_]+ unanswerable_total=\d+ checks_total=\d+$/,
+];
 const REDACTED_MESSAGE = "[redacted: message not on the tag allowlist]";
 
 function allowedMessage(text: unknown): boolean {
-  return typeof text === "string" && ALLOWED_MESSAGE_TAGS.some((t) => text.startsWith(t));
+  return typeof text === "string" && ALLOWED_MESSAGE_PATTERNS.some((re) => re.test(text));
 }
 
 export function scrubMessageValue(value: unknown): unknown {
   if (typeof value === "string") return allowedMessage(value) ? value : REDACTED_MESSAGE;
   if (value && typeof value === "object") {
-    // Sentry's structured form: { message, formatted, params }. `params` holds
-    // the interpolation values — exactly where the variable part lives — so it
-    // goes unconditionally.
-    const v = value as { message?: unknown; formatted?: unknown };
-    const out: { message?: string; formatted?: string } = {};
+    // Sentry's structured form: { message, formatted, params }.
+    //
+    // ⚠ BOTH `params` and `formatted` go, unconditionally. v3 dropped `params`
+    // with the reasoning "it holds the interpolation values" and KEPT
+    // `formatted` — but `formatted` IS the interpolated result of message+params.
+    // Dropping the copy and keeping the result left the whole value on the wire,
+    // and it fired even with `message` absent entirely.
+    const v = value as { message?: unknown };
+    const out: { message?: string } = {};
     if (typeof v.message === "string") {
       out.message = allowedMessage(v.message) ? v.message : REDACTED_MESSAGE;
-    }
-    if (typeof v.formatted === "string") {
-      out.formatted = allowedMessage(v.formatted) ? v.formatted : REDACTED_MESSAGE;
     }
     return out;
   }
@@ -122,6 +161,14 @@ export function scrubMessageValue(value: unknown): unknown {
   // not travel.
   return REDACTED_MESSAGE;
 }
+
+// ── event_fields (contract v4) ──────────────────────────────────────────────
+// tags / fingerprint / transaction were "safe by discipline, RULING OWED" in v3.
+// The ruling: allowlist tags and fingerprint, keep transaction but route-shape
+// it. `transaction` on the browser SDK is derived from location.pathname — the
+// exact channel request.url just closed — so shipping it raw would reopen it.
+const ALLOWED_TAG_KEYS: string[] = [];
+const ALLOWED_FINGERPRINTS = ["{{ default }}"];
 
 /**
  * Sentry `beforeSend`.
@@ -149,8 +196,13 @@ export function scrubEvent(event: ErrorEvent): ErrorEvent {
     delete event.request.cookies;
     delete event.request.headers; // could carry Authorization / X-Admin-Secret
     delete event.request.query_string;
+    // ⚠ A NON-STRING url is DELETED, not passed through. The reduction used to
+    // be gated on `typeof === 'string'`, so a String object or a { href } shape
+    // survived verbatim — a scrub-less failure direction.
     if (typeof event.request.url === "string") {
       event.request.url = scrubUrl(event.request.url);
+    } else if ("url" in event.request) {
+      delete event.request.url;
     }
   }
   delete event.user;
@@ -170,5 +222,21 @@ export function scrubEvent(event: ErrorEvent): ErrorEvent {
   const e = event as unknown as Record<string, unknown>;
   if ("message" in e) e.message = scrubMessageValue(e.message);
   if ("logentry" in e) e.logentry = scrubMessageValue(e.logentry);
+
+  // event_fields (v4).
+  if ("tags" in e && e.tags && typeof e.tags === "object") {
+    const src = e.tags as Record<string, unknown>;
+    const kept: Record<string, unknown> = {};
+    for (const k of ALLOWED_TAG_KEYS) if (k in src) kept[k] = src[k];
+    e.tags = kept;
+  }
+  if ("fingerprint" in e) {
+    const fp = Array.isArray(e.fingerprint) ? e.fingerprint : [];
+    e.fingerprint = fp.filter((x) => typeof x === "string" && ALLOWED_FINGERPRINTS.includes(x));
+  }
+  // transaction is KEPT — it is the route name — but route-shaped, because on
+  // the browser SDK it is derived from location.pathname.
+  if (typeof e.transaction === "string") e.transaction = scrubPath(e.transaction);
+  else if ("transaction" in e) delete e.transaction;
   return event;
 }

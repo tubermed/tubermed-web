@@ -61,9 +61,11 @@ interface Contract {
   message?: {
     paths?: string[];
     policy?: string;
-    allow_tags?: string[];
+    allow?: Array<{ tag?: string; pattern?: string; source?: string }>;
     drop_params?: boolean;
+    drop_formatted?: boolean;
   };
+  event_fields?: Record<string, { policy?: string }>;
 }
 
 const CONTRACT: Contract = JSON.parse(
@@ -119,7 +121,7 @@ test('the contract loaded and is the policy this gate knows how to check', () =>
 // verify-mirror green, and weakens every contract-driven assertion about it in
 // lockstep. The mirror proves IDENTICAL, never STRONG.
 test('the contract never drops below this gate\'s own MESSAGE floor', () => {
-  assert.strictEqual(CONTRACT.message?.policy, 'tag_allowlist');
+  assert.strictEqual(CONTRACT.message?.policy, 'tag_allowlist_full_match');
   const REQUIRED_MESSAGE_PATHS = ['message', 'logentry'];
   const missing = REQUIRED_MESSAGE_PATHS.filter((c) => !(CONTRACT.message?.paths ?? []).includes(c));
   assert.deepStrictEqual(
@@ -134,9 +136,25 @@ test('the contract never drops below this gate\'s own MESSAGE floor', () => {
     'logentry.params must be dropped — it is where the variable part lives.',
   );
   assert.ok(
-    Array.isArray(CONTRACT.message?.allow_tags) && CONTRACT.message.allow_tags.length > 0,
+    Array.isArray(CONTRACT.message?.allow) && CONTRACT.message.allow.length >= 2,
     'VACUOUS: an allowlist policy with no allowlist',
   );
+  // v4 floors, hardcoded HERE (shape 10): a PREFIX allowlist let arbitrary text
+  // ride in behind an allowed tag, and dropping params while keeping
+  // logentry.formatted kept the interpolated result.
+  assert.ok(
+    CONTRACT.message.allow.every((a) => typeof a.pattern === 'string'
+      && a.pattern.startsWith('^') && a.pattern.endsWith('$')),
+    'every allowed message must carry a FULL-STRING pattern, not a prefix',
+  );
+  assert.strictEqual(CONTRACT.message?.drop_formatted, true,
+    'logentry.formatted IS the interpolation of message+params and must be dropped');
+  for (const k of ['tags', 'fingerprint', 'transaction']) {
+    assert.ok(CONTRACT.event_fields?.[k], `event_fields no longer covers ${k}`);
+  }
+  assert.strictEqual(CONTRACT.event_fields?.transaction?.policy, 'route_shape');
+  assert.strictEqual(CONTRACT.event_fields?.tags?.policy, 'allowlist');
+  assert.strictEqual(CONTRACT.event_fields?.fingerprint?.policy, 'empty_or_allowlist');
 });
 
 test('message and logentry are scrubbed, and the allowlisted one survives', () => {
@@ -160,6 +178,25 @@ test('message and logentry are scrubbed, and the allowlisted one survives', () =
     message: '[usage-caps] extraction on org: 41/40 in the rolling 24h window',
   } as unknown as ErrorEvent) as unknown as Record<string, unknown>;
   assert.strictEqual(kept.message, '[usage-caps] extraction on org: 41/40 in the rolling 24h window');
+
+  // ⚠ FULL-STRING, not prefix. A refuter rode arbitrary text in behind an
+  // allowed tag and it survived verbatim — the caller-discipline guarantee this
+  // contract exists to replace.
+  const tail = scrubEvent({
+    message: '[usage-caps] SENTINEL_TAIL',
+  } as unknown as ErrorEvent) as unknown as Record<string, unknown>;
+  assert.strictEqual(tail.message, REDACTED, 'an allowed TAG with free text after it must be redacted');
+
+  // ⚠ logentry.formatted IS the interpolation of message+params. v3 dropped the
+  // copy and kept the result, and it fired even with `message` absent entirely.
+  const fmt = scrubEvent({
+    logentry: { message: '[usage-caps] %s', params: ['SENTINEL_P'], formatted: '[usage-caps] SENTINEL_P' },
+  } as unknown as ErrorEvent) as unknown as Record<string, unknown>;
+  assert.ok(!JSON.stringify(fmt).includes('SENTINEL_P'), 'logentry.formatted leaked the interpolation');
+  const fmtOnly = scrubEvent({
+    logentry: { formatted: '[usage-caps] SENTINEL_F' },
+  } as unknown as ErrorEvent) as unknown as Record<string, unknown>;
+  assert.ok(!JSON.stringify(fmtOnly).includes('SENTINEL_F'), 'a formatted-only logentry leaked');
 });
 
 // ── Dot-path helpers ─────────────────────────────────────────────────────────
@@ -311,6 +348,20 @@ test('request.url is reduced to origin + pathname in every shape', () => {
       '/api/sessions/abc?session=cred', '/api/sessions/:id'],
     ['a real session id (12 hex, randomBytes(6)) is redacted by SHAPE',
       '/api/sessions/a1b2c3d4e5f6/audio', '/api/sessions/:id/audio'],
+    // ⚠ THE by_shape FLOOR. Every shape case here also sat after a COLLECTION,
+    // so by_position covered them all — a refuter made isIdShaped() return false
+    // in both repos and all four gates stayed green.
+    ['SHAPE ONLY — hex token not after a collection', '/api/x/a1b2c3d4e5f6', '/api/x/:id'],
+    ['SHAPE ONLY — uuid not after a collection',
+      '/api/x/3f2b91c4-0e77-4a1d-9c55-8a0d61b2e4aa', '/api/x/:id'],
+    ['SHAPE ONLY — digits not after a collection', '/api/x/12345', '/api/x/:id'],
+    ['a double slash does not disable the position rule',
+      '/api/sessions//NOTASECRETSHAPE', '/api/sessions//:id'],
+    ['the collection match is case-insensitive', '/api/Sessions/abcdef', '/api/Sessions/:id'],
+    ['a data: url is redacted wholesale', 'data:text/plain,PATIENT_X', '[redacted: non-http url]'],
+    ['a blob: url is redacted wholesale',
+      'blob:https://a.tubermed.com/3f2b91c4-0e77-4a1d-9c55-8a0d61b2e4aa', '[redacted: non-http url]'],
+    ['a file: url is redacted wholesale', 'file:///C:/notes/X.txt', '[redacted: non-http url]'],
     ['a consultation UUID is redacted',
       'https://a.tubermed.com/api/consultations/3f2b91c4-0e77-4a1d-9c55-8a0d61b2e4aa/approve',
       'https://a.tubermed.com/api/consultations/:id/approve'],
@@ -437,4 +488,27 @@ test('the scrub behaves identically under NODE_ENV=production', () => {
     `VACUOUS: the NODE_ENV probe did not run (status ${res.status}): ${res.stderr}`,
   );
   assert.strictEqual(res.status, 0, `the scrub behaves differently in production: ${res.stdout.trim()}`);
+});
+
+
+test('event_fields (v4): tags allowlisted, fingerprint asserted empty, transaction route-shaped', () => {
+  const out = scrubEvent({
+    tags: { note: 'SENTINEL_TAG' },
+    fingerprint: ['SENTINEL_FP'],
+    transaction: '/api/sessions/a1b2c3d4e5f6',
+  } as unknown as ErrorEvent) as unknown as Record<string, unknown>;
+  assert.deepStrictEqual(out.tags, {}, 'an unallowlisted tag key survived');
+  assert.deepStrictEqual(out.fingerprint, [], 'a fingerprint value survived');
+  // KEPT, because it is the route — but route-shaped, because on the browser SDK
+  // it is derived from location.pathname, the channel request.url just closed.
+  assert.strictEqual(out.transaction, '/api/sessions/:id');
+  assert.ok(!JSON.stringify(out).includes('SENTINEL_'), 'a sentinel is still on the wire');
+});
+
+test('a NON-STRING request.url is deleted, not passed through', () => {
+  const out = scrubEvent({
+    request: { url: 12345 as unknown as string, method: 'GET' },
+  } as unknown as ErrorEvent);
+  assert.strictEqual(out.request?.url, undefined);
+  assert.strictEqual(out.request?.method, 'GET');
 });
