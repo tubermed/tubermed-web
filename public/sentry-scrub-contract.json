@@ -1,0 +1,26 @@
+{
+  "_comment": "CANONICAL contract for the Sentry PII scrub. tubermed-web/lib/sentry-scrub.ts and tubermed-backend/lib/sentry-scrub.js are two independent implementations of THIS document; each repo's own gate executes its implementation against it, and tubermed-backend/scripts/verify-mirror.js byte-compares its copy against this one. That composition is what makes 'the two scrubbers agree' a checked fact instead of a comment. Do NOT let an implementation read this file — an implementation that reads its own spec agrees with it by construction.",
+  "version": 1,
+  "why": "This is a medical product handling special-category data. An error payload must never carry a transcript, a request body, credentials, identity, or console context. sendDefaultPii:false prevents most of it; this contract makes it a guarantee.",
+  "delete": [
+    "request.data",
+    "request.cookies",
+    "request.headers",
+    "request.query_string",
+    "user",
+    "breadcrumbs",
+    "extra",
+    "contexts"
+  ],
+  "url": {
+    "path": "request.url",
+    "policy": "origin_and_pathname",
+    "drop": ["search", "hash"],
+    "why": "On the browser SDK path query_string is never emitted at all — the query lives INSIDE request.url. What rides there: ?visit=<consultation uuid>, ?q=<free-text admin search>, and ?session=<sessionId>, which is the phone-upload credential. Deleting query_string and leaving request.url alone closed a channel that was never open and left the one that was."
+  },
+  "keep": [
+    "exception",
+    "request.method"
+  ],
+  "keep_why": "The exception message and stack are what actually fix bugs, and they are verified non-PII (fixed literals / API strings). The method is a bare verb."
+}

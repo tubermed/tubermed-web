@@ -1,0 +1,241 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Sentry PII scrub — executed against the shared contract
+// ─────────────────────────────────────────────────────────────────────────────
+// Run: npm test   (node --test, Node 24 strips the types natively.)
+//
+// WHY THIS FILE REPLACES scripts/sentry-scrub.ts (T-041 / T-044).
+//
+// 1. THE OLD FILE NEVER RAN. It was `scripts/sentry-scrub.ts`, and the suite is
+//    `node --test scripts/*.test.ts` — one letter of glob away from being a
+//    test. Its header said „run with: npx tsx scripts/sentry-scrub.ts", and
+//    nothing in package.json or .github/workflows/ci.yml did. A gate nobody
+//    invokes is the vacuity shape by a fourth route: it did not fail, it did
+//    not RUN. The rename is half this commit's value.
+//
+// 2. IT AGREED WITH ITS OWN FIXTURE. The scrub deleted `request.query_string` —
+//    a field the browser SDK never emits; the query rides inside `request.url`.
+//    The fixture URL was "https://app.tubermed.com/app/scribe/result", with no
+//    query string at all, and the final assertion positively REQUIRED that URL
+//    to survive, labelled "non-PII request.url NOT over-scrubbed". So the one
+//    assertion that touched the hole asserted the hole. What rides there:
+//        ?visit=<consultation uuid> · ?q=<free-text admin search> ·
+//        ?session=<sessionId>, the phone-upload CREDENTIAL.
+//    This fixture carries all three plus a fragment, and the assertion is
+//    inverted: the query must NOT survive, the path must.
+//
+// 3. THE MIRROR CLAIM WAS PROSE, AND FALSE (T-044). lib/sentry-scrub.ts said it
+//    mirrored the backend „EXACTLY" while omitting `extra` and `contexts`,
+//    which the backend had dropped since B-1. Both sides now implement
+//    public/sentry-scrub-contract.json — byte-mirrored into tubermed-backend
+//    and verified there by scripts/verify-mirror.js, tokenlessly, on every
+//    push. Each repo executes ITS implementation against ITS copy; byte-identity
+//    of the contract plus two passing gates is what makes „they agree" checked.
+//
+// ANTI-VACUITY. Every channel the contract names must be PRESENT in the fixture
+// before the scrub, or „it is gone afterwards" measures nothing. And the whole
+// check runs against a do-nothing scrub and against the exact pre-fix
+// implementation, both of which must FAIL — so the gate proves it can go red on
+// every invocation, not just the day it was written.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { test } from 'node:test';
+import assert from 'node:assert';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import type { ErrorEvent } from '@sentry/nextjs';
+import { scrubEvent, scrubUrl } from '../lib/sentry-scrub.ts';
+
+const REPO = path.resolve(import.meta.dirname, '..');
+
+interface Contract {
+  version: number;
+  delete: string[];
+  keep: string[];
+  url: { path: string; policy: string; drop: string[] };
+}
+
+const CONTRACT: Contract = JSON.parse(
+  readFileSync(path.join(REPO, 'public', 'sentry-scrub-contract.json'), 'utf8'),
+);
+
+// ── Contract sanity ──────────────────────────────────────────────────────────
+test('the contract loaded and is the policy this gate knows how to check', () => {
+  assert.ok(
+    Array.isArray(CONTRACT.delete) && CONTRACT.delete.length >= 6,
+    `VACUOUS: contract.delete has ${CONTRACT.delete?.length ?? 0} entries`,
+  );
+  assert.ok(Array.isArray(CONTRACT.keep) && CONTRACT.keep.length > 0, 'VACUOUS: contract.keep is empty');
+  assert.strictEqual(CONTRACT.url.path, 'request.url');
+  assert.strictEqual(CONTRACT.url.policy, 'origin_and_pathname');
+});
+
+// ── Dot-path helpers ─────────────────────────────────────────────────────────
+type Bag = Record<string, unknown>;
+const getPath = (o: unknown, p: string): unknown =>
+  p.split('.').reduce<unknown>((n, k) => (n == null ? undefined : (n as Bag)[k]), o);
+
+function setPath(o: Bag, p: string, v: unknown): void {
+  const ks = p.split('.');
+  let n: Bag = o;
+  for (const k of ks.slice(0, -1)) {
+    if (n[k] == null) n[k] = {};
+    n = n[k] as Bag;
+  }
+  n[ks[ks.length - 1]] = v;
+}
+
+// ── The fixture ──────────────────────────────────────────────────────────────
+const CONSULTATION_UUID = '3f2b91c4-0e77-4a1d-9c55-8a0d61b2e4aa';
+const ADMIN_SEARCH = 'иванов';
+const SESSION_CREDENTIAL = 'a1b2c3d4e5f6';
+const DIRTY_URL =
+  `https://app.tubermed.com/app/scribe/result?visit=${CONSULTATION_UUID}` +
+  `&q=${encodeURIComponent(ADMIN_SEARCH)}&session=${SESSION_CREDENTIAL}#tab=SENTINEL_FRAGMENT`;
+const CLEAN_URL = 'https://app.tubermed.com/app/scribe/result';
+const SECRETS = [CONSULTATION_UUID, ADMIN_SEARCH, SESSION_CREDENTIAL, 'SENTINEL_FRAGMENT'];
+
+const FILLER: Record<string, unknown> = {
+  'request.data': { transcript: 'SENTINEL_BODY', egn: '7501010010' },
+  'request.cookies': { tuber_auth: 'SENTINEL_JWT' },
+  'request.headers': { Authorization: 'Bearer SENTINEL_JWT', 'X-Admin-Secret': 'SENTINEL_ADMIN' },
+  'request.query_string': `visit=${CONSULTATION_UUID}`,
+  user: { id: 'doctor-1', ip_address: '1.2.3.4', email: 'doc@example.test' },
+  breadcrumbs: [{ message: 'SENTINEL_BREADCRUMB' }],
+  extra: { note: 'SENTINEL_EXTRA' },
+  contexts: { visit: { id: 'SENTINEL_CONTEXT' } },
+};
+
+function fixture(): ErrorEvent {
+  const event: Bag = {
+    exception: { values: [{ type: 'Error', value: 'boom' }] },
+    request: { url: DIRTY_URL, method: 'POST' },
+  };
+  for (const p of CONTRACT.delete) {
+    assert.ok(p in FILLER, `VACUOUS: contract names "${p}" but the fixture has nothing to put there`);
+    setPath(event, p, FILLER[p]);
+  }
+  return event as unknown as ErrorEvent;
+}
+
+type Scrub = (e: ErrorEvent) => ErrorEvent;
+
+// Taking the scrub as an argument is what lets the gate be pointed at a
+// deliberately broken one and shown to go red, on every run.
+function violations(scrub: Scrub): string[] {
+  const bad: string[] = [];
+  const event = fixture();
+  for (const p of CONTRACT.delete) {
+    if (getPath(event, p) === undefined) bad.push(`FIXTURE: "${p}" was already absent before the scrub`);
+  }
+  if (bad.length) return bad;
+
+  const out = scrub(event);
+  if (!out) return ['the scrub returned nothing'];
+
+  for (const p of CONTRACT.delete) {
+    if (getPath(out, p) !== undefined) bad.push(`"${p}" survived the scrub`);
+  }
+  for (const p of CONTRACT.keep) {
+    if (getPath(out, p) === undefined) bad.push(`"${p}" was over-scrubbed — the contract keeps it`);
+  }
+  const url = getPath(out, CONTRACT.url.path);
+  if (url !== CLEAN_URL) bad.push(`request.url is "${String(url)}", expected "${CLEAN_URL}"`);
+
+  // A path-by-path check only finds what it names; this arm finds the rest.
+  const wire = JSON.stringify(out);
+  for (const s of SECRETS) if (wire.includes(s)) bad.push(`sentinel «${s}» still on the wire`);
+  return bad;
+}
+
+// The implementation as it stood before T-041, verbatim, so the gate carries the
+// defect it was written for and cannot quietly stop covering it.
+const legacyScrub: Scrub = (event) => {
+  if (event.request) {
+    delete event.request.data;
+    delete event.request.cookies;
+    delete event.request.headers;
+    delete event.request.query_string;
+  }
+  delete event.user;
+  delete event.breadcrumbs;
+  return event;
+};
+
+// ── 1 · the gate is not blind ────────────────────────────────────────────────
+
+test('a do-nothing scrub fails the contract', () => {
+  const bad = violations((e) => e);
+  assert.ok(
+    bad.length >= CONTRACT.delete.length,
+    `only ${bad.length} violation(s) reported for a scrub that does nothing`,
+  );
+});
+
+test('the PRE-FIX implementation fails — on the URL, and on extra/contexts', () => {
+  const bad = violations(legacyScrub);
+  assert.ok(bad.length > 0, 'the pre-fix scrub passed — this gate cannot catch T-041');
+  assert.ok(
+    bad.some((v) => v.includes(CONSULTATION_UUID)),
+    `the consultation id was not reported as leaking:\n  ${bad.join('\n  ')}`,
+  );
+  assert.ok(
+    bad.some((v) => v.includes(SESSION_CREDENTIAL)),
+    `the phone-upload credential was not reported as leaking:\n  ${bad.join('\n  ')}`,
+  );
+  assert.ok(
+    bad.some((v) => v.includes('"extra"')) && bad.some((v) => v.includes('"contexts"')),
+    `T-044: extra/contexts were not reported as surviving:\n  ${bad.join('\n  ')}`,
+  );
+});
+
+// ── 2 · the shipped scrub ────────────────────────────────────────────────────
+
+test('the shipped scrub satisfies the contract', () => {
+  assert.deepStrictEqual(violations(scrubEvent), []);
+});
+
+test('the query does NOT survive and the path DOES', () => {
+  const out = scrubEvent(fixture());
+  assert.strictEqual(out.request?.url, CLEAN_URL);
+  assert.ok(!JSON.stringify(out).includes(SESSION_CREDENTIAL), 'the session credential is still on the wire');
+  assert.ok(out.exception !== undefined, 'the exception was over-scrubbed — it is what fixes bugs');
+});
+
+// ── 3 · URL reduction, case by case ──────────────────────────────────────────
+
+test('request.url is reduced to origin + pathname in every shape', () => {
+  const cases: Array<[string, string, string]> = [
+    ['query stripped', 'https://a.tubermed.com/p?visit=x', 'https://a.tubermed.com/p'],
+    ['fragment stripped', 'https://a.tubermed.com/p#h', 'https://a.tubermed.com/p'],
+    ['query and fragment stripped', 'https://a.tubermed.com/p?q=x#h', 'https://a.tubermed.com/p'],
+    ['clean URL untouched', 'https://a.tubermed.com/p', 'https://a.tubermed.com/p'],
+    ['root path kept', 'https://a.tubermed.com/', 'https://a.tubermed.com/'],
+    ['userinfo dropped with the origin', 'https://u:pw@a.tubermed.com/p?x=1', 'https://a.tubermed.com/p'],
+    ['relative URL, query stripped', '/api/sessions/abc?session=cred', '/api/sessions/abc'],
+    ['relative URL, fragment stripped', '/api/x#frag', '/api/x'],
+    ['unparseable input is cut, never widened', 'not a url?session=cred', 'not a url'],
+    ['empty string survives as itself', '', ''],
+    [
+      'percent-encoded Cyrillic query stripped',
+      'https://a.tubermed.com/adm?q=%D0%B8%D0%B2%D0%B0%D0%BD%D0%BE%D0%B2',
+      'https://a.tubermed.com/adm',
+    ],
+  ];
+  for (const [why, input, expect] of cases) {
+    assert.strictEqual(scrubUrl(input), expect, why);
+  }
+});
+
+// ── 4 · shapes Sentry really sends ───────────────────────────────────────────
+
+test('the scrub does not throw on the shapes Sentry really sends', () => {
+  const shapes: Array<[string, ErrorEvent]> = [
+    ['no request at all', { exception: { values: [] } } as unknown as ErrorEvent],
+    ['request with no url', { request: { method: 'GET' } } as unknown as ErrorEvent],
+    ['url that is not a string', { request: { url: 12345 } } as unknown as ErrorEvent],
+    ['an already-scrubbed event', scrubEvent(fixture())],
+  ];
+  for (const [why, e] of shapes) {
+    assert.doesNotThrow(() => scrubEvent(e), why);
+  }
+});

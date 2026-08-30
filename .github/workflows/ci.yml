@@ -83,7 +83,10 @@ jobs:
         id: changes
         run: |
           set -u
-          MIRROR_FILES="public/ial-inns.json public/mkb10.json"
+          # public/sentry-scrub-contract.json (2026-08-30) is the canonical Sentry
+          # scrub contract; tubermed-backend carries lib/sentry-scrub-contract.json
+          # and each repo executes its own implementation against its own copy.
+          MIRROR_FILES="public/ial-inns.json public/mkb10.json public/sentry-scrub-contract.json"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git fetch origin "${{ github.base_ref }}" --depth=50 || true
             range="$(git merge-base "origin/${{ github.base_ref }}" HEAD)..HEAD"
@@ -105,7 +108,7 @@ jobs:
       - name: A mirrored register file changed — verify from tubermed-backend
         if: steps.changes.outputs.mirror_changed == 'true'
         run: |
-          echo "::error::public/ial-inns.json or public/mkb10.json changed in this push. This repo CANNOT verify byte-identity — tubermed-backend is private. Land the matching commit in tubermed-backend; its CI runs 'node scripts/verify-mirror.js' against this repo's canon with no token and will fail until the two agree."
+          echo "::error::A mirrored file (public/ial-inns.json, public/mkb10.json, public/sentry-scrub-contract.json) changed in this push. This repo CANNOT verify byte-identity — tubermed-backend is private. Land the matching commit in tubermed-backend; its CI runs 'node scripts/verify-mirror.js' against this repo's canon with no token and will fail until the two agree."
           exit 1
       # Nothing was claimed about byte-identity, so nothing false is reported.
       - name: No mirrored file changed in this push
