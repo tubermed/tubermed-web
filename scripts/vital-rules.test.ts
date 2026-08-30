@@ -45,6 +45,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { findHighlights, VITAL_RULES } from '../lib/vital-rules.ts';
 
@@ -284,8 +285,15 @@ test('the shipped обективно vitals line marks exactly its abnormal valu
 
 // ── The invariant, swept ─────────────────────────────────────────────────────
 // Built over the COMMITTED lab lexicon (lib/lab-lexicon.json, auto-generated
-// from the backend's LAB_ENTRIES) rather than a list typed here, so the sweep
-// grows with the vocabulary instead of with this file.
+// from the backend's LAB_ENTRIES) so the sweep grows with the vocabulary.
+//
+// ⚠ BUT THE LEXICON DOES NOT CONTAIN THE VOCABULARY THAT CAUSED THE BUG. Its 38
+// labels include none of Hct, PLT, Hb, Leu, Ht, or Latin GGT — every
+// abbreviation in the triage. Claiming the sweep „grows with the vocabulary
+// instead of with this file" was true and beside the point: all of its purchase
+// on THIS defect came from two lines appended at the end. So the haematology
+// abbreviations are written out below, declared as what they are — a hardcoded
+// list — rather than left to a lexicon that does not carry them.
 
 function labLexiconLabels(): string[] {
   const raw = readFileSync(path.join(REPO, 'lib', 'lab-lexicon.json'), 'utf8');
@@ -296,8 +304,18 @@ function labLexiconLabels(): string[] {
 
 const RESULT_VALUES = ['12', '26', '30', '41', '42', '44', '88', '138', '245', '6.4', '2.30'];
 
+// HARDCODED, and named as such: the abbreviations a Bulgarian lab report prints
+// that the committed lexicon does not carry. Every one contains a letter some
+// rule's keyword alternation can match — that is the whole class.
+const REPORT_ABBREVIATIONS = [
+  'Hb', 'Hct', 'Ht', 'PLT', 'Leu', 'Er', 'MCV', 'MCH', 'RDW', 'WBC', 'RBC',
+  'ALT', 'AST', 'GGT', 'ALP', 'LDH', 'CK', 'CK-MB', 'aPTT', 'PT', 'INR',
+  'Na', 'K', 'Cl', 'Ca', 'Mg', 'P', 'Fe', 'TSH', 'FT4', 'FT3', 'CRP', 'ESR',
+  'Trop T', 'Tn T', 'cTnT', 'NT-proBNP', 'HbA1c', 'eGFR', 'ЧСС-вариабилност',
+];
+
 function sweepCorpus(): string[] {
-  const labels = labLexiconLabels();
+  const labels = [...labLexiconLabels(), ...REPORT_ABBREVIATIONS];
   const lines: string[] = [];
   for (const l of labels) for (const v of RESULT_VALUES) lines.push(`Изследвания: ${l} ${v}`);
   for (let i = 0; i < labels.length; i += 4) {
@@ -317,13 +335,65 @@ function sweepCorpus(): string[] {
   return lines;
 }
 
-test('no lab-result line built from the committed lexicon produces a vital mark', () => {
+// ── KNOWN false positives, pinned rather than hidden ─────────────────────────
+// Standing rule (CLAUDE.md): „known false-positive modes stay in the fixture
+// list as permanent expected reds, because an undocumented FP mode gets believed
+// when it should be checked."
+//
+// TROPONIN T. The left boundary fixed `t` INSIDE a word (Hct, PLT, ALT). It does
+// nothing for `t` at the START of one — and a standalone Latin `T` is a whole
+// lab name. „Тропонин T 45 ng/l" renders as vital-critical Висока температура,
+// and the collision is exact: troponin T's actionable ACS band is 25–45 ng/L and
+// the temperature rule's plausibility band is 25–45 °C. Nothing lexical
+// separates „T 45" from the brief's own positive control „t 37.8" — only the
+// value does, and the values overlap.
+//
+// NOT FIXED HERE, deliberately. Requiring the degree sign would kill „t 37.8";
+// excluding a list of lab prefixes is the denylist-of-spellings shape a refuter
+// would drive straight through; and a preceding-token context test is a NEW
+// MECHANISM, not the boundary fix this change is scoped to. It needs a ruling.
+// The Cyrillic spelling „Тропонин Т 45" does NOT fire (`т°` requires the degree
+// sign), so the exposure is Latin `T` — which is what lab printouts use.
+const KNOWN_FP_LAB = ['Trop T', 'Tn T'];
+
+test('KNOWN residual: a standalone Latin T before a 2-digit value still marks', () => {
+  // Asserted as CURRENT behaviour so that fixing it goes red on purpose and
+  // forces this comment to be updated with the ruling.
+  const marks = vitals('Тропонин T 45 ng/l (реф. < 14)');
+  assert.strictEqual(marks.length, 1, 'the residual changed — re-read the ruling above');
+  assert.strictEqual(marks[0].kind, 'vital-critical');
+  assert.strictEqual(marks[0].label, 'Температура');
+  // The Cyrillic spelling is clean, and that asymmetry is the whole exposure.
+  assert.deepStrictEqual(vitals('Тропонин Т 45 ng/l').map((m) => m.raw), []);
+});
+
+test('KNOWN residual: a stated RANGE is consumed as a measurement', () => {
+  // „Целева сатурация 88-92%" is the textbook COPD target; writing the PLAN
+  // renders a red hypoxaemia critical. Same shape on „RR 12-20/мин" (RR is
+  // Riva-Rocci here but respiratory rate internationally, and `-` is one of the
+  // BP rule's own systolic/diastolic separators). A right-hand range test would
+  // close both, but it is a new mechanism and it collides with the BP rule,
+  // where `160-95` IS a legitimate reading. Ruling owed.
+  const sat = vitals('Целева сатурация 88-92% при ХОББ.');
+  assert.strictEqual(sat.length, 1);
+  assert.strictEqual(sat[0].kind, 'vital-critical');
+  const rr = vitals('RR 12-20/мин');
+  assert.strictEqual(rr.length, 1);
+  assert.match(rr[0].message, /Невалидна стойност/);
+});
+
+test('no lab-result line built from the lexicon or the report abbreviations marks', () => {
   const offenders: string[] = [];
+  let pinnedSeen = 0;
   for (const line of sweepCorpus()) {
-    // Probe lines are meant to fire; the lexicon lines are not.
+    // Probe lines are meant to fire; the lab lines are not.
     if (!line.startsWith('Изследвания: ') && !line.startsWith('ПКК: ')) continue;
+    if (KNOWN_FP_LAB.some((k) => line.includes(k))) { pinnedSeen++; continue; }
     for (const m of vitals(line)) offenders.push(`«${m.raw}» ${m.kind} ${m.label} — in: ${line}`);
   }
+  // The exclusion must not silently cover nothing — if the pinned shapes stop
+  // appearing in the corpus, the pin has become decoration.
+  assert.ok(pinnedSeen > 0, 'VACUOUS: the KNOWN_FP exclusion matched no line at all');
   assert.deepStrictEqual(offenders, [], `spurious vital marks on lab-result lines:\n  ${offenders.join('\n  ')}`);
 });
 
@@ -346,36 +416,200 @@ test('every mark ever returned begins at a word start', () => {
   );
 });
 
+// ── 3b · The layers a refuter walked through ─────────────────────────────────
+// 29 mutations were applied to the real lib/vital-rules.ts and run against this
+// gate; 14 passed, 12 of them changing real behaviour. Each test below closes
+// one of the families that got through.
+
+test('a rejected candidate does not stop the rule for the rest of the text', () => {
+  // FIRST-OCCURRENCE. Changing `continue` to `break` in findVitalMatches passed
+  // all 12 tests and the whole 465-test suite, because every probe and every
+  // threshold case put the keyword at index 0 with nothing rejected before it —
+  // and the two lines that DO contain rejected candidates assert ZERO marks,
+  // which `break` also satisfies. A real fever after a lab value went silent.
+  for (const [line, expect] of [
+    ['PLT 245, t 39.5', 'Висока температура'],
+    ['ALT 30, AST 26, GGT 26, t 40.1', 'Висока температура'],
+    ['Изследвания: Hct 42, PLT 245. Обективно: ЧСС 132', 'Тежка тахикардия'],
+  ] as Array<[string, string]>) {
+    const marks = vitals(line);
+    assert.strictEqual(marks.length, 1, `no mark after a rejected candidate: "${line}"`);
+    assert.match(marks[0].message, new RegExp(expect));
+  }
+});
+
+test('the boundary is the complement of a word char, not a list of separators', () => {
+  // PARTITION SOLD AS A BOUNDARY. Replacing the predicate with an allowlist
+  // /[\s.,;:()%|]/ passed all 12 tests, because every probe preceded its keyword
+  // with a space, a colon or a pipe. Clinical text is punctuated by more.
+  for (const line of ['**t 38.5**', '—t 38.5', '«АН 185/115»', '·ЧСС 112', '(t 38.5)', '„t 38.5"', '\u2013t 38.5']) {
+    assert.ok(vitals(line).length > 0, `a real vital stopped marking after punctuation: "${line}"`);
+  }
+});
+
+test('the boundary holds on a long note, far from index 0', () => {
+  // DISABLED CONTROL. `if (text.length < 200 && !startsAtWordStart(...))` and
+  // `if (m.index < 100 && ...)` both passed all 12 tests: the gate's longest
+  // string was 73 chars and its largest match index under 60.
+  const prefix =
+    'Обективно състояние: общото състояние е добро, съзнанието ясно, ориентиран за време и място, ' +
+    'кожа и видими лигавици с обичаен цвят, без периферни отоци, дишането е чисто везикуларно ' +
+    'двустранно без хрипове, сърдечната дейност ритмична. ';
+  assert.ok(prefix.length > 200, 'the long-note prefix is no longer long');
+  assert.deepStrictEqual(
+    vitals(prefix + 'ПКК: Hb 138 g/l, Hct 42%, PLT 245, Leu 6.4').map((m) => m.raw),
+    [],
+    'the boundary is length-gated — it stops applying on a real-length note',
+  );
+  assert.deepStrictEqual(
+    vitals(prefix + 'Лозартан 25-100 мг дневно').map((m) => m.raw),
+    [],
+    'the boundary is index-gated — it stops applying past a real-length prefix',
+  );
+  // …and a real vital that far in must still mark.
+  assert.strictEqual(vitals(prefix + 't 39.5').length, 1);
+});
+
+test('the captured value has a right boundary — a longer number is not truncated', () => {
+  // Every quantifier is left-anchored, so "ДЧ 112" was read as «ДЧ 11» →
+  // "Брадипнея", inverting the clinical direction of a tachypnoea.
+  for (const line of ['ДЧ 112', 'ЧД 100', 'ЧСС 1120', 'пулс 1200', 't 385', 'SpO2 1000']) {
+    assert.deepStrictEqual(vitals(line).map((m) => m.raw), [], `truncated number still marks: "${line}"`);
+  }
+  // The whitespace clause is the part that can silently over-scrub: several
+  // patterns end in a greedy `\\s*`, so a value followed by a SEPARATE numeric
+  // token must still mark. Without these three the check would look correct
+  // and quietly delete real fevers.
+  assert.strictEqual(vitals('t 38.6 120').length, 1, 'a fever followed by a separate number stopped marking');
+  assert.strictEqual(vitals('ЧСС 112 уд/мин').length, 1, 'a real HR with a unit stopped marking');
+  assert.strictEqual(vitals('t°: 38,1°C | SpO2: 93%').length, 2, 'a real vitals pair stopped marking');
+});
+
+test('the alternations were not widened past what the probes pin', () => {
+  // The coverage layer anchors `^(?:<alternative>)` against the probes, so
+  // WIDENING an alternative a probe still matches is invisible to it: `t°?` →
+  // `[tт]°?` and `HR` → `HR?` both passed. These negative controls pin the
+  // current reach directly.
+  assert.deepStrictEqual(vitals('т 38.5').map((m) => m.raw), [], 'bare Cyrillic т without ° now marks');
+  assert.deepStrictEqual(vitals('H 138').map((m) => m.raw), [], 'bare H now marks as a heart rate');
+  assert.deepStrictEqual(vitals('155/95').map((m) => m.raw), [], 'a bare ratio now marks as a blood pressure');
+  assert.deepStrictEqual(vitals('R 155/95').map((m) => m.raw), [], 'a single R now marks as a blood pressure');
+});
+
+test('the boundary holds under NODE_ENV=production — the one config CI never sets', () => {
+  // DISABLED CONTROL, the env variant:
+  //   if (process.env.NODE_ENV !== 'production' && !startsAtWordStart(...))
+  // passed all 12 tests, because nothing here ever set NODE_ENV — so the gate
+  // was green in CI and the defect was back on every string in the deployed
+  // build. This repo has the shape on file already: the RETAIN_AUDIO_BLOBS boot
+  // guard tested `NODE_ENV === 'production'` while NOTHING in either repo or
+  // Railway ever sets NODE_ENV, so the lock was inert in prod for months.
+  //
+  // Run in a CHILD process, because the module is already imported here and a
+  // later process.env write would not re-evaluate it.
+  const probe = [
+    "const { findHighlights } = await import(process.argv[1]);",
+    "const v = (s) => findHighlights(s).filter((h) => h.kind.startsWith('vital-'));",
+    "const bad = [];",
+    "if (v('ПКК: Hb 138 g/l, Hct 42%, PLT 245, Leu 6.4').length) bad.push('haematology line marks');",
+    "if (v('Изследвания: PLT 210, Hct 44, ALT 30, GGT 26, Ht 41').length) bad.push('lab line marks');",
+    "if (v('Лозартан 25-100 мг дневно').length) bad.push('sartan dose range marks');",
+    "if (v('ДЧ 112').length) bad.push('truncated number marks');",
+    "if (v('t 37.8').length !== 1) bad.push('positive control stopped marking');",
+    "if (v('RR 120/80, ЧСС 72').length) bad.push('negative control marks');",
+    "console.log(bad.join(' | '));",
+    "process.exit(bad.length ? 1 : 0);",
+  ].join('\n');
+
+  const modUrl = new URL('../lib/vital-rules.ts', import.meta.url).href;
+  const res = spawnSync(
+    process.execPath,
+    ['--input-type=module', '--eval', probe, modUrl],
+    { env: { ...process.env, NODE_ENV: 'production' }, encoding: 'utf8' },
+  );
+  // A harness that could not run is NOT a pass — exit 126/127 is not a verdict.
+  assert.ok(
+    res.status === 0 || res.status === 1,
+    `VACUOUS: the NODE_ENV probe did not run (status ${res.status}): ${res.stderr}`,
+  );
+  assert.strictEqual(
+    res.status,
+    0,
+    `the boundary behaves differently under NODE_ENV=production: ${res.stdout.trim()}`,
+  );
+});
+
 // ── 4 · Thresholds ───────────────────────────────────────────────────────────
 // One assertion per rule per cut point. The boundary is a single shared
 // function; without these, a mutation to any individual classifier would sail
 // through a gate that only ever asked about boundaries.
 
+// ⚠ ONE NORMAL EXEMPLAR PER RULE IS A POINT CHECK DRESSED AS AN INTERVAL CHECK.
+// The first version of this table carried exactly one normal value per rule, so
+// every cut point could be moved to just past it and stay green: a refuter
+// pulled the hypertensive-crisis threshold from 180/110 down to 150/92 and
+// „RR: 155/95" — a committed baseline value — went from amber Хипертония to the
+// reserved medication-safety RED, with all 12 tests passing. Four thresholds
+// fell to the same edit. Every cut point now carries BOTH sides of its edge.
 const CLASSIFY: Array<[string, string, string | null, RegExp | null]> = [
-  ['t 33.0', 'temp', 'vital-critical', /Тежка хипотермия/],
-  ['t 35.0', 'temp', 'vital-warn', /Хипотермия/],
+  // temp — edges at 34 / 35.5 / 37.5 / 39, plausibility band 25–45
+  ['t 24.9', 'temp', null, null],
+  ['t 25.0', 'temp', 'vital-critical', /Тежка хипотермия/],
+  ['t 33.9', 'temp', 'vital-critical', /Тежка хипотермия/],
+  ['t 34.0', 'temp', 'vital-warn', /Хипотермия/],
+  ['t 35.4', 'temp', 'vital-warn', /Хипотермия/],
+  ['t 35.5', 'temp', null, null],
   ['t 36.6', 'temp', null, null],
+  ['t 37.5', 'temp', null, null],
+  ['t 37.6', 'temp', 'vital-warn', /Фебрилитет/],
   ['t 37.8', 'temp', 'vital-warn', /Фебрилитет/],
-  ['t 39.5', 'temp', 'vital-critical', /Висока температура/],
-  ['t 46.0', 'temp', null, null], // out of physiological range → not a temperature
+  ['t 39.0', 'temp', 'vital-warn', /Фебрилитет/],
+  ['t 39.1', 'temp', 'vital-critical', /Висока температура/],
+  ['t 45.0', 'temp', 'vital-critical', /Висока температура/],
+  ['t 45.1', 'temp', null, null],
+  ['t 46.0', 'temp', null, null],
+  // bp — data sanity first, then 180/110, 90/60, 140/90
   ['RR 60/90', 'bp', 'vital-critical', /Невалидна стойност/],
-  ['RR 185/95', 'bp', 'vital-critical', /Хипертонична криза/],
-  ['RR 145/88', 'bp', 'vital-warn', /Хипертония/],
-  ['RR 85/55', 'bp', 'vital-warn', /Хипотония/],
+  ['RR 120/120', 'bp', 'vital-critical', /Невалидна стойност/],
+  ['RR 180/109', 'bp', 'vital-critical', /Хипертонична криза/],
+  ['RR 179/110', 'bp', 'vital-critical', /Хипертонична криза/],
+  ['RR 179/109', 'bp', 'vital-warn', /Хипертония/],
+  ['RR 140/89', 'bp', 'vital-warn', /Хипертония/],
+  ['RR 139/90', 'bp', 'vital-warn', /Хипертония/],
+  ['RR 139/89', 'bp', null, null],
+  ['RR 155/95', 'bp', 'vital-warn', /Хипертония/],  // a committed baseline value
   ['RR 120/80', 'bp', null, null],
-  ['ЧСС 38', 'hr', 'vital-critical', /Тежка брадикардия/],
-  ['ЧСС 52', 'hr', 'vital-warn', /Брадикардия/],
+  ['RR 90/60', 'bp', null, null],
+  ['RR 89/60', 'bp', 'vital-warn', /Хипотония/],
+  ['RR 90/59', 'bp', 'vital-warn', /Хипотония/],
+  // hr — 40 / 60 / 100 / 130, plausibility band 20–250
+  ['ЧСС 39', 'hr', 'vital-critical', /Тежка брадикардия/],
+  ['ЧСС 40', 'hr', 'vital-warn', /Брадикардия/],
+  ['ЧСС 59', 'hr', 'vital-warn', /Брадикардия/],
+  ['ЧСС 60', 'hr', null, null],
   ['ЧСС 72', 'hr', null, null],
-  ['ЧСС 112', 'hr', 'vital-warn', /Тахикардия/],
-  ['ЧСС 142', 'hr', 'vital-critical', /Тежка тахикардия/],
-  ['SpO2 88', 'spo2', 'vital-critical', /Тежка хипоксемия/],
-  ['SpO2 93', 'spo2', 'vital-warn', /Гранична сатурация/],
+  ['ЧСС 88', 'hr', null, null],
+  ['ЧСС 100', 'hr', null, null],
+  ['ЧСС 101', 'hr', 'vital-warn', /Тахикардия/],
+  ['ЧСС 130', 'hr', 'vital-warn', /Тахикардия/],
+  ['ЧСС 131', 'hr', 'vital-critical', /Тежка тахикардия/],
+  // spo2 — 90 / 95, plausibility band 50–100
+  ['SpO2 89', 'spo2', 'vital-critical', /Тежка хипоксемия/],
+  ['SpO2 90', 'spo2', 'vital-warn', /Гранична сатурация/],
+  ['SpO2 94', 'spo2', 'vital-warn', /Гранична сатурация/],
+  ['SpO2 95', 'spo2', null, null],
+  ['SpO2 96', 'spo2', null, null],
   ['SpO2 97', 'spo2', null, null],
-  ['ДЧ 6', 'rr', 'vital-critical', /Тежка брадипнея/],
-  ['ДЧ 10', 'rr', 'vital-warn', /Брадипнея/],
+  // rr — 8 / 12 / 24 / 30, plausibility band 4–60
+  ['ДЧ 7', 'rr', 'vital-critical', /Тежка брадипнея/],
+  ['ДЧ 8', 'rr', 'vital-warn', /Брадипнея/],
+  ['ДЧ 11', 'rr', 'vital-warn', /Брадипнея/],
+  ['ДЧ 12', 'rr', null, null],
   ['ДЧ 16', 'rr', null, null],
-  ['ДЧ 28', 'rr', 'vital-warn', /Тахипнея/],
-  ['ДЧ 34', 'rr', 'vital-critical', /Тежка тахипнея/],
+  ['ДЧ 24', 'rr', null, null],
+  ['ДЧ 25', 'rr', 'vital-warn', /Тахипнея/],
+  ['ДЧ 30', 'rr', 'vital-warn', /Тахипнея/],
+  ['ДЧ 31', 'rr', 'vital-critical', /Тежка тахипнея/],
 ];
 
 test('every rule classifies at its documented cut points', () => {

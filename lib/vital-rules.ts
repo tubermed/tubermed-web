@@ -164,11 +164,50 @@ export const VITAL_RULES: VitalRule[] = [
 // JS `\b` is defined over `[A-Za-z0-9_]` and the `u` flag does not change that,
 // so `/\bт/u` is true in the middle of a Cyrillic word and false at the start of
 // one — the exact inversion `scripts/ascii-boundary.test.ts` exists to catch.
+//
+// It is the COMPLEMENT of a word character, deliberately, not an allowlist of
+// separators: a refuter replaced it with /[\s.,;:()%|]/ and every gate stayed
+// green while „**t 38.5**", „—t 38.5" and „«АН 185/115»" silently stopped
+// marking. Clinical text is punctuated by more than five characters.
 const BOUNDARY_WORD_CHAR = /[\p{L}\p{N}]/u;
 
 function startsAtWordStart(text: string, index: number): boolean {
   if (index <= 0) return true;
   return !BOUNDARY_WORD_CHAR.test(text[index - 1]);
+}
+
+// ── Right boundary, on the NUMBER ────────────────────────────────────────────
+// The left boundary stopped a keyword matching mid-word. The captured VALUE had
+// the same hole on its right: every quantifier is left-anchored, so a longer
+// number was silently truncated to the first two or three digits — and the
+// clinical direction inverted with it. Measured on the shipped fix:
+//
+//     "ДЧ 112"    → «ДЧ 11»  Брадипнея — ДЧ 11/мин (под 12)     ← tachypnoea read as brady
+//     "ЧСС 1120"  → «ЧСС 112» Тахикардия
+//     "t 385"     → «t 38»   Фебрилитет — 38°C
+//
+// A digit immediately after a captured value means the number was cut, so the
+// match is not a measurement. Same shape as the left boundary, same rule: an
+// explicit character test, no `\b`. Requires the `d` flag on every pattern.
+// Implemented WITHOUT the `d` flag: capture-group offsets would be the direct
+// way to say this, but `d` requires target es2022 and this project targets
+// lower — tsc rejects it outright (TS1501). The equivalent statement over the
+// whole match: a digit immediately after a match that does NOT end in
+// whitespace means the number was cut mid-way.
+//
+// The whitespace clause is load-bearing, not defensive. Several patterns end in
+// a greedy `\s*`, so on "t 36.6 120" the match is "t 36.6 " — trailing space
+// included — and the following "1" is a SEPARATE token, not a truncation. Test
+// the raw next character alone and that legitimate temperature stops marking.
+const DIGIT = /[0-9]/;
+const TRAILING_SPACE = /\s$/;
+
+function endsAtNumberBoundary(text: string, m: RegExpExecArray): boolean {
+  const matched = m[0];
+  if (matched.length === 0) return true;
+  if (TRAILING_SPACE.test(matched)) return true; // the digit is a separate token
+  const after = text[m.index + matched.length];
+  return after === undefined || !DIGIT.test(after);
 }
 
 function findVitalMatches(text: string): HighlightMatch[] {
@@ -177,9 +216,17 @@ function findVitalMatches(text: string): HighlightMatch[] {
     rule.pattern.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = rule.pattern.exec(text))) {
-      if (!startsAtWordStart(text, m.index)) {
-        // Resume one character past the rejected start, not past the whole
-        // rejected span: a legitimate keyword may begin inside it.
+      if (!startsAtWordStart(text, m.index) || !endsAtNumberBoundary(text, m)) {
+        // Resume one character past the rejected start rather than past the
+        // whole rejected span. Over a 40 000-string fuzz the two are currently
+        // byte-identical — every pattern ends in a digit or trailing unit, so a
+        // rejected span cannot swallow a following keyword — so this is
+        // DEFENSIVE, not load-bearing today. Said plainly because the previous
+        // wording asserted a hazard the grammar makes unreachable, and a comment
+        // that cannot be shown to matter is decoration.
+        //
+        // `continue` is load-bearing, though: a refuter changed it to `break`
+        // and every gate stayed green while "PLT 245, t 39.5" lost its fever.
         rule.pattern.lastIndex = m.index + 1;
         continue;
       }
