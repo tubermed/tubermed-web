@@ -52,7 +52,18 @@ interface Contract {
   version: number;
   delete: string[];
   keep: string[];
-  url: { path: string; policy: string; drop: string[] };
+  url: {
+    path: string;
+    policy: string;
+    drop: string[];
+    segment_rules?: { by_shape?: unknown; by_position?: unknown };
+  };
+  message?: {
+    paths?: string[];
+    policy?: string;
+    allow_tags?: string[];
+    drop_params?: boolean;
+  };
 }
 
 const CONTRACT: Contract = JSON.parse(
@@ -96,7 +107,59 @@ test('the contract loaded and is the policy this gate knows how to check', () =>
   );
   assert.ok(Array.isArray(CONTRACT.keep) && CONTRACT.keep.length > 0, 'VACUOUS: contract.keep is empty');
   assert.strictEqual(CONTRACT.url.path, 'request.url');
-  assert.strictEqual(CONTRACT.url.policy, 'origin_and_pathname');
+  assert.strictEqual(CONTRACT.url.policy, 'route_shape');
+  assert.ok(
+    CONTRACT.url.segment_rules?.by_shape && CONTRACT.url.segment_rules?.by_position,
+    'VACUOUS: route_shape without segment_rules is not a policy',
+  );
+});
+
+// ── The message floor, hardcoded HERE for the same reason as the channel floor ─
+// Weakening contract.message in BOTH copies keeps them byte-identical, keeps
+// verify-mirror green, and weakens every contract-driven assertion about it in
+// lockstep. The mirror proves IDENTICAL, never STRONG.
+test('the contract never drops below this gate\'s own MESSAGE floor', () => {
+  assert.strictEqual(CONTRACT.message?.policy, 'tag_allowlist');
+  const REQUIRED_MESSAGE_PATHS = ['message', 'logentry'];
+  const missing = REQUIRED_MESSAGE_PATHS.filter((c) => !(CONTRACT.message?.paths ?? []).includes(c));
+  assert.deepStrictEqual(
+    missing,
+    [],
+    `the contract no longer covers ${missing.join(', ')}. The backend's lib/usage-caps.js ` +
+      'calls captureMessage today — this is not a hypothetical channel.',
+  );
+  assert.strictEqual(
+    CONTRACT.message?.drop_params,
+    true,
+    'logentry.params must be dropped — it is where the variable part lives.',
+  );
+  assert.ok(
+    Array.isArray(CONTRACT.message?.allow_tags) && CONTRACT.message.allow_tags.length > 0,
+    'VACUOUS: an allowlist policy with no allowlist',
+  );
+});
+
+test('message and logentry are scrubbed, and the allowlisted one survives', () => {
+  const out = scrubEvent({
+    exception: { values: [{ type: 'Error', value: 'boom' }] },
+    message: 'SENTINEL_MESSAGE пациентът съобщава',
+    logentry: { message: 'SENTINEL_LOGENTRY %s', params: ['SENTINEL_PARAM'], formatted: 'SENTINEL_LOGENTRY x' },
+  } as unknown as ErrorEvent) as unknown as Record<string, unknown>;
+
+  const REDACTED = '[redacted: message not on the tag allowlist]';
+  assert.strictEqual(out.message, REDACTED);
+  const le = out.logentry as Record<string, unknown>;
+  assert.strictEqual(le.message, REDACTED);
+  assert.strictEqual(le.params, undefined, 'logentry.params must not survive');
+  assert.ok(!JSON.stringify(out).includes('SENTINEL_'), 'a sentinel is still on the wire');
+
+  // POSITIVE CONTROL. Without it every assertion above is satisfied by a scrub
+  // that deletes all messages — and a captureMessage that arrives empty is not
+  // alerting, it is noise.
+  const kept = scrubEvent({
+    message: '[usage-caps] extraction on org: 41/40 in the rolling 24h window',
+  } as unknown as ErrorEvent) as unknown as Record<string, unknown>;
+  assert.strictEqual(kept.message, '[usage-caps] extraction on org: 41/40 in the rolling 24h window');
 });
 
 // ── Dot-path helpers ─────────────────────────────────────────────────────────
@@ -241,7 +304,23 @@ test('request.url is reduced to origin + pathname in every shape', () => {
     ['clean URL untouched', 'https://a.tubermed.com/p', 'https://a.tubermed.com/p'],
     ['root path kept', 'https://a.tubermed.com/', 'https://a.tubermed.com/'],
     ['userinfo dropped with the origin', 'https://u:pw@a.tubermed.com/p?x=1', 'https://a.tubermed.com/p'],
-    ['relative URL, query stripped', '/api/sessions/abc?session=cred', '/api/sessions/abc'],
+    // ⚠ THE FIXTURE THE RULING NAMES. This asserted the survivor
+    // '/api/sessions/abc' — where `abc` IS the session credential. It scrubbed
+    // one copy and asserted the other, which reads as „query = PII, path = safe".
+    ['relative URL, query stripped AND the id segment redacted',
+      '/api/sessions/abc?session=cred', '/api/sessions/:id'],
+    ['a real session id (12 hex, randomBytes(6)) is redacted by SHAPE',
+      '/api/sessions/a1b2c3d4e5f6/audio', '/api/sessions/:id/audio'],
+    ['a consultation UUID is redacted',
+      'https://a.tubermed.com/api/consultations/3f2b91c4-0e77-4a1d-9c55-8a0d61b2e4aa/approve',
+      'https://a.tubermed.com/api/consultations/:id/approve'],
+    ['a numeric id is redacted', '/api/doctors/12345/pin', '/api/doctors/:id/pin'],
+    // The route must SURVIVE — origin-only is the alternative the ruling
+    // rejected. Without these, „everything becomes :id" passes every assertion.
+    ['the ROUTE survives — non-id segments untouched', '/api/consultations/today', '/api/consultations/today'],
+    ['an allowlisted literal after a collection stays', '/api/sessions/mobile-page', '/api/sessions/mobile-page'],
+    ['a non-collection path is untouched',
+      'https://a.tubermed.com/app/scribe/result', 'https://a.tubermed.com/app/scribe/result'],
     ['relative URL, fragment stripped', '/api/x#frag', '/api/x'],
     ['unparseable input is cut, never widened', 'not a url?session=cred', 'not a url'],
     ['empty string survives as itself', '', ''],
@@ -322,7 +401,7 @@ test('a RELATIVE url is reduced through scrubEvent, not only through scrubUrl', 
   // every gate: the relative cases only ever called scrubUrl directly, and the
   // shapes list only asserted doesNotThrow.
   for (const [url, expect] of [
-    ['/api/sessions/abc?session=SENTINEL_VALUE', '/api/sessions/abc'],
+    ['/api/sessions/abc?session=SENTINEL_VALUE', '/api/sessions/:id'],
     ['/app/scribe/result?visit=SENTINEL_VALUE#h', '/app/scribe/result'],
     ['//cdn.example.test/x?q=SENTINEL_VALUE', '//cdn.example.test/x'],
     ['http://localhost:3000/x?q=SENTINEL_VALUE', 'http://localhost:3000/x'],
