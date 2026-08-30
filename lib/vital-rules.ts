@@ -33,7 +33,7 @@ export interface VitalRule {
   pattern: RegExp;
   classify: (
     m: RegExpExecArray
-  ) => { kind: 'vital-warn' | 'vital-critical'; message: string } | null;
+  ) => { kind: 'vital-warn' | 'vital-critical'; message: string; dataSanity?: boolean } | null;
 }
 
 // Exported so scripts/vital-rules.test.ts can assert it is non-empty and that
@@ -76,6 +76,9 @@ export const VITAL_RULES: VitalRule[] = [
         return {
           kind: 'vital-critical',
           message: `Невалидна стойност — систолно (${sys}) ≤ диастолно (${dia}). Вероятна грешка при разпознаването.`,
+          // A TRANSCRIPTION-ERROR verdict, not a clinical range — never suppressed
+          // by a goal word (a target cannot be an inverted reading).
+          dataSanity: true,
         };
       if (sys >= 180 || dia >= 110)
         return {
@@ -239,7 +242,10 @@ function endsAtNumberBoundary(text: string, m: RegExpExecArray): boolean {
 // third-person present describes what the patient is doing — „болният поддържа
 // сатурация 85%" IS a measurement, and the worst outcome for this feature is
 // silencing one.
-const GOAL_WORDS = [
+// Exported so the gate can pin it by exact content. A refuter added 'до' and
+// 'за' to this list and every gate stayed green while essentially every vital in
+// the corpus went silent — the list was referenced by no test at all.
+export const GOAL_WORDS = [
   'цел', 'целта', 'цели',
   'целева', 'целеви', 'целево', 'целевата', 'целевия', 'целевият', 'целевото',
   'таргет', 'таргетна', 'таргетни', 'таргетно', 'таргетен',
@@ -256,94 +262,185 @@ const GOAL_RE = new RegExp(
   'iu',
 );
 
-// A clause ends at punctuation or a line break. Deliberately coarse: a goal word
-// and its vital sit in one clause in every real phrasing of this
-// („Целева сатурация 88-92%"), so a tighter rule buys nothing and a looser one
-// starts swallowing real measurements from the next sentence.
-// ascii-safe: punctuation and whitespace only.
-const CLAUSE_BOUNDARY = /[.,;:!?\n\r]/;
+// ── ⚠ THE FIRST CUT OF THIS RULE SWALLOWED REAL HYPOXAEMIA ──────────────────
+// A fresh-context refuter ran ~6,490 candidate sentences against the original
+// „clause = punctuation" scoping and found the dangerous direction wide open.
+// Every one of these was SILENT — verified by hand before this rewrite:
+//
+//   „…целева сатурация 88-92% но при постъпване сатурация 79%"   (no comma before „но")
+//   „Цел сатурация 88-92% — при постъпване сатурация 79%"        (em dash)
+//   „Целева сатурация 88-92%\tАктуална сатурация 79%"            (TAB)
+//   „Целево АН под 140/90 но при постъпване АН 195/120"          (hypertensive crisis)
+//   „Целта на лечението е ремисия … сатурация 79%"               (goal governs something else)
+//   „Пациентът не постигна целта: сатурация 79%"                 (colon exemption, backward)
+//   „Целево АН 130/80 при контрола АН 60/90"                     (a TRANSCRIPTION-ERROR check)
+//
+// 40 of 48 tested separators leaked: every Bulgarian coordinating conjunction
+// used without a comma (но, а, обаче, докато, като), every dash, every bracket,
+// and EVERY whitespace character except \n and \r. Dictated Bulgarian drops the
+// comma before „но" routinely and ASR punctuation is not reliable enough to be
+// load-bearing for a SAFETY suppression. The old comment claimed a goal word and
+// its vital „sit in one clause in every real phrasing" — true of the target
+// phrasing, and it says nothing about the reading that follows it.
+//
+// ── The rule is now NEAREST-GOVERNOR, not clause-membership ──────────────────
+// A goal word governs a vital only if it is the nearest thing that could govern
+// it. Walking back from the vital, the FIRST of these ends the goal's reach:
+//
+//   • a clause boundary (now including dashes, brackets, slashes and bullets)
+//   • ANOTHER VITAL KEYWORD — „целева сатурация 88-92% … сатурация 79%": the
+//     first reading is what the target governs, the second is a new measurement
+//   • a coordinating conjunction — „но", „а", „обаче" start a new assertion
+//   • more than MAX_GOAL_DISTANCE_TOKENS words of distance
+//
+// The token distance is the backstop for everything the character rules miss:
+// Measured against the real phrasings rather than guessed: „Поддържане НА
+// сатурация" is one word, „Стреми СЕ КЪМ сатурация" is two. Two is the most any
+// legitimate target needs — and a bound of four still let
+// „Прегледът цели уточняване на диагнозата ЧСС 168" through, which is a real
+// tachycardia behind a goal word governing something else entirely.
+const MAX_GOAL_DISTANCE_TOKENS = 2;
+
+// ascii-safe: punctuation, whitespace and dashes only — no \b, no \w.
+// Widened from /[.,;:!?\n\r]/ after the refuter round: an em dash, a bracket, a
+// slash and a bullet all separate two readings in real dictation.
+const CLAUSE_BOUNDARY = /[.,;:!?\n\r\t\v\f\u0085\u00A0\u2028\u2029\u202F()\[\]{}|\/\\\u2022\u00B7\u2026\u2014\u2013\u2212-]/;
+
+// Coordinating conjunctions END a goal's reach: what follows is a new assertion,
+// not part of the target. „целева сатурация 88-92% НО сатурация 79%" is the
+// founding case, and Bulgarian dictation routinely omits the comma before them.
+const CONJUNCTIONS = new Set([
+  'но', 'а', 'обаче', 'ала', 'ама', 'пък', 'докато', 'като', 'въпреки',
+  'и', 'или', 'при', 'днес', 'актуална', 'актуално', 'актуален',
+]);
 
 const GOAL_WORD_SET = new Set(GOAL_WORDS);
 
-// ⚠ A COLON AFTER A GOAL WORD INTRODUCES ITS VALUE — it does not end the clause.
-// „Цел: сатурация 88-92%" and „Стремеж: сатурация 88%" are ordinary dictation,
-// and a plain boundary rule loses the goal word one character before it is
-// needed. Found by this feature's own paired fixture, not by review.
+// ⚠ NARROWED after the refuter round. The old rule asked only „is the token
+// before the colon a goal word?", which made the colon transparent in
+// „Пациентът НЕ ПОСТИГНА целта: сатурация 79%" — and then found „целта" behind
+// it and swallowed a real hypoxaemia. The colon there introduces the MEASURED
+// RESULT, not a target.
 //
-// It is narrow on purpose: only a colon whose immediately-preceding token IS a
-// goal word is transparent. A general „colons are not boundaries" rule would let
-// „Целева сатурация 88-92%: днес 79%" silence the 79 — the leak this whole
-// clause-scoping exists to prevent.
-// ascii-safe: matches a run of letters via \p{L} with the u flag; no \b, no \w.
-const TRAILING_WORD_RE = /([\p{L}]+)[\s]*$/u;
+// A colon is transparent only when the whole clause before it is a bare goal
+// PHRASE: at most two words, the last of which is a goal word. „Цел:" and
+// „Терапевтична цел:" qualify; „Пациентът не постигна целта:" (four words) and
+// „Далеч сме от целта:" do not.
+const MAX_GOAL_PHRASE_WORDS = 2;
 
-function goalWordEndsAt(text: string, colonIndex: number): boolean {
-  const m = text.slice(0, colonIndex).match(TRAILING_WORD_RE);
-  return !!m && GOAL_WORD_SET.has(m[1].toLowerCase());
+function colonIsGoalIntroducer(text: string, colonIndex: number): boolean {
+  // The clause immediately before this colon, bounded by the previous boundary.
+  let start = 0;
+  for (let i = colonIndex - 1; i >= 0; i--) {
+    if (CLAUSE_BOUNDARY.test(text[i]) && text[i] !== ' ') { start = i + 1; break; }
+  }
+  const words = text.slice(start, colonIndex).trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > MAX_GOAL_PHRASE_WORDS) return false;
+  const last = words[words.length - 1].replace(/[^\p{L}]/gu, '').toLowerCase();
+  return GOAL_WORD_SET.has(last);
 }
 
 /**
- * Does a goal word govern the vital starting at `index`?
+ * Does a goal word GOVERN the vital starting at `index`?
+ *
+ * Nearest-governor, not clause-membership — see the block above for the seven
+ * real sentences the clause-membership version swallowed.
+ *
+ * `vitalStarts` is every other vital match in the same text. An intervening
+ * vital keyword ends a goal's reach: in „целева сатурация 88-92% … сатурация
+ * 79%" the target governs the FIRST reading, and the second is a new
+ * measurement. Passing it in (rather than re-scanning) is what makes this
+ * decidable at all — the character rules alone cannot see it.
  *
  * Exported so the gate can exercise the rule directly AND through
  * findHighlights — a suppression tested only at its own function is not tested
  * on the surface that renders.
  */
-export function isGoalScoped(text: string, index: number): boolean {
-  // Walk back to the start of the clause containing this vital.
+export function isGoalScoped(text: string, index: number, vitalStarts: number[] = []): boolean {
+  // 1 · walk back to the nearest hard boundary.
   let start = 0;
   for (let i = index - 1; i >= 0; i--) {
     const ch = text[i];
-    if (!CLAUSE_BOUNDARY.test(ch)) continue;
-    // „Цел:" — the colon introduces this goal's own value, so keep walking.
-    if (ch === ':' && goalWordEndsAt(text, i)) continue;
+    if (!CLAUSE_BOUNDARY.test(ch) || ch === ' ') continue;
+    if (ch === ':' && colonIsGoalIntroducer(text, i)) continue;
     start = i + 1;
     break;
   }
-  const clauseBefore = text.slice(start, index);
-  GOAL_RE.lastIndex = 0;
-  return GOAL_RE.test(clauseBefore);
+  const before = text.slice(start, index);
+
+  // 2 · the LAST goal word in that window, if any.
+  let lastGoalEnd = -1;
+  let lastGoalStart = -1;
+  const scan = new RegExp(GOAL_RE.source, 'giu');
+  let g: RegExpExecArray | null;
+  while ((g = scan.exec(before))) { lastGoalStart = g.index; lastGoalEnd = g.index + g[0].length; }
+  if (lastGoalEnd === -1) return false;
+
+  const between = before.slice(lastGoalEnd);
+
+  // 3 · a coordinating conjunction after the goal word starts a new assertion.
+  for (const w of between.toLowerCase().split(/[^\p{L}]+/u)) {
+    if (w && CONJUNCTIONS.has(w)) return false;
+  }
+
+  // 4 · another vital keyword between the goal word and this one — the goal
+  //     governs that first reading, not this one.
+  const goalAbs = start + lastGoalStart;
+  for (const s of vitalStarts) {
+    if (s > goalAbs && s < index) return false;
+  }
+
+  // 5 · distance backstop for whatever rules 1-4 miss.
+  const words = between.split(/\s+/).filter(Boolean);
+  return words.length <= MAX_GOAL_DISTANCE_TOKENS;
 }
 
 function findVitalMatches(text: string): HighlightMatch[] {
-  const out: HighlightMatch[] = [];
+  // ── PASS 1 · every boundary-valid candidate, across ALL rules ──────────────
+  // Collected before anything is classified, because the goal-suppression needs
+  // to know where the OTHER vitals are: „целева сатурация 88-92% … сатурация
+  // 79%" is only decidable if the second reading can see the first. A per-rule
+  // loop that classified as it went could not see across rules either
+  // („Целево АН 130/80 … ЧСС 168").
+  type Candidate = { rule: VitalRule; m: RegExpExecArray };
+  const candidates: Candidate[] = [];
   for (const rule of VITAL_RULES) {
     rule.pattern.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = rule.pattern.exec(text))) {
       if (!startsAtWordStart(text, m.index) || !endsAtNumberBoundary(text, m)) {
         // Resume one character past the rejected start rather than past the
-        // whole rejected span. Over a 40 000-string fuzz the two are currently
-        // byte-identical — every pattern ends in a digit or trailing unit, so a
-        // rejected span cannot swallow a following keyword — so this is
-        // DEFENSIVE, not load-bearing today. Said plainly because the previous
-        // wording asserted a hazard the grammar makes unreachable, and a comment
-        // that cannot be shown to matter is decoration.
-        //
-        // `continue` is load-bearing, though: a refuter changed it to `break`
-        // and every gate stayed green while "PLT 245, t 39.5" lost its fever.
+        // whole rejected span. `continue` is load-bearing: a refuter changed it
+        // to `break` and every gate stayed green while "PLT 245, t 39.5" lost
+        // its fever.
         rule.pattern.lastIndex = m.index + 1;
         continue;
       }
-      // A stated target is not a measurement — see the block above. Checked
-      // AFTER the boundary tests so the index it reasons about is a real match.
-      if (isGoalScoped(text, m.index)) {
-        rule.pattern.lastIndex = m.index + 1;
-        continue;
-      }
-      const cls = rule.classify(m);
-      if (cls) {
-        out.push({
-          start: m.index,
-          end: m.index + m[0].length,
-          kind: cls.kind,
-          raw: m[0],
-          display: m[0], // vitals: render the matched text as-is
-          label: rule.label,
-          message: cls.message,
-        });
-      }
+      candidates.push({ rule, m });
+      rule.pattern.lastIndex = m.index + m[0].length;
     }
+  }
+  const vitalStarts = candidates.map((c) => c.m.index).sort((a, b) => a - b);
+
+  // ── PASS 2 · classify, then decide suppression ─────────────────────────────
+  const out: HighlightMatch[] = [];
+  for (const { rule, m } of candidates) {
+    const cls = rule.classify(m);
+    if (!cls) continue;
+    // ⚠ A DATA-SANITY verdict is never suppressed. `systolic <= diastolic` is a
+    // TRANSCRIPTION-ERROR detector, not a clinical range: a stated target can
+    // never be an inverted reading, so a goal word in front of it says nothing.
+    // „Целево АН 130/80 при контрола АН 60/90" hid exactly that.
+    if (!cls.dataSanity && isGoalScoped(text, m.index, vitalStarts)) continue;
+    out.push({
+      start: m.index,
+      end: m.index + m[0].length,
+      kind: cls.kind,
+      raw: m[0],
+      display: m[0], // vitals: render the matched text as-is
+      label: rule.label,
+      message: cls.message,
+    });
   }
   return out;
 }
