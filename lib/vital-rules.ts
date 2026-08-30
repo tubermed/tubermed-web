@@ -210,6 +210,101 @@ function endsAtNumberBoundary(text: string, m: RegExpExecArray): boolean {
   return after === undefined || !DIGIT.test(after);
 }
 
+// ── A STATED TARGET IS NOT A MEASUREMENT ─────────────────────────────────────
+// „Целева сатурация 88-92%" is the standard COPD oxygen target, and it rendered
+// as «Тежка хипоксемия — SpO2 88% (норма >95)»: a red critical warning on a
+// correctly-dictated treatment goal. Пулмология is the first specialty likely to
+// use this product, and this is a phrase its notes carry routinely.
+//
+// The mechanism is the acuity detector's, and so are its two hard-won lessons:
+//
+//   DIRECTION. A goal word governs what FOLLOWS it — „целева сатурация 88" —
+//   exactly as „без" governs what follows it. So the lookup runs BACKWARD from
+//   the vital, never forward. Letting it reach forward would suppress
+//   „Сатурация 82%, целта е над 90" — a real hypoxaemia sitting next to a goal.
+//
+//   CLAUSE SCOPE. The goal word must be in the SAME clause. Without this, one
+//   „целева" at the top of a paragraph silences every vital below it, which is a
+//   suppression that swallows the real case — worse than the false positive it
+//   was written to remove.
+//
+// ⚠ WHOLE-TOKEN against an explicit closed set of FORMS, never by prefix. This
+// is the ASCII-boundary lesson and the acuity detector's, together: `\b` does
+// not exist for Cyrillic, and a `цел`-prefix match would eat „целулит",
+// „целувка" and „целесъобразно". The boundaries are \p{L} classes with the `u`
+// flag.
+//
+// ⚠ Bare „поддържа" is DELIBERATELY ABSENT while „поддържай"/„поддържайте"/
+// „поддържане" are present. The imperative and the verbal noun state a goal; the
+// third-person present describes what the patient is doing — „болният поддържа
+// сатурация 85%" IS a measurement, and the worst outcome for this feature is
+// silencing one.
+const GOAL_WORDS = [
+  'цел', 'целта', 'цели',
+  'целева', 'целеви', 'целево', 'целевата', 'целевия', 'целевият', 'целевото',
+  'таргет', 'таргетна', 'таргетни', 'таргетно', 'таргетен',
+  'поддържай', 'поддържайте', 'поддържане',
+  'стреми', 'стремеж',
+  'прицелна', 'прицелни', 'прицелен', 'прицелно',
+];
+
+// ascii-safe: this is built from the Cyrillic GOAL_WORDS above and uses \p{L}
+// classes with the u flag — there is no \b or \w in it. The marker is here
+// because the alternation is assembled at runtime and the guard reads source.
+const GOAL_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}_])(?:${GOAL_WORDS.join('|')})(?![\\p{L}\\p{N}_])`,
+  'iu',
+);
+
+// A clause ends at punctuation or a line break. Deliberately coarse: a goal word
+// and its vital sit in one clause in every real phrasing of this
+// („Целева сатурация 88-92%"), so a tighter rule buys nothing and a looser one
+// starts swallowing real measurements from the next sentence.
+// ascii-safe: punctuation and whitespace only.
+const CLAUSE_BOUNDARY = /[.,;:!?\n\r]/;
+
+const GOAL_WORD_SET = new Set(GOAL_WORDS);
+
+// ⚠ A COLON AFTER A GOAL WORD INTRODUCES ITS VALUE — it does not end the clause.
+// „Цел: сатурация 88-92%" and „Стремеж: сатурация 88%" are ordinary dictation,
+// and a plain boundary rule loses the goal word one character before it is
+// needed. Found by this feature's own paired fixture, not by review.
+//
+// It is narrow on purpose: only a colon whose immediately-preceding token IS a
+// goal word is transparent. A general „colons are not boundaries" rule would let
+// „Целева сатурация 88-92%: днес 79%" silence the 79 — the leak this whole
+// clause-scoping exists to prevent.
+// ascii-safe: matches a run of letters via \p{L} with the u flag; no \b, no \w.
+const TRAILING_WORD_RE = /([\p{L}]+)[\s]*$/u;
+
+function goalWordEndsAt(text: string, colonIndex: number): boolean {
+  const m = text.slice(0, colonIndex).match(TRAILING_WORD_RE);
+  return !!m && GOAL_WORD_SET.has(m[1].toLowerCase());
+}
+
+/**
+ * Does a goal word govern the vital starting at `index`?
+ *
+ * Exported so the gate can exercise the rule directly AND through
+ * findHighlights — a suppression tested only at its own function is not tested
+ * on the surface that renders.
+ */
+export function isGoalScoped(text: string, index: number): boolean {
+  // Walk back to the start of the clause containing this vital.
+  let start = 0;
+  for (let i = index - 1; i >= 0; i--) {
+    const ch = text[i];
+    if (!CLAUSE_BOUNDARY.test(ch)) continue;
+    // „Цел:" — the colon introduces this goal's own value, so keep walking.
+    if (ch === ':' && goalWordEndsAt(text, i)) continue;
+    start = i + 1;
+    break;
+  }
+  const clauseBefore = text.slice(start, index);
+  GOAL_RE.lastIndex = 0;
+  return GOAL_RE.test(clauseBefore);
+}
+
 function findVitalMatches(text: string): HighlightMatch[] {
   const out: HighlightMatch[] = [];
   for (const rule of VITAL_RULES) {
@@ -227,6 +322,12 @@ function findVitalMatches(text: string): HighlightMatch[] {
         //
         // `continue` is load-bearing, though: a refuter changed it to `break`
         // and every gate stayed green while "PLT 245, t 39.5" lost its fever.
+        rule.pattern.lastIndex = m.index + 1;
+        continue;
+      }
+      // A stated target is not a measurement — see the block above. Checked
+      // AFTER the boundary tests so the index it reasons about is a real match.
+      if (isGoalScoped(text, m.index)) {
         rule.pattern.lastIndex = m.index + 1;
         continue;
       }

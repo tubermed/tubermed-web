@@ -367,16 +367,29 @@ test('KNOWN residual: a standalone Latin T before a 2-digit value still marks', 
   assert.deepStrictEqual(vitals('Тропонин Т 45 ng/l').map((m) => m.raw), []);
 });
 
-test('KNOWN residual: a stated RANGE is consumed as a measurement', () => {
-  // „Целева сатурация 88-92%" is the textbook COPD target; writing the PLAN
-  // renders a red hypoxaemia critical. Same shape on „RR 12-20/мин" (RR is
-  // Riva-Rocci here but respiratory rate internationally, and `-` is one of the
-  // BP rule's own systolic/diastolic separators). A right-hand range test would
-  // close both, but it is a new mechanism and it collides with the BP rule,
-  // where `160-95` IS a legitimate reading. Ruling owed.
-  const sat = vitals('Целева сатурация 88-92% при ХОББ.');
-  assert.strictEqual(sat.length, 1);
-  assert.strictEqual(sat[0].kind, 'vital-critical');
+// ── The ruling was made, and it closed HALF of this residual ────────────────
+// This test used to pin both halves as current behaviour. The ruling
+// („a stated target consumed as a measurement — fix it, Batch 2") named the
+// mechanism: a closed lexicon of GOAL WORDS that disqualifies the following
+// number, direction-aware and clause-scoped. That closes the saturation half.
+//
+// It does NOT close the range half, and the two were never the same defect —
+// they merely shared a fixture. „RR 12-20/мин" carries no goal word: what makes
+// it a plan rather than a reading is the RANGE, and a right-hand range test
+// still collides with the BP rule, where `160-95` IS a legitimate reading.
+// So the range half stays pinned, on its own, with the ruling still owed.
+test('the COPD saturation target is no longer read as hypoxaemia (ruling applied)', () => {
+  assert.deepStrictEqual(vitals('Целева сатурация 88-92% при ХОББ.'), []);
+  // Paired, in the same file as well as in the suppression gate: the fix must
+  // not have bought this by silencing real hypoxaemia.
+  const real = vitals('Сатурация 88% при постъпване.');
+  assert.strictEqual(real.length, 1);
+  assert.strictEqual(real[0].kind, 'vital-critical');
+});
+
+test('KNOWN residual: a stated RANGE with NO goal word is still consumed as a measurement', () => {
+  // Asserted as CURRENT behaviour so that fixing it goes red on purpose and
+  // forces this comment to be updated with the ruling.
   const rr = vitals('RR 12-20/мин');
   assert.strictEqual(rr.length, 1);
   assert.match(rr[0].message, /Невалидна стойност/);
