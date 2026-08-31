@@ -454,14 +454,16 @@ const P = {
    *  date cell. Binding one argument of a document builder is not binding the
    *  document.
    *
-   *  Argument 2 is now gone from the builder entirely — it was a dead
-   *  patient-identity channel into a patient-facing printed sheet — so the
-   *  exact-arity check keeps that route closed here as well as in
-   *  scripts/document-identity.test.ts. */
+   *  The old argument 2 (`patientName`, a dead patient-identity channel into a
+   *  patient-facing printed sheet) is gone; the CURRENT argument 2 is
+   *  `identity` — DOCTOR-side practice identity for the Вариант A letterhead
+   *  (2026-08-31), allowlisted by name in scripts/document-identity.test.ts.
+   *  The exact-args check still closes every other route: an unlisted third
+   *  argument, or a date smuggled into any position, is red. */
   printTakesVisitDate(src: string): boolean {
     const sites = callArgs(code(src), DOC);
     if (sites.length !== 1) return false;
-    return JSON.stringify(sites[0]) === JSON.stringify(['finalText', PROP]);
+    return JSON.stringify(sites[0]) === JSON.stringify(['finalText', PROP, 'identity']);
   },
 
   /** The prop is never shadowed. `printTakesVisitDate` reads an identifier
@@ -482,7 +484,7 @@ const P = {
     if (FOREIGN_EXITS.test(c)) return false;
     const opens = callArgs(c, 'openPdfPreview');
     if (opens.length !== 1) return false;
-    return opens[0][0] === `${DOC}(finalText, ${PROP})`;
+    return opens[0][0] === `${DOC}(finalText, ${PROP}, identity)`;
   },
 
   /** The modal builds no document of its own. `builderIsImported` forbids two
@@ -543,7 +545,11 @@ const P = {
     if (DATE_MACHINERY.test(tag)) return false;
     if (!tag.includes(`${PROP}={${BINDING}}`)) return false;
     const props = [...tag.matchAll(/(\w+)=\{/g)].map((m) => m[1]); // ascii-safe: JSX prop names
-    const EXPECTED = ['isOpen', 'consultationId', 'onClose', 'onToast', PROP];
+    // `identity` (2026-08-31): the api.me() doctor/practice identity for the
+    // Вариант A letterhead — the exact value the лист header reads, doctor-side
+    // by the sibling identity gate's allowlist. Still an exact SET: anything
+    // else is red by default and has to be added here on purpose.
+    const EXPECTED = ['isOpen', 'consultationId', 'onClose', 'onToast', PROP, 'identity'];
     return JSON.stringify([...props].sort()) === JSON.stringify([...EXPECTED].sort());
   },
 
@@ -794,6 +800,7 @@ test('RED: the tag scan stops at its own „>" and cannot read a neighbour prop'
         onClose={() => setSummaryOpen(false)}
         onToast={showToast}
         ${PROP}={${BINDING}}
+        identity={exportIdentity}
       ></PatientSummaryModal>
       <SomethingElse />
 `;
@@ -1054,37 +1061,28 @@ test('RED: the shipped builder always emits a date block, with nothing to show o
     'it has no absent state at all — which is why „absent, never wrong" needed a new builder');
 });
 
-test('the extraction changed the date binding, and the deletion changed only `who`', () => {
-  // The boundary was: no other change to the patient summary — not its content,
-  // its wording, its disclaimer. Byte equality is the only form of that claim
-  // worth making, so it is still made here, against the shipped builder.
+test('the redesign kept the extraction\'s invariants: who is gone, the date is placed', () => {
+  // The extraction round pinned „byte-identical to the shipped builder, minus
+  // the empty who slot". That boundary expired on 2026-08-31: the Вариант A
+  // print layout is a SANCTIONED redesign of this document (Dimitar's brief,
+  // chosen twice — grayscale and 2.5× content), so byte equality with the old
+  // markup is no longer the claim. What survives the redesign is pinned here:
   //
-  // ONE difference is now expected and is named exactly. `patientName` was
-  // deleted: a dead patient-identity channel into a patient-facing printed
-  // sheet, rendered directly above the date cell. With no name to show the
-  // shipped builder emitted an EMPTY `who` slot — a bare newline — and the new
-  // module emits no slot at all. That newline is the whole delta, and it is
-  // subtracted here by name rather than normalised away with a whitespace
-  // trim, which would have hidden any other change alongside it.
-  const shipped = atZone('Europe/Sofia', () =>
-    atClock('2026-08-08T09:12:00.000Z', () => shippedBuilder(BODY)));
-  const EMPTY_WHO_SLOT = '<h1>Резюме за пациента</h1>\n\n';
-  assert.ok(shipped.startsWith(EMPTY_WHO_SLOT),
-    'the shipped builder no longer opens with an empty who slot — re-derive the delta');
-  const shippedWithoutWhoSlot = shipped.replace(EMPTY_WHO_SLOT, '<h1>Резюме за пациента</h1>\n');
-  assert.equal(shipped.length - shippedWithoutWhoSlot.length, 1, 'exactly one byte, the newline');
-
+  //  · the patient-identity channel stays deleted — no who element, no who
+  //    style, and the builder's third parameter is DOCTOR-side identity only
+  //    (exact params held by scripts/document-identity.test.ts);
+  //  · the date still renders in the one date cell, and only there;
+  //  · the summary text itself reaches the document (conservation in depth is
+  //    scripts/summary-print.test.ts's job).
   const now = buildPatientSummaryHtml(BODY, AUG_8_BG);
-  assert.ok(now.includes(shippedWithoutWhoSlot),
-    'same h1 / date / text block as shipped, byte for byte, minus the empty who slot');
-
-  // And the slot is GONE, not merely empty: nothing renders it, and nothing can
-  // be handed to it. Both halves — the markup and the arity — because either
-  // one alone leaves the channel half-open.
   assert.ok(!/class="who"/.test(now), 'the who element is gone from the document');
   assert.ok(!/\.who\s*\{/.test(now), 'and so is its style rule');
-  assert.equal(buildPatientSummaryHtml.length, 2,
-    'the builder takes exactly (summary, dateBg) — a third parameter is a channel');
+  assert.equal(dateCell(now), AUG_8_BG);
+  assert.ok(now.includes('Прегледът мина добре.') && now.includes('Пийте много течности.'));
+  // Function.length counts REQUIRED parameters: (summary, dateBg) stay the
+  // only two, and the optional third defaults to an empty doctor identity —
+  // so every existing 2-arg call site still builds the same document.
+  assert.equal(buildPatientSummaryHtml.length, 2);
 });
 
 /** The `|| today` shape, inside the builder this time — the third site the

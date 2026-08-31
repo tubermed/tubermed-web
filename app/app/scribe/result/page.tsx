@@ -2616,13 +2616,16 @@ function ResultPageInner() {
       />
 
       {/* The patient's own copy is dated by the same ONE value as the лист —
-          the консултация's stored timestamp in Europe/Sofia, not the clock. */}
+          the консултация's stored timestamp in Europe/Sofia, not the clock —
+          and letterheaded by the same api.me() practice identity as the лист
+          header (doctor-side only; best-effort, undefined prints no letterhead). */}
       <PatientSummaryModal
         isOpen={summaryOpen}
         consultationId={original.consultationId}
         onClose={() => setSummaryOpen(false)}
         onToast={showToast}
         visitDateBg={listDateBg}
+        identity={exportIdentity}
       />
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />

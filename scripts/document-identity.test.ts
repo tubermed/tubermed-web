@@ -291,13 +291,31 @@ test('no interface a document builder reads carries a patient-identity field', (
   assert.deepEqual(guilty, [], 'patient identity in a builder\'s input type:\n' + guilty.join('\n'));
 });
 
-test('the printable summary takes exactly (summary, dateBg)', () => {
-  assert.equal(buildPatientSummaryHtml.length, 2);
+test('the printable summary takes exactly (summary, dateBg, identity)', () => {
+  // The third parameter is DELIBERATE and doctor-side (2026-08-31, Вариант A):
+  // `identity` is ExportIdentity — the same api.me() practice identity the
+  // амбулаторен лист header renders, every field of it on the DOCTOR_SIDE
+  // allowlist above. It exists because the old sheet said „потърсете Вашия
+  // лекар" and named nobody. It is NOT an opening for patient identity: the
+  // name sweep over this file and its whole import graph still bans every
+  // patient-identity spelling, and the parameter deleted here in the previous
+  // round was `patientName` — which stays red (see the red proofs below).
+  assert.equal(buildPatientSummaryHtml.length, 2,
+    'only (summary, dateBg) are required; identity defaults to an empty doctor identity');
   const sigs = exportedSignatures(stripComments(read('lib/patient-summary-doc.ts')));
   const b = sigs.find((s) => s.fn === 'buildPatientSummaryHtml');
   assert.ok(b, 'the builder is no longer an exported function this gate can read');
-  assert.deepEqual(b!.params, ['summary', 'dateBg'],
-    'the third parameter was `patientName`, a dead identity channel into a printed sheet');
+  assert.deepEqual(b!.params, ['summary', 'dateBg', 'identity'],
+    'the builder\'s parameter set is exact: summary text, преглед date, doctor-side identity');
+  // And the doctor identity actually reaches the printed sheet — the letterhead
+  // is why the parameter exists, so its absence would make this pin decorative.
+  const html = buildPatientSummaryHtml('Прегледът мина добре.', '08.08.2026 г.', {
+    practiceName: 'МЦ Пример', doctorName: 'д-р Пример Примеров',
+    specialty: 'Пулмолог', phone: '0700 00 000',
+  });
+  for (const s of ['МЦ Пример', 'д-р Пример Примеров', 'Пулмолог', '0700 00 000']) {
+    assert.ok(html.includes(s), `doctor-side ${JSON.stringify(s)} does not reach the sheet`);
+  }
 });
 
 test('the modal that prints the summary has no identity prop, and its page passes none', () => {

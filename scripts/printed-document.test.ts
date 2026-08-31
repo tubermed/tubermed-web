@@ -262,8 +262,10 @@ const documents = (): Array<{ id: string; html: string; input: unknown }> =>
       html: generateWordHtml(FIELDS as any, VISIT_BG, IDENTITY) },
     { id: 'ехокардиография', input: ECHO_FIELDS,
       html: generateEchoHtml(ECHO_FIELDS as any, VISIT_BG) },
-    { id: 'резюме за пациента', input: SUMMARY_BODY,
-      html: buildPatientSummaryHtml(SUMMARY_BODY, VISIT_BG) },
+    // The резюме now renders a doctor letterhead (Вариант A, 2026-08-31), so
+    // the identity is part of what it was handed — same conservation rule.
+    { id: 'резюме за пациента', input: [SUMMARY_BODY, IDENTITY],
+      html: buildPatientSummaryHtml(SUMMARY_BODY, VISIT_BG, IDENTITY) },
   ]);
 /* eslint-enable @typescript-eslint/no-explicit-any */
 

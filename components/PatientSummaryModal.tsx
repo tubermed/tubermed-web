@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, patientSummaryLimitFromError } from '@/lib/api';
-import { copyToClipboard, openPdfPreview } from '@/lib/exporters';
+import { copyToClipboard, openPdfPreview, type ExportIdentity } from '@/lib/exporters';
 import { buildPatientSummaryHtml } from '@/lib/patient-summary-doc';
 import SkeletonInput from '@/components/SkeletonInput';
 import { Icon } from '@/components/ui/Icon';
@@ -42,6 +42,17 @@ interface PatientSummaryModalProps {
    * the лист. See scripts/summary-date.test.ts.
    */
   visitDateBg: string;
+  /**
+   * DOCTOR-side practice identity for the printed sheet's letterhead and
+   * footer (Вариант A): practice name, doctor name + specialty, phone. The
+   * same api.me()-sourced value the лист header reads — best-effort, so
+   * `undefined` (a failed /me) prints the sheet without a letterhead rather
+   * than blocking it. Required-but-undefinable on purpose: a call site must
+   * decide, not forget. Patient identity remains impossible by name —
+   * scripts/document-identity.test.ts sweeps this prop set and the builder's
+   * signature.
+   */
+  identity: ExportIdentity | undefined;
 }
 
 type Phase =
@@ -96,6 +107,7 @@ export default function PatientSummaryModal({
   onClose,
   onToast,
   visitDateBg,
+  identity,
 }: PatientSummaryModalProps) {
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
   const [regenerating, setRegenerating] = useState(false);
@@ -217,7 +229,7 @@ export default function PatientSummaryModal({
     // Dated by the преглед the summary was written from — never by the clock at
     // print time. A reprint in three months is the SAME visit.
     const opened = openPdfPreview(
-      buildPatientSummaryHtml(finalText, visitDateBg),
+      buildPatientSummaryHtml(finalText, visitDateBg, identity),
       { autoPrint: true },
     );
     if (!opened) {

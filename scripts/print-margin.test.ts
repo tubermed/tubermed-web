@@ -240,8 +240,6 @@ const PAGE_RULE_EXCEPTIONS: Record<string, string> = {
   // Chrome's print path. It has no @page at all, which is why it is named here
   // rather than silently absent — see the Word test below.
   'lib/exporters.ts:generateWordHtml': 'opened in Word, never printed by the browser',
-  // The one document still carrying the stamp. See the pin below.
-  'lib/patient-summary-doc.ts': 'blocked by @page size: A5 — ruling owed',
 };
 
 test('every @page in the repo is under the browser\'s header threshold', () => {
@@ -282,27 +280,25 @@ test('the Word document is exempt for a written reason, not by omission', () => 
   assert.ok('lib/exporters.ts:generateWordHtml' in PAGE_RULE_EXCEPTIONS);
 });
 
-test('the резюме за пациента is NOT protected, and is pinned as such', () => {
-  // Not an oversight and not a passing test dressed as one. This sheet still
-  // carries „8/28/26, 9:12 AM" in its margin, on every page, next to the
-  // преглед's date, in the patient's hand — and also when the визит date is
-  // unknown, in which case today's is the ONLY date on it.
-  //
-  // Fixing it takes BOTH `margin-top: 6mm` AND dropping `size: A5` (see the
-  // matrix at the top of this file): 14mm is over the threshold on any paper,
-  // and while `size` stands the margin is ignored off-A5 anyway. Dropping A5
-  // changes the page the patient is handed, so the trade is Dimitar's.
-  //
-  // Pinned in BOTH directions: if `size` is dropped, this test goes red and
-  // whoever dropped it must bring the top margin under the threshold and
-  // rewrite this pin — the exception cannot outlive its reason.
+test('the резюме за пациента does not leave room for the browser\'s dated header', () => {
+  // The pin that used to sit here („NOT protected — ruling owed") is answered:
+  // the Вариант A rebuild (2026-08-31) took the owed trade. `size: A5` is
+  // DROPPED — per the matrix at the top of this file a size declaration
+  // forfeits the CSS margins on any paper it doesn't match, which is the whole
+  // reason the old sheet carried the stamp — and the page box is now
+  // `margin: 6mm 15mm 11mm`, real A4 geometry with 3mm of headroom under the
+  // measured 9mm threshold. (The design brief spelled `size: A4`; the
+  // size-less form is what the matrix measured clean on A5, A4 AND Letter,
+  // and on A4 paper — Chrome's default page box here — the two are identical.)
   const box = pageBox(SUMMARY());
-  assert.equal(box.declaresSize, true,
-    'the резюме no longer declares @page size — the blocker is gone, so bring its top margin ' +
-    `under ${HEADER_THRESHOLD_MM}mm and replace this pin with the same assertion the лист uses`);
-  assert.equal(protectedFromHeader(box), false,
-    'this pin claims the резюме is unprotected; it now reads as protected, so re-measure on a ' +
-    'real print preview before changing the claim');
+  assert.ok(box.blocks > 0, 'the резюме declares no @page at all — the browser then picks the margin');
+  assert.equal(box.declaresSize, false,
+    'the резюме must not declare @page size: a size mismatch makes Chrome discard the CSS ' +
+    'margins and print its own dated header (measured — see the matrix above)');
+  assert.equal(box.topMm, 6,
+    `the резюме's page-box top margin is ${box.topMm}mm; the design fixes it at 6mm — ` +
+    `9mm is where Chrome starts stamping, and this document already lost that fight once`);
+  assert.ok(protectedFromHeader(box));
 });
 
 test('the лист gives back on the first page exactly what the page box gave up', () => {
