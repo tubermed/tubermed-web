@@ -54,12 +54,17 @@
 //   Следващи стъпки
 //
 // Text under no known heading (a doctor's free edit) renders as plain
-// paragraphs in the same frame — nothing is ever dropped, nothing invented.
-// Exactly two typographic separators are absorbed into layout, both from the
-// approved mock: the heading's trailing „:" (the eyebrow row replaces it) and
-// the „ — " between a medication's name and its regimen inside the therapy
-// card (the card's two-span line replaces it). Everything else is verbatim,
-// held by scripts/summary-print.test.ts's conservation check.
+// paragraphs in the same frame — nothing is invented, and nothing is dropped
+// except the ONE named case below. Exactly two typographic separators are
+// absorbed into layout, both from the approved mock: a matched heading's
+// trailing „:" (the eyebrow row replaces it) and the first „ — " between a
+// medication's dose-bearing lead and its regimen inside a therapy card (the
+// card's two-span line replaces it). The one drop: a known heading with
+// NOTHING under it vanishes whole, heading line included — the backend's own
+// instruction is „пропусни раздел без съдържание", and an empty warning box
+// is an alarm about nothing. All three rules are pinned by
+// scripts/summary-print.test.ts's conservation oracle, which re-derives them
+// independently — a divergence between this file and that model is red.
 //
 // ── Grayscale is the delivery medium ────────────────────────────────────────
 // Most clinic printers are monochrome, and Chrome's print dialog ships with
@@ -130,17 +135,33 @@ export interface ParsedSummary {
 export function parsePatientSummary(summary: string): ParsedSummary {
   const text = (summary || '').replace(/\r\n/g, '\n').trim();
 
-  // The disclaimer is the LAST paragraph carrying the marker, wherever the
-  // edit flow left it. If none is found nothing is pulled out — the builder
-  // never drops text and never writes a disclaimer of its own (the modal's
-  // composeFinal owns appending it; the backend owns its wording).
-  const paragraphs = text.split(/\n{2,}/);
+  // The disclaimer is pulled from the END of the text only, and at LINE
+  // grain. composeFinal appends it as the final paragraph, so only the final
+  // paragraph is inspected, and within it only the line carrying the marker
+  // is the disclaimer. Two refuter finds shaped this (2026-08-31): a summary
+  // whose doctor edit used single newlines throughout was ONE paragraph, so a
+  // paragraph-grain pull relocated the entire clinical content into the legal
+  // fine print; and a marker phrase the doctor wrote MID-text was yanked to
+  // the footer, reordering clinical advice into legalese. Now: mid-text
+  // marker lines stay exactly where they were written and render as content;
+  // if no marker line ends the text, nothing is pulled and nothing is lost —
+  // the builder never writes a disclaimer of its own (the modal's composeFinal
+  // owns appending it; the backend owns its wording).
+  const paragraphs = text === '' ? [] : text.split(/\n{2,}/);
   let disclaimer = '';
-  for (let i = paragraphs.length - 1; i >= 0; i--) {
-    if (DISCLAIMER_MARKER.test(paragraphs[i])) {
-      disclaimer = paragraphs[i].trim();
-      paragraphs.splice(i, 1);
-      break;
+  if (paragraphs.length > 0) {
+    const lastLines = paragraphs[paragraphs.length - 1].split('\n');
+    for (let i = lastLines.length - 1; i >= 0; i--) {
+      if (DISCLAIMER_MARKER.test(lastLines[i])) {
+        disclaimer = lastLines[i].trim();
+        lastLines.splice(i, 1);
+        break;
+      }
+    }
+    if (disclaimer) {
+      const rest = lastLines.join('\n').trim();
+      if (rest) paragraphs[paragraphs.length - 1] = rest;
+      else paragraphs.pop();
     }
   }
 
@@ -203,11 +224,20 @@ const eyebrowHtml = (label: string): string =>
  *  plain paragraph inside the same card: the styling degrades, the text never
  *  changes. */
 function medCardHtml(paragraph: string): string {
-  const m = /^(.{1,60}?)\s[—–-]\s([\s\S]+)$/.exec(paragraph);
-  if (m && /\d/.test(m[1])) {
+  // The split's guards, each bought by a refuter find (2026-08-31):
+  //  · the dash must be SPACE-dash-SPACE on the first line — `\s` matched a
+  //    newline, so a dashed bullet list was absorbed across lines;
+  //  · the text after the dash must not open with a digit — „по 1 – 2
+  //    таблетки" and „над 38 — 38.5" are RANGES, and splitting one garbles a
+  //    dose instruction on a patient sheet;
+  //  · the regimen/note cut happens only at a sentence boundary (period
+  //    before an uppercase letter), not at any period — „по 1 табл. сутрин"
+  //    was being broken mid-sentence at the abbreviation dot.
+  const m = /^(\S[^\n]{0,58}?) [—–-] ([^\n][\s\S]*)$/.exec(paragraph);
+  if (m && /\d/.test(m[1]) && !/^\d/.test(m[2])) {
     const lead = m[1];
     const rest = m[2];
-    const dot = rest.search(/\.(?=\s|$)/);
+    const dot = rest.search(/\.(?=\s+[А-ЯA-Z])/u);
     const regimen = dot >= 0 ? rest.slice(0, dot + 1) : rest;
     const note = dot >= 0 ? rest.slice(dot + 1).trim() : '';
     return (

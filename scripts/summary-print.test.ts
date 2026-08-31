@@ -82,8 +82,18 @@ const DISCLAIMER =
 
 // ── The detectors ───────────────────────────────────────────────────────────
 
-/** The reserved red, both spellings, any case, whitespace-tolerant in rgb(). */
-const RESERVED_RED = /#c0392b|rgb\(\s*192\s*,\s*57\s*,\s*43\s*\)/i;
+/** The reserved red by its two named spellings (hex; rgb in comma AND space
+ *  syntax — a refuter walked `rgb(192 57 43)` past the comma-only version).
+ *  This denylist is the SECOND line: the first is the colour WHITELIST below,
+ *  which refuses every colour literal that is not a known token definition —
+ *  a spelling nobody enumerated (hsl, oklch, a near-miss hex) fails there. */
+const RESERVED_RED = /#c0392b|rgb\(\s*192[\s,]+57[\s,]+43\s*\)/i;
+
+/** The document's stylesheet — the surface the colour and break rules govern.
+ *  Scoped so that a NOTE whose text mentions „#C0392B" (or a token hex) stays
+ *  printable: content is data, only the styling spends colours. */
+const styleSheet = (html: string): string =>
+  /<style>([\s\S]*?)<\/style>/.exec(html)?.[1] ?? '';
 
 const unescapeHtml = (s: string) =>
   s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
@@ -109,21 +119,75 @@ function isSubsequence(needle: string[], hay: string[]): boolean {
   return i === needle.length;
 }
 
-/** The input's tokens in the order the DOCUMENT declares it renders them: the
- *  disclaimer (the last paragraph carrying the marker) always renders last,
- *  wherever the edit flow left it; everything else keeps its order. Built
- *  independently of the parser under test, from the same exported marker. */
-function expectedTokens(summary: string): string[] {
-  const paragraphs = (summary || '').replace(/\r\n/g, '\n').trim().split(/\n{2,}/);
+/** The independent expectation model — the document contract re-derived from
+ *  scratch, NOT imported from the parser under test. It encodes exactly the
+ *  three published rules (module header of lib/patient-summary-doc.ts):
+ *  the disclaimer is the marker LINE of the final paragraph, rendered last;
+ *  a matched heading loses its trailing colon; an empty-bodied heading is
+ *  dropped whole. A builder change that shifts any of these diverges from
+ *  this model and goes red — that is the point of writing it twice.
+ *
+ *  It also returns SEPARATOR ARITHMETIC. A refuter mutation deleted every
+ *  spaced dash and every colon from the whole document and the token check
+ *  stayed green, because the token normalisation that excuses the two
+ *  sanctioned absorptions excused all of them. Tokens can't see separators;
+ *  counting can: colons in the output must equal the model's exactly, and
+ *  spaced dashes may drop by AT MOST one per therapy paragraph (the card
+ *  split absorbs at most one each). */
+interface ExpectedDoc { tokens: string[]; colons: number; spacedDashes: number; therapyPars: number }
+
+const HEADING_LABELS = ['Какво установихме', 'Вашата терапия', 'На какво да обърнете внимание', 'Следващи стъпки'];
+
+function expectedDoc(summary: string): ExpectedDoc {
+  const text = (summary || '').replace(/\r\n/g, '\n').trim();
+  const paragraphs = text === '' ? [] : text.split(/\n{2,}/);
   let disclaimer = '';
-  for (let i = paragraphs.length - 1; i >= 0; i--) {
-    if (DISCLAIMER_MARKER.test(paragraphs[i])) {
-      disclaimer = paragraphs[i];
-      paragraphs.splice(i, 1);
-      break;
+  if (paragraphs.length > 0) {
+    const lastLines = paragraphs[paragraphs.length - 1].split('\n');
+    for (let i = lastLines.length - 1; i >= 0; i--) {
+      if (DISCLAIMER_MARKER.test(lastLines[i])) { disclaimer = lastLines[i].trim(); lastLines.splice(i, 1); break; }
+    }
+    if (disclaimer) {
+      const rest = lastLines.join('\n').trim();
+      if (rest) paragraphs[paragraphs.length - 1] = rest;
+      else paragraphs.pop();
     }
   }
-  return tokens(paragraphs.join('\n') + '\n' + disclaimer);
+  type Sec = { key: string | null; label: string | null; text: string };
+  const secs: Sec[] = [];
+  let cur: Sec = { key: null, label: null, text: '' };
+  const flush = () => {
+    const t = cur.text.replace(/^\n+|\n+$/g, '');
+    if (t || cur.label) secs.push({ ...cur, text: t });
+  };
+  for (const line of paragraphs.join('\n\n').split('\n')) {
+    const trimmed = line.trim();
+    const lower = trimmed.toLowerCase();
+    let hit: { key: string; typed: string; inline: string } | null = null;
+    for (const label of HEADING_LABELS) {
+      const l = label.toLowerCase();
+      if (lower === l || lower === `${l}:`) { hit = { key: label, typed: trimmed.replace(/:$/, ''), inline: '' }; break; }
+      if (lower.startsWith(`${l}:`)) {
+        hit = { key: label, typed: trimmed.slice(0, label.length), inline: trimmed.slice(label.length + 1).trim() };
+        break;
+      }
+    }
+    if (hit) { flush(); cur = { key: hit.key, label: hit.typed, text: hit.inline }; }
+    else cur.text += (cur.text ? '\n' : '') + line;
+  }
+  flush();
+  const kept = secs.filter((s) => s.text !== '');   // the pinned empty-heading drop
+  const expectedText = kept.map((s) => `${s.label ?? ''}\n${s.text}`).join('\n') + '\n' + disclaimer;
+  const therapyPars = kept
+    .filter((s) => s.key === 'Вашата терапия')
+    .flatMap((s) => s.text.split(/\n{2,}/))
+    .filter((p) => p.trim()).length;
+  return {
+    tokens: tokens(expectedText),
+    colons: (expectedText.match(/:/g) ?? []).length,
+    spacedDashes: (expectedText.match(/ [—–-] /g) ?? []).length,
+    therapyPars,
+  };
 }
 
 const count = (hay: string, needle: string): number => hay.split(needle).length - 1;
@@ -133,6 +197,25 @@ function cssRule(html: string, selector: string): string {
   // ascii-safe: CSS selector syntax in our own emitted stylesheet
   const m = new RegExp(`\\.${selector}\\s*\\{([^}]*)\\}`).exec(html);
   return m ? m[1] : '';
+}
+
+/** The tail element's OWN markup, read by balanced div-depth — not a slice to
+ *  end-of-document. A refuter moved the footer outside the tail and the old
+ *  `html.slice(indexOf(tail))` check kept passing, because everything after
+ *  the opening tag was „inside" by construction. */
+function tailInner(html: string): string {
+  const open = html.indexOf('<div class="tail">');
+  if (open < 0) return '';
+  const re = /<div[\s>]|<\/div>/g;
+  re.lastIndex = open;
+  let depth = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    if (m[0] === '</div>') {
+      if (--depth === 0) return html.slice(open, m.index);
+    } else depth++;
+  }
+  return '';
 }
 
 // ── The catalogue: twenty shapes of content ─────────────────────────────────
@@ -181,6 +264,16 @@ const SHAPES: Array<{ id: string; summary: string }> = [
   { id: 'S18 CRLF line endings', summary: MINIMAL.replace(/\n/g, '\r\n') },
   { id: 'S19 a content date the doctor dictated', summary: `Следващи стъпки:\nКонтролен преглед на 14.02.2027 г. с направлението.\n\n${DISCLAIMER}` },
   { id: 'S20 the empty summary', summary: '' },
+  // ── S21–S29: the refuter round of 2026-08-31, one shape per finding ───────
+  { id: 'S21 single newlines throughout — the disclaimer stays a line, not the note', summary: `Какво установихме:\nОстър бронхит.\nВашата терапия:\nАмоксицилин 500 мг — по 1 капсула три пъти дневно. Приемайте я с храна.\nНа какво да обърнете внимание:\nПри задух потърсете лекар незабавно.\n${DISCLAIMER}` },
+  { id: 'S22 a dose range across the dash is a range, not a regimen', summary: `Вашата терапия:\nПарацетамол 500 мг по 1 – 2 таблетки при болка. Не повече от шест дневно.\n\n${DISCLAIMER}` },
+  { id: 'S23 a threshold range in the warning', summary: `На какво да обърнете внимание:\nПри температура над 38 — 38.5 приемете парацетамол и се обадете.\n\n${DISCLAIMER}` },
+  { id: 'S24 a dashed bullet list under a drug name', summary: `Вашата терапия:\nАспирин Протект 100 мг\n— по 1 таблетка сутрин\n— след храна\n\n${DISCLAIMER}` },
+  { id: 'S25 an abbreviation dot is not a sentence boundary', summary: `Вашата терапия:\nМетопролол 50 мг — по 1 табл. сутрин и вечер след храна.\n\n${DISCLAIMER}` },
+  { id: 'S26 the marker phrase mid-text stays mid-text', summary: `Какво установихме:\n${FINDINGS}\n\nПомнете: този документ не замества медицинска консултация при влошаване — елате отново.\n\nСледващи стъпки:\nКонтролен преглед след две седмици.\n\n${DISCLAIMER}` },
+  { id: 'S27 an empty-bodied heading is dropped whole — the pinned exception', summary: `Какво установихме:\n${FINDINGS}\n\nНа какво да обърнете внимание:\n\n${DISCLAIMER}` },
+  { id: 'S28 a note that talks ABOUT the colours', summary: `Какво установихме:\nВ документа не се използва червено #C0392B, а рамките са #C2CAD4 по дизайн.\n\n${DISCLAIMER}` },
+  { id: 'S29 colons and dashes mid-sentence survive', summary: `Следващи стъпки:\nЕлате на 14.09 в 10:30 часа: носете дневника — и списъка с лекарства.\n\n${DISCLAIMER}` },
 ];
 
 // ── 1 + 2 + 3, across the whole catalogue ───────────────────────────────────
@@ -188,21 +281,34 @@ const SHAPES: Array<{ id: string; summary: string }> = [
 for (const { id, summary } of SHAPES) {
   test(`${id}: conserved, red-free, tokens defined once`, () => {
     const html = buildPatientSummaryHtml(summary, DATE, IDENTITY);
+    const style = styleSheet(html);
+    const vis = visibleText(html);
+    const want = expectedDoc(summary);
 
-    // Conservation: every input token reaches the sheet, in order.
-    const missing = expectedTokens(summary);
-    assert.ok(isSubsequence(missing, tokens(visibleText(html))),
+    // Conservation, three ways. Tokens: every input token reaches the sheet,
+    // in the contract's order. Colons: exact — only matched heading lines
+    // give theirs up, and the model already subtracted those. Spaced dashes:
+    // bounded — the therapy card absorbs at most one per paragraph, and
+    // nothing else may touch one.
+    assert.ok(isSubsequence(want.tokens, tokens(vis)),
       `the printed sheet lost or reordered text of the summary (${id})`);
+    assert.equal((vis.match(/:/g) ?? []).length, want.colons,
+      'a colon the doctor wrote is gone (or one was invented) outside the matched headings');
+    const dashesOut = (vis.match(/ [—–-] /g) ?? []).length;
+    assert.ok(dashesOut <= want.spacedDashes, 'a spaced dash was invented');
+    assert.ok(dashesOut >= want.spacedDashes - want.therapyPars,
+      `spaced dashes fell from ${want.spacedDashes} to ${dashesOut} with only ` +
+      `${want.therapyPars} therapy paragraph(s) to absorb them`);
 
-    // The reserved red appears nowhere — not for a warning, not for anything.
-    assert.ok(!RESERVED_RED.test(html),
+    // The reserved red appears nowhere in the STYLING — content is data.
+    assert.ok(!RESERVED_RED.test(style),
       'the patient sheet spends #C0392B — red is reserved for medication-safety alerts');
 
     // The two print tokens: one definition, referenced everywhere else.
     for (const [hex, name] of [['#C2CAD4', 'print-rule'], ['#E8EFF7', 'print-med-fill']] as const) {
-      assert.equal(count(html.toUpperCase(), hex), 1,
+      assert.equal(count(style.toUpperCase(), hex), 1,
         `${hex} must appear exactly once (the --${name} definition), not be repeated as a literal`);
-      assert.ok(html.includes(`var(--${name})`), `--${name} is defined but never referenced`);
+      assert.ok(style.includes(`var(--${name})`), `--${name} is defined but never referenced`);
     }
 
     // Whatever the content, the document is a complete sheet.
@@ -239,6 +345,86 @@ test('markup arriving in the summary is escaped, never executed', () => {
   assert.ok(!html.includes('<script>alert'));
   assert.ok(!html.includes('<img src=x'));
   assert.ok(html.includes('&lt;script&gt;'), 'the text itself still reaches the sheet, as text');
+});
+
+test('S21: a single-newline note keeps its sections — the disclaimer is one line', () => {
+  // The refuter's worst find: with single newlines throughout, the whole note
+  // was ONE paragraph, the paragraph-grain disclaimer pull took all of it, and
+  // the red flags printed as 14px italic legal fine print.
+  const html = buildPatientSummaryHtml(SHAPES[20].summary, DATE, IDENTITY);
+  assert.ok(html.includes('class="warn"'), 'the warning section vanished into the fine print');
+  assert.ok(html.includes('class="med-name"'), 'the therapy card vanished into the fine print');
+  assert.equal(count(html, 'class="disclaimer"'), 1);
+  const disc = /<p class="disclaimer">([\s\S]*?)<\/p>/.exec(html)![1];
+  assert.ok(!disc.includes('Амоксицилин'), 'clinical content rendered as the legal fine print');
+});
+
+test('dose and threshold ranges keep their dashes — a range is not a regimen', () => {
+  const s22 = visibleText(buildPatientSummaryHtml(SHAPES[21].summary, DATE, IDENTITY));
+  assert.ok(s22.includes('по 1 – 2 таблетки'), 'the dose range was split as name — regimen');
+  const s23 = visibleText(buildPatientSummaryHtml(SHAPES[22].summary, DATE, IDENTITY));
+  assert.ok(s23.includes('над 38 — 38.5 приемете'), 'the threshold range was split');
+});
+
+test('a dashed bullet list is not absorbed, and an abbreviation dot does not cut', () => {
+  const s24 = visibleText(buildPatientSummaryHtml(SHAPES[23].summary, DATE, IDENTITY));
+  assert.ok(/—\s*по 1 таблетка сутрин/.test(s24), 'the first bullet dash was eaten across the newline');
+  const s25 = visibleText(buildPatientSummaryHtml(SHAPES[24].summary, DATE, IDENTITY));
+  assert.ok(s25.includes('по 1 табл. сутрин и вечер'), 'the regimen was cut at the abbreviation dot');
+});
+
+test('S26: a marker phrase mid-text renders in place, before the next section', () => {
+  const html = buildPatientSummaryHtml(SHAPES[25].summary, DATE, IDENTITY);
+  const midAt = html.indexOf('Помнете');
+  const nextAt = html.indexOf('Следващи стъпки');
+  const discAt = html.indexOf('class="disclaimer"');
+  assert.ok(midAt >= 0 && nextAt >= 0 && discAt >= 0);
+  assert.ok(midAt < nextAt, 'the mid-text sentence was relocated to the footer');
+  assert.ok(html.indexOf('При въпроси или влошаване') > discAt,
+    'the real trailing disclaimer still lands in the footer');
+});
+
+test('every colour in the stylesheet is a token definition or white — whitelist, not denylist', () => {
+  // A refuter walked `rgb(192 57 43)` — the reserved red in space syntax —
+  // past the comma-only denylist and repainted the letterhead in it, 582/582
+  // green. A denylist of spellings is not a rule about colours (the same
+  // lesson as `Date()` without `new`, one gate over). The rule now: every
+  // colour literal is a 6-digit-hex token definition far from the reserved
+  // red, plus #FFFFFF; a colour FUNCTION of any kind is refused outright.
+  const style = styleSheet(buildPatientSummaryHtml(MINIMAL, DATE, IDENTITY));
+  const defs = [...style.matchAll(/--print-[a-z-]+:\s*([^;}]+)/g)].map((m) => m[1].trim());
+  assert.ok(defs.length >= 8, 'the token map shrank');
+  for (const v of defs) {
+    assert.match(v, /^#[0-9A-F]{6}$/i,
+      `token value ${JSON.stringify(v)} is not a 6-digit hex — a colour space this gate cannot read is refused outright`);
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(v.slice(i, i + 2), 16));
+    assert.ok(Math.abs(r - 192) + Math.abs(g - 57) + Math.abs(b - 43) >= 60,
+      `token ${v} sits within reach of the reserved red #C0392B`);
+  }
+  const rest = style.replace(/:root\s*\{[^}]*\}/, '');
+  for (const h of rest.match(/#[0-9a-fA-F]{3,8}/g) ?? []) {
+    assert.equal(h.toUpperCase(), '#FFFFFF', `a colour literal outside the token map: ${h}`);
+  }
+  assert.ok(!/(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\(/i.test(style),
+    'a colour function — the whitelist reads hexes, so a function is refused outright');
+});
+
+test('the gated properties admit only their contract values, whatever the selector', () => {
+  // A refuter appended `.warn, .warn-item, .tail, .med-card { break-inside:
+  // auto }` at the END of the sheet: cssRule() reads the FIRST block per
+  // class, the cascade obeys the LAST, so every avoid this gate reads was
+  // overridden while 582/582 stayed green. Beyond the per-class pins, the
+  // sheet may therefore not contain ANY break-inside except avoid, any
+  // print-color-adjust except exact, the legacy alias at all, or the makings
+  // of a vertical spacer (the flex-grow respelling of the mock's `flex: 1`).
+  const style = styleSheet(buildPatientSummaryHtml(MINIMAL, DATE, IDENTITY));
+  // `(?!\s*value)` owns the whitespace: with `\s*(?!value)` the quantifier
+  // backtracks to zero and the lookahead passes on the space itself.
+  assert.ok(!/break-inside:(?!\s*avoid)/.test(style), 'a break-inside other than avoid');
+  assert.ok(!/page-break-inside/.test(style), 'the legacy alias overrides behind the gate\'s back');
+  assert.ok(!/print-color-adjust:(?!\s*exact)/.test(style), 'a print-color-adjust other than exact');
+  assert.ok(!/flex-grow|min-height/.test(style), 'a spacer in the making');
+  assert.ok(!/flex:(?!\s*none)/.test(style), 'a flex: shorthand other than none');
 });
 
 test('the letterhead degrades field by field, and an empty identity is no letterhead', () => {
@@ -292,14 +478,31 @@ test('the warning band is ink behind white text — the pairing, not either half
 });
 
 test('the disclaimer and footer live inside the unbreakable tail', () => {
+  // Read by balanced div-depth, not by slicing to end-of-document: a refuter
+  // moved the footer to just AFTER the tail's closing tag and the old slice
+  // called everything past the opening tag „inside".
   const html = buildPatientSummaryHtml(MINIMAL, DATE, IDENTITY);
-  const tail = html.slice(html.indexOf('<div class="tail">'));
+  const tail = tailInner(html);
+  assert.ok(tail.length > 0, 'no tail element at all');
   assert.ok(tail.includes('class="disclaimer"') && tail.includes('class="footer"'),
     'the legal line can end up alone on a page with no clinical content above it');
   // …and the tail carries the LAST content block with them, so the group is
   // anchored to content, not floating after it.
   assert.ok(tail.includes('class="warn"') || tail.includes('class="sec"'),
     'the tail holds no content block — the footer group is separable again');
+});
+
+test('RED: the tail reader sees a footer moved past the closing tag', () => {
+  const outside =
+    '<div class="tail">\n<section class="warn">x</section>\n</div>\n' +
+    '<p class="disclaimer">d</p>\n<div class="footer">f</div>';
+  const tail = tailInner(outside);
+  assert.ok(tail.includes('class="warn"'));
+  assert.ok(!tail.includes('class="disclaimer"') && !tail.includes('class="footer"'),
+    'the reader still slices to end-of-document');
+  // …and nested divs do not end the tail early.
+  const nested = '<div class="tail"><div><div class="footer">f</div></div></div>';
+  assert.ok(tailInner(nested).includes('class="footer"'));
 });
 
 test('the mock\'s flex spacer is gone — a short note ends where it ends', () => {
@@ -314,15 +517,51 @@ test('the mock\'s flex spacer is gone — a short note ends where it ends', () =
 
 // ── Red proof ───────────────────────────────────────────────────────────────
 
-test('RED: the reserved-red detector fires on every spelling', () => {
+test('RED: the reserved-red detector fires on every spelling it names…', () => {
   const html = buildPatientSummaryHtml(MINIMAL, DATE, IDENTITY);
-  for (const inject of ['#C0392B', '#c0392b', 'rgb(192, 57, 43)', 'rgb(192,57,43)']) {
-    assert.ok(RESERVED_RED.test(html.replace('</style>', `.warn{color:${inject}}</style>`)),
+  for (const inject of ['#C0392B', '#c0392b', 'rgb(192, 57, 43)', 'rgb(192,57,43)', 'rgb(192 57 43)']) {
+    assert.ok(RESERVED_RED.test(styleSheet(html.replace('</style>', `.warn{color:${inject}}</style>`))),
       `not caught: ${inject}`);
   }
   // …and the module source is held too, not only the output.
   assert.ok(!RESERVED_RED.test(DOCSRC), 'the reserved red is in lib/patient-summary-doc.ts itself');
   assert.ok(RESERVED_RED.test(DOCSRC + '// const warn = "#C0392B"'), 'the source check is alive');
+});
+
+test('RED: …and the whitelist refuses what no denylist could spell', () => {
+  const html = buildPatientSummaryHtml(MINIMAL, DATE, IDENTITY);
+  for (const evil of ['hsl(6 63% 46%)', 'oklch(0.5 0.15 25)', 'hwb(6 12% 15%)', '#C13A2C', 'color(srgb 0.75 0.22 0.17)']) {
+    const style = styleSheet(html.replace('</style>', `.x{color:${evil}}</style>`));
+    const rest = style.replace(/:root\s*\{[^}]*\}/, '');
+    const strayHex = (rest.match(/#[0-9a-fA-F]{3,8}/g) ?? []).some((h) => h.toUpperCase() !== '#FFFFFF');
+    const fn = /(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\(/i.test(rest);
+    assert.ok(strayHex || fn, `slipped past the whitelist: ${evil}`);
+  }
+});
+
+test('RED: the oracle models the three published rules, independently', () => {
+  // Empty heading → dropped whole.
+  assert.deepEqual(expectedDoc('Какво установихме:').tokens, []);
+  // Single-newline note → sections survive, disclaimer is the one line.
+  const single = expectedDoc(`Какво установихме:\nБронхит.\n${DISCLAIMER}`);
+  assert.ok(single.tokens.includes('Бронхит.'));
+  assert.equal(single.tokens[single.tokens.length - 1], 'лекар.');
+  // Mid-text marker → stays in place (its tokens precede the next section's).
+  const mid = expectedDoc(SHAPES[25].summary);
+  assert.ok(mid.tokens.indexOf('Помнете') < mid.tokens.indexOf('Следващи'));
+});
+
+test('RED: the separator arithmetic sees a document stripped of dashes and colons', () => {
+  const S = SHAPES[28].summary; // S29 — colons and dashes mid-sentence
+  const html = buildPatientSummaryHtml(S, DATE, IDENTITY);
+  const want = expectedDoc(S);
+  const vis = visibleText(html);
+  assert.equal((vis.match(/:/g) ?? []).length, want.colons, 'green on the honest document first');
+  assert.ok(want.spacedDashes - want.therapyPars >= 1, 'the shape must carry an unabsorbable dash');
+  const stripped = vis.replace(/ [—–-] /g, ' ').replace(/:/g, '');
+  assert.notEqual((stripped.match(/:/g) ?? []).length, want.colons, 'colon deletion invisible');
+  assert.ok((stripped.match(/ [—–-] /g) ?? []).length < want.spacedDashes - want.therapyPars,
+    'dash deletion invisible');
 });
 
 test('RED: a repeated token literal fails the defined-once check', () => {
@@ -335,7 +574,7 @@ test('RED: a repeated token literal fails the defined-once check', () => {
 test('RED: the conservation check sees a dropped paragraph, word, and reorder', () => {
   const html = buildPatientSummaryHtml(MINIMAL, DATE, IDENTITY);
   const hay = tokens(visibleText(html));
-  const want = expectedTokens(MINIMAL);
+  const want = expectedDoc(MINIMAL).tokens;
   assert.ok(isSubsequence(want, hay), 'green on the honest document, or the reds mean nothing');
   // A dropped word.
   const dropped = hay.filter((t) => t !== 'стомаха.');
