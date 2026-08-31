@@ -155,7 +155,7 @@ export function AccessForm() {
           </svg>
         </span>
         <p className="text-lg font-semibold" style={{ color: 'var(--lp-heading)' }}>
-          Благодаря! Получихме заявката ви и ще се свържем скоро.
+          Благодарим Ви! Получихме заявката и ще се свържем с Вас скоро.
         </p>
       </div>
     );
