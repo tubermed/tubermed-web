@@ -130,7 +130,17 @@ export function scrubUrl(url: string): string {
 // ascii-safe: these match machine-generated alert strings built from ASCII
 // enums and digits. The one non-ASCII character is the em dash, matched
 // literally.
-const ALLOWED_MESSAGE_PATTERNS: RegExp[] = [
+// ⚠ EXPORTED so a gate can compare the regexes that actually RUN against
+// public/sentry-scrub-contract.json. A refuter downgraded both [pilot-leads]
+// entries back to v3 PREFIX matches — here AND in the backend implementation —
+// and every gate in both repos stayed green while a name, an e-mail and an ЕГН
+// rode out to Sentry behind an allowed tag. The contract gate checked that its
+// own JSON strings start with ^ and end with $; nothing compared them to these.
+// The byte-mirror proves the two JSON copies are identical, never that either
+// matches its implementation.
+// This file still must not READ the contract — an implementation that reads its
+// own spec agrees with it by construction. Being read BY a gate is the opposite.
+export const ALLOWED_MESSAGE_PATTERNS: RegExp[] = [
   /^\[usage-caps\] [a-z_]+ on [a-z]+: \d+\/\d+ in the rolling 24h window$/,
   /^\[account-status\] UNANSWERABLE — revocation NOT ENFORCED\. kind=[a-z_]+ unanswerable_total=\d+ checks_total=\d+$/,
   // [pilot-leads], 2026-08-31 — two call sites, one per side of the network.

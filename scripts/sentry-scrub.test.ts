@@ -44,7 +44,7 @@ import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import type { ErrorEvent } from '@sentry/nextjs';
-import { scrubEvent, scrubUrl } from '../lib/sentry-scrub.ts';
+import { scrubEvent, scrubUrl, ALLOWED_MESSAGE_PATTERNS } from '../lib/sentry-scrub.ts';
 import { buildSubmitFailedMessage } from '../lib/pilot-lead-alert.ts';
 
 const REPO = path.resolve(import.meta.dirname, '..');
@@ -244,6 +244,61 @@ test('the lead-form alert survives beforeSend, and cannot be made not to', () =>
     'free text behind the pilot-leads tag must still be redacted');
   assert.strictEqual(scrub('[pilot-leads] submit failed: status=0 count=1 name=Иван'), REDACTED,
     'a trailing field appended to the real message must still be redacted');
+});
+
+// ── The contract BINDS the implementation ────────────────────────────────────
+// ⚠ Until 2026-08-31 the contract was documentation. This file checked that its
+// pattern STRINGS start with ^ and end with $ (the MESSAGE floor above);
+// verify-mirror checks the two JSON copies are byte-identical. Neither ever
+// compared them to ALLOWED_MESSAGE_PATTERNS — the regexes that actually run. A
+// refuter downgraded both [pilot-leads] entries to v3 prefixes in this file's
+// implementation and 534/534 passed while this reached Sentry:
+//
+//   [pilot-leads] insert refused: Иван Петров ivan.petrov@example.com ЕГН 7501010010
+//
+// Mirroring proves the two specs are IDENTICAL; ^/$ proves each is well-formed.
+// Only this proves either is the thing being executed.
+test('the running regexes ARE the contract\'s declared patterns', () => {
+  assert.ok(
+    Array.isArray(ALLOWED_MESSAGE_PATTERNS) && ALLOWED_MESSAGE_PATTERNS.length > 0,
+    'VACUOUS: the implementation exposes no patterns to compare',
+  );
+  const running = ALLOWED_MESSAGE_PATTERNS.map((r) => r.source).sort();
+  const declared = (CONTRACT.message?.allow ?? []).map((a) => {
+    try { return new RegExp(a.pattern as string).source; } catch { return `INVALID:${a.pattern}`; }
+  }).sort();
+  assert.deepStrictEqual(
+    running,
+    declared,
+    'the regexes this repo RUNS are not the patterns its contract declares',
+  );
+});
+
+// ── The hostile floor, hardcoded HERE and derived from nothing ───────────────
+// The equality test above is satisfied by weakening the contract and the
+// implementation together — the same shape the contract's own _floor_warning
+// records about the mirror. These strings must never survive, whatever either
+// file says. Each is a real message shape with real personal data appended, and
+// each is exactly what a prefix allowlist lets through.
+test('PII behind an allowed tag is redacted, whatever the contract says', () => {
+  const REDACTED = '[redacted: message not on the tag allowlist]';
+  const scrub = (m: string) =>
+    (scrubEvent({ message: m } as unknown as ErrorEvent) as unknown as Record<string, unknown>).message;
+
+  const hostile = [
+    '[pilot-leads] insert refused: Иван Петров ivan.petrov@example.com ЕГН 7501010010',
+    '[pilot-leads] insert refused: status=403 code=42501 count=1 name=Иван Петров',
+    '[pilot-leads] submit failed: status=0 count=1 name=Иван Петров',
+    '[pilot-leads] submit failed: Иван Петров ivan.petrov@example.com',
+    '[usage-caps] пациент Иванов ЕГН 7501010010',
+  ];
+  const survivors = hostile.filter((m) => scrub(m) !== REDACTED);
+  assert.deepStrictEqual(survivors, [], `these reached Sentry intact:\n  ${survivors.join('\n  ')}`);
+
+  // The floor for the floor: a scrub that redacts everything passes the line
+  // above and alerts on nothing.
+  const real = '[pilot-leads] submit failed: status=0 count=1';
+  assert.strictEqual(scrub(real), real, 'the real alert must still survive — the pair, not the half');
 });
 
 // ── Dot-path helpers ─────────────────────────────────────────────────────────
