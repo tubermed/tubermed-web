@@ -45,6 +45,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import type { ErrorEvent } from '@sentry/nextjs';
 import { scrubEvent, scrubUrl } from '../lib/sentry-scrub.ts';
+import { buildSubmitFailedMessage } from '../lib/pilot-lead-alert.ts';
 
 const REPO = path.resolve(import.meta.dirname, '..');
 
@@ -197,6 +198,52 @@ test('message and logentry are scrubbed, and the allowlisted one survives', () =
     logentry: { formatted: '[usage-caps] SENTINEL_F' },
   } as unknown as ErrorEvent) as unknown as Record<string, unknown>;
   assert.ok(!JSON.stringify(fmtOnly).includes('SENTINEL_F'), 'a formatted-only logentry leaked');
+});
+
+// ── This repo's OWN captureMessage caller ────────────────────────────────────
+// components/landing/AccessForm.tsx reports a failed lead submission. It is the
+// only witness a refused CORS preflight can ever have — the POST is never
+// dispatched, so no server-side channel sees anything — which is precisely how
+// the form managed to capture zero leads without anyone at TuberMed noticing.
+//
+// The message is built by the REAL formatter, never copied, so a drift between
+// lib/pilot-lead-alert.ts and the allowlist fails HERE instead of arriving in
+// Sentry as an empty redaction. The formatter's job is to be incapable of
+// emitting an unmatched string, so it is fed hostile input too.
+test('the lead-form alert survives beforeSend, and cannot be made not to', () => {
+  const REDACTED = '[redacted: message not on the tag allowlist]';
+  const scrub = (m: string) =>
+    (scrubEvent({ message: m } as unknown as ErrorEvent) as unknown as Record<string, unknown>).message;
+
+  // status 0 = no HTTP answer at all. THE case: this is what a refused
+  // preflight looks like from inside the page, and the defect it would report.
+  const blocked = buildSubmitFailedMessage(0, 1);
+  assert.strictEqual(blocked, '[pilot-leads] submit failed: status=0 count=1');
+  assert.strictEqual(scrub(blocked), blocked, 'the no-response alert must not arrive empty');
+
+  for (const [status, count] of [[500, 1], [429, 12], [404, 3], [403, 7]] as const) {
+    const m = buildSubmitFailedMessage(status, count);
+    assert.strictEqual(scrub(m), m, `alert redacted for status ${status}`);
+  }
+
+  // Hostile / impossible inputs must still land inside the pattern rather than
+  // redacting the whole alert.
+  for (const bad of [undefined, null, NaN, 99999, -1, '403', 403.5, { toString: () => '403' }]) {
+    const m = buildSubmitFailedMessage(bad, 1);
+    assert.strictEqual(scrub(m), m, `alert redacted for status ${String(bad)}`);
+  }
+
+  // And the backend's half of the same tag, asserted here because the contract
+  // is shared: deleting either entry from THIS repo's implementation empties an
+  // alarm that the other repo is still sending.
+  const backend = '[pilot-leads] insert refused: status=403 code=42501 count=1';
+  assert.strictEqual(scrub(backend), backend, 'the backend 42501 alert must not arrive empty');
+
+  // The floor: this whole test is satisfied by a scrub that keeps everything.
+  assert.strictEqual(scrub('[pilot-leads] пациент Иванов ЕГН 7501010010'), REDACTED,
+    'free text behind the pilot-leads tag must still be redacted');
+  assert.strictEqual(scrub('[pilot-leads] submit failed: status=0 count=1 name=Иван'), REDACTED,
+    'a trailing field appended to the real message must still be redacted');
 });
 
 // ── Dot-path helpers ─────────────────────────────────────────────────────────

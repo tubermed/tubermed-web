@@ -133,6 +133,15 @@ export function scrubUrl(url: string): string {
 const ALLOWED_MESSAGE_PATTERNS: RegExp[] = [
   /^\[usage-caps\] [a-z_]+ on [a-z]+: \d+\/\d+ in the rolling 24h window$/,
   /^\[account-status\] UNANSWERABLE — revocation NOT ENFORCED\. kind=[a-z_]+ unanswerable_total=\d+ checks_total=\d+$/,
+  // [pilot-leads], 2026-08-31 — two call sites, one per side of the network.
+  // The backend route reports an insert the DB refused; components/landing/
+  // AccessForm.tsx reports a submission that got no answer at all (status=0),
+  // which is the ONLY witness available when a refused CORS preflight means the
+  // POST is never dispatched — that is the shape that hid this defect for the
+  // whole life of the table. Counts and a status only: the form's payload is a
+  // name and an e-mail address and never rides the event.
+  /^\[pilot-leads\] insert refused: status=\d{1,3} code=[A-Z0-9_]{1,10} count=\d+$/,
+  /^\[pilot-leads\] submit failed: status=\d{1,3} count=\d+$/,
 ];
 const REDACTED_MESSAGE = "[redacted: message not on the tag allowlist]";
 

@@ -2,8 +2,53 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import * as Sentry from '@sentry/nextjs';
+import { buildSubmitFailedMessage } from '@/lib/pilot-lead-alert';
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL ?? '';
+
+// ── Failure visibility (2026-08-31) ─────────────────────────────────────────
+// This form captured ZERO leads for its entire existence, and the ONLY place
+// that ever showed was the visitor's own screen: „Нещо се обърка." No log, no
+// event, no counter.
+//
+// The reason it could not be seen from the backend is the reason this reporter
+// has to live in the browser. The form is served from www.tubermed.com; the
+// backend's CORS allowlist held only app.tubermed.com; so the preflight was
+// refused and the POST was NEVER DISPATCHED. There was no request for any
+// server-side channel to notice. A browser is the only witness a refused
+// preflight ever has, and that is the `status = 0` case below.
+//
+// PII: the name, the e-mail and the message ARE the personal data this form
+// exists to collect, and none of them may ride the event. What goes out is an
+// HTTP status and a count — matched full-string against
+// public/sentry-scrub-contract.json, so a drift redacts the whole alert rather
+// than leaking; the event's own URL and transaction are route-shaped by the
+// shared beforeSend in lib/sentry-scrub.ts.
+//
+// ⚠ This is dark until NEXT_PUBLIC_SENTRY_DSN is set on Vercel:
+// instrumentation-client.ts no-ops without it, and the live CSP on
+// www.tubermed.com carries no *.ingest.de.sentry.io origin today, which is how
+// you can tell from outside that it is unset. Setting it also opens the CSP
+// automatically (lib/sentry-csp.ts derives connect-src from the same variable).
+// Until then captureMessage is a no-op and this failure stays invisible — the
+// backend half of the alerting works regardless, but it can only see requests
+// that ARRIVE.
+// The message itself lives in lib/pilot-lead-alert.ts, NOT here: this file is
+// JSX and `node --test scripts/*.test.ts` cannot import it, so a formatter kept
+// here would be a string nothing could ever run through the real scrub.
+let submitFailures = 0;
+
+// Fire-and-forget, and never a second failure: a Sentry problem must not turn a
+// form error into a broken page.
+function reportSubmitFailed(status: unknown): void {
+  submitFailures += 1;
+  try {
+    Sentry.captureMessage(buildSubmitFailedMessage(status, submitFailures), 'error');
+  } catch {
+    /* reporting must never break the form */
+  }
+}
 
 const SPECIALTIES = [
   'Общопрактикуващ лекар (ОПЛ)',
@@ -77,9 +122,18 @@ export function AccessForm() {
           website, // honeypot — empty for humans
         }),
       });
-      if (!res.ok) throw new Error('request failed');
+      if (!res.ok) {
+        // An answer we did not want, but an ANSWER — the status is real.
+        reportSubmitFailed(res.status);
+        setStatus('error'); // keep field values
+        return;
+      }
       setStatus('success');
     } catch {
+      // No response object exists here, so there is no status to report: the
+      // request was refused before it left (CORS), or the network failed. This
+      // is the branch the whole defect lived in, and status=0 is what says so.
+      reportSubmitFailed(0);
       setStatus('error'); // keep field values
     }
   }
