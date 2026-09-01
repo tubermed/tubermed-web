@@ -209,19 +209,48 @@ test('POSITIVE: the corrected authorship line is present, in the fixed grammar',
   );
 });
 
-test('the FAQ answer and its JSON-LD twin stay byte-identical', () => {
-  // JsonLd.tsx's own header states this rule. It is pinned here because the
-  // residency answer is exactly the one that gets edited on the visible page
-  // and forgotten in the structured data, where crawlers keep serving the old
-  // text long after the browser shows the new one.
+test('the FAQ and its JSON-LD twin stay byte-identical — every question, every answer', () => {
+  // JsonLd.tsx's own header states this rule, but until 2026-09-01 only the
+  // residency answer was actually bound — and the Ви sweep changed three OTHER
+  // answers, any of which could have been edited on the visible page and
+  // forgotten in the structured data, where crawlers keep serving the old text
+  // long after the browser shows the new one. Two copies with nothing binding
+  // them is the defect class; this binds all of them. The regexes read the
+  // SOURCE, so escapes compare as written — byte-identity is the assertion.
   const faq = CORPUS.find(([p]) => p === 'components/landing/Faq.tsx')![1];
   const jsonLd = CORPUS.find(([p]) => p === 'components/landing/JsonLd.tsx')![1];
-  const pull = (src: string, key: string) =>
-    src.match(new RegExp(`${key}: '(Аудиото[^']*)'`))?.[1] ?? null;
-  const a = pull(faq, 'a');
-  const b = pull(jsonLd, 'text');
-  assert.ok(a, 'the residency answer is gone from Faq.tsx');
-  assert.strictEqual(b, a, 'JSON-LD drifted from the visible FAQ answer');
+  const S = "'((?:[^'\\\\]|\\\\.)*)'";
+
+  // q/a object literals in Faq.tsx's QA array, in order.
+  const faqPairs = [...faq.matchAll(new RegExp(`q: ${S},\\s*a: ${S},`, 'g'))].map(
+    (m) => [m[1], m[2]] as const,
+  );
+  // Question objects in JsonLd.tsx, in order — anchored on '@type': 'Question'
+  // so the Organization block's own `name:` cannot leak into the pairing.
+  const ldPairs = [
+    ...jsonLd.matchAll(
+      new RegExp(
+        `'@type': 'Question',\\s*name: ${S},\\s*acceptedAnswer: \\{\\s*'@type': 'Answer',\\s*text: ${S},`,
+        'g',
+      ),
+    ),
+  ].map((m) => [m[1], m[2]] as const);
+
+  // Vacuity guards: an extraction regex that stops matching the source layout
+  // must go red, not quietly compare two empty lists.
+  assert.ok(faqPairs.length >= 5, `only ${faqPairs.length} Q&As extracted from Faq.tsx — the extractor is blind`);
+  const questionCount = (jsonLd.match(/'@type': 'Question'/g) ?? []).length;
+  assert.strictEqual(
+    ldPairs.length,
+    questionCount,
+    `${questionCount} Question objects in JsonLd.tsx but ${ldPairs.length} extracted — the extractor is blind to some`,
+  );
+
+  assert.deepStrictEqual(
+    ldPairs,
+    faqPairs,
+    'JSON-LD drifted from the visible FAQ — edit both files together, byte-identically',
+  );
 });
 
 test('the scan actually reads the site — a corpus that shrinks is a blind gate', () => {
