@@ -13,17 +13,17 @@
 // as PDF" are the same document, there is no second builder.
 //
 // ── The page box ────────────────────────────────────────────────────────────
-// `@page { margin: 6mm 15mm 11mm }` and deliberately NO `size:` declaration.
-// The task brief asked for `size: A4`, but the measured matrix in
-// scripts/print-margin.test.ts says a `size` declaration is exactly what cost
-// this document its margins last time: where the declared size does not match
-// the destination paper, Chrome discards the CSS margins and stamps its own
-// dated header. The size-less form was measured clean on A5, A4 AND Letter;
-// `size: A4` would protect A4 only. A4 is Chrome's default page box here, so
-// on A4 paper the two forms are identical — the size-less one just doesn't
-// break on the printer we didn't think of. 6mm top: Chrome's header threshold
-// is 9mm (ABSENT ≤8mm, DRAWN ≥9mm), so 6mm buys 3mm of headroom. Sides 15mm
-// and bottom 11mm reproduce the mock's proportions (57px ≈ 15mm, 40px ≈ 11mm).
+// `@page { size: A4; margin: 6mm 15mm 11mm }`. The size declaration is
+// Dimitar's RULING (2026-09-01): clinic printers are A4, so the sheet declares
+// it. The 2026-08-31 build shipped size-LESS as a flagged deviation, because
+// the measured matrix in scripts/print-margin.test.ts says a size declaration
+// forfeits the CSS margins on any paper it does not match — that trade is now
+// accepted and recorded in that file's резюме test: on A4 the two forms are
+// identical (margins hold, no stamp); on Letter the margins become the
+// printer's own and Chrome may stamp its dated header. 6mm top: Chrome's
+// header threshold is 9mm (ABSENT ≤8mm, DRAWN ≥9mm), so 6mm buys 3mm of
+// headroom. Sides 15mm and bottom 11mm reproduce the mock's proportions
+// (57px ≈ 15mm, 40px ≈ 11mm).
 //
 // ── What the builder is handed, and what it may not be handed ───────────────
 // There is NO patient parameter here, and there must not be one. The third
@@ -62,9 +62,13 @@
 // card's two-span line replaces it). The one drop: a known heading with
 // NOTHING under it vanishes whole, heading line included — the backend's own
 // instruction is „пропусни раздел без съдържание", and an empty warning box
-// is an alarm about nothing. All three rules are pinned by
-// scripts/summary-print.test.ts's conservation oracle, which re-derives them
-// independently — a divergence between this file and that model is red.
+// is an alarm about nothing. The one REORDER (ruling 2026-09-01): warning
+// sections render LAST among the content blocks, below „Следващи стъпки"
+// wherever the text put them — the document ends on the warning, because its
+// weight comes from being last. Every other section keeps the text's order.
+// All four rules are pinned by scripts/summary-print.test.ts's conservation
+// oracle, which re-derives them independently — a divergence between this
+// file and that model is red.
 //
 // ── Grayscale is the delivery medium ────────────────────────────────────────
 // Most clinic printers are monochrome, and Chrome's print dialog ships with
@@ -108,7 +112,8 @@ type SectionKey = 'findings' | 'therapy' | 'warning' | 'next' | 'plain';
 
 /** Mirror of the backend prompt's mandated headings (lib/patient-summary.js
  *  SUMMARY_SYSTEM). Order here is presentation-neutral: sections render in the
- *  order they appear in the TEXT, never reordered. */
+ *  order they appear in the TEXT — except the warning, which the BUILDER (not
+ *  the parser) moves last, per the 2026-09-01 ruling. */
 const HEADINGS: ReadonlyArray<{ key: SectionKey; label: string }> = [
   { key: 'findings', label: 'Какво установихме' },
   { key: 'therapy', label: 'Вашата терапия' },
@@ -292,11 +297,29 @@ export function buildPatientSummaryHtml(
 ): string {
   const v = (s?: string | null) => (s || '').trim();
   const practice = v(identity.practiceName);
-  const doctor = v(identity.doctorName);
+  const doctorRaw = v(identity.doctorName);
   const specialty = v(identity.specialty);
   const phone = v(identity.phone);
 
-  const { sections, disclaimer } = parsePatientSummary(summary);
+  // Byline title (ruling 2026-09-01): every author in this product is a
+  // physician, and the profile has no title field — so the sheet supplies
+  // „д-р ". Idempotent: a doctor who typed a title into their own name
+  // (д-р / доц. / проф. / акад., dotted or not) keeps it un-doubled.
+  const doctor =
+    doctorRaw && !/^(?:д-р|доц|проф|акад)\.?\s/iu.test(doctorRaw)
+      ? `д-р ${doctorRaw}`
+      : doctorRaw;
+
+  const { sections: parsed, disclaimer } = parsePatientSummary(summary);
+
+  // The ruled reorder — the ONE exception to text order (see the header):
+  // warning sections render last, so the document ends on the warning box.
+  // Done here, not in the parser, so parsePatientSummary stays the pure
+  // re-arrangement its conservation contract describes.
+  const sections = [
+    ...parsed.filter((s) => s.key !== 'warning'),
+    ...parsed.filter((s) => s.key === 'warning'),
+  ];
 
   // Letterhead: practice eyebrow left, преглед date right. Either half may be
   // absent; the whole element (not just its text), because an empty flex row
@@ -316,13 +339,16 @@ export function buildPatientSummaryHtml(
         `</div>\n`
       : '';
 
-  const contact =
-    practice || phone
-      ? `<div class="contact">${escapeHtml(practice)}` +
-        (practice && phone ? `<span class="sep"> · </span>` : '') +
-        (phone ? `тел. <span class="tel">${escapeHtml(phone)}</span>` : '') +
-        `</div>`
-      : '<div class="contact"></div>';
+  // The contact line is the red-flag instruction's callback number, and it
+  // exists ONLY when a phone does (ruling 2026-09-01): a half-empty contact
+  // line under „потърсете лекар" is worse than none, and the practice name
+  // already heads the letterhead. No phone → no element — an empty div still
+  // holds the footer row open.
+  const contact = phone
+    ? `<div class="contact">${escapeHtml(practice)}` +
+      (practice ? `<span class="sep"> · </span>` : '') +
+      `тел. <span class="tel">${escapeHtml(phone)}</span></div>`
+    : '';
 
   const rendered = sections.map(sectionHtml);
 
@@ -344,7 +370,7 @@ export function buildPatientSummaryHtml(
   return `<!doctype html><html lang="bg"><head><meta charset="utf-8">
 <title>Резюме за пациента</title>
 <style>
-  @page { margin: 6mm 15mm 11mm; }
+  @page { size: A4; margin: 6mm 15mm 11mm; }
   :root { ${tokenCss()}; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -399,7 +425,7 @@ export function buildPatientSummaryHtml(
   .foot-rule { height: 1px; background: var(--print-rule); margin: 14px 0; }
   .footer { display: flex; justify-content: space-between; align-items: baseline; gap: 20px; }
   .contact { font-size: 15px; color: var(--print-text); }
-  .mark { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.18em; color: var(--print-text-hint); white-space: nowrap; }
+  .mark { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.18em; color: var(--print-text-hint); white-space: nowrap; margin-left: auto; }
   @media screen { body { max-width: 680px; margin: 0 auto; padding: 24px; } }
 </style></head><body>
 ${letterhead}<div class="brand-rule"></div>

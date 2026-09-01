@@ -121,10 +121,13 @@ function isSubsequence(needle: string[], hay: string[]): boolean {
 
 /** The independent expectation model — the document contract re-derived from
  *  scratch, NOT imported from the parser under test. It encodes exactly the
- *  three published rules (module header of lib/patient-summary-doc.ts):
+ *  four published rules (module header of lib/patient-summary-doc.ts):
  *  the disclaimer is the marker LINE of the final paragraph, rendered last;
  *  a matched heading loses its trailing colon; an empty-bodied heading is
- *  dropped whole. A builder change that shifts any of these diverges from
+ *  dropped whole; and the warning box renders LAST among the content blocks —
+ *  the ONE sanctioned reorder (ruling 2026-09-01: the document ends on the
+ *  warning, its weight comes from being last), every other section keeping the
+ *  text's own order. A builder change that shifts any of these diverges from
  *  this model and goes red — that is the point of writing it twice.
  *
  *  It also returns SEPARATOR ARITHMETIC. A refuter mutation deleted every
@@ -176,7 +179,11 @@ function expectedDoc(summary: string): ExpectedDoc {
     else cur.text += (cur.text ? '\n' : '') + line;
   }
   flush();
-  const kept = secs.filter((s) => s.text !== '');   // the pinned empty-heading drop
+  const nonEmpty = secs.filter((s) => s.text !== '');   // the pinned empty-heading drop
+  // The sanctioned reorder: warning sections move to the END, after everything
+  // else; both halves keep the text's own internal order.
+  const WARN = 'На какво да обърнете внимание';
+  const kept = [...nonEmpty.filter((s) => s.key !== WARN), ...nonEmpty.filter((s) => s.key === WARN)];
   const expectedText = kept.map((s) => `${s.label ?? ''}\n${s.text}`).join('\n') + '\n' + disclaimer;
   const therapyPars = kept
     .filter((s) => s.key === 'Вашата терапия')
@@ -255,7 +262,7 @@ const SHAPES: Array<{ id: string; summary: string }> = [
   { id: 'S12 a heading with content on the same line', summary: `Какво установихме: всичко е наред при прегледа.\n\n${DISCLAIMER}` },
   { id: 'S13 a heading the doctor retyped in caps', summary: `КАКВО УСТАНОВИХМЕ:\nПрегледът мина спокойно.\n\n${DISCLAIMER}` },
   { id: 'S14 the same section twice', summary: `Вашата терапия:\nИбупрофен 400 мг — по 1 таблетка сутрин. След хранене.\n\nВашата терапия:\nВитамин Д — по 1 капка дневно. С храна.\n\n${DISCLAIMER}` },
-  { id: 'S15 warning first — order is the text\'s, never re-sorted', summary: `На какво да обърнете внимание:\n${WARNING}\n\nВашата терапия:\n${THERAPY}\n\n${DISCLAIMER}` },
+  { id: 'S15 warning written first — the one sanctioned reorder still lands it last', summary: `На какво да обърнете внимание:\n${WARNING}\n\nВашата терапия:\n${THERAPY}\n\n${DISCLAIMER}` },
   { id: 'S16 free text before the first heading', summary: `Благодарим Ви за посещението.\n\nКакво установихме:\n${FINDINGS}\n\n${DISCLAIMER}` },
   {
     id: 'S17 an injection attempt is text, not markup',
@@ -326,12 +333,33 @@ test('the warning box renders one row per flag line — eight stay eight, one st
   assert.equal(count(one, 'class="warn-item"'), 1);
 });
 
-test('sections keep the text\'s own order — a warning written first renders first', () => {
-  const html = buildPatientSummaryHtml(SHAPES[14].summary, DATE, IDENTITY);
-  const warnAt = html.indexOf('class="warn"');
-  const medAt = html.indexOf('class="med-card"');
+test('the warning box renders last whatever the text\'s order — the ruled reorder', () => {
+  // Ruling 2026-09-01: the document ENDS on the warning box — its weight comes
+  // from being last. This is the ONE sanctioned reorder; every other section
+  // keeps the text's own order (held by the conservation oracle, which models
+  // the same rule independently).
+  const first = buildPatientSummaryHtml(SHAPES[14].summary, DATE, IDENTITY);
+  const warnAt = first.indexOf('class="warn"');
+  const medAt = first.indexOf('class="med-card"');
   assert.ok(warnAt >= 0 && medAt >= 0);
-  assert.ok(warnAt < medAt, 'the layout re-sorted the doctor\'s sections');
+  assert.ok(warnAt > medAt, 'a warning written first must still render last');
+  // …and in the backend's own mandated order, the warning moves BELOW
+  // „Следващи стъпки": the S02 stress note carries both.
+  const s02 = buildPatientSummaryHtml(SHAPES[1].summary, DATE, IDENTITY);
+  assert.ok(s02.indexOf('class="warn"') > s02.indexOf('Следващи стъпки'),
+    'the warning box must sit below „Следващи стъпки"');
+});
+
+test('the warning box is the last content block — nothing but disclaimer/footer after it', () => {
+  for (const shape of [SHAPES[0], SHAPES[1], SHAPES[14]]) {
+    const html = buildPatientSummaryHtml(shape.summary, DATE, IDENTITY);
+    const afterWarn = html.slice(html.indexOf('class="warn"'));
+    assert.ok(!afterWarn.includes('class="sec"'),
+      `a content section renders after the warning box (${shape.id})`);
+    const tail = tailInner(html);
+    assert.ok(tail.includes('class="warn"'),
+      `the warning box is not in the unbreakable tail (${shape.id})`);
+  }
 });
 
 test('a heading the model emitted with nothing under it renders no empty frame', () => {
@@ -437,6 +465,41 @@ test('the letterhead degrades field by field, and an empty identity is no letter
     'a separator with nothing on its other side');
 });
 
+test('the byline reads „д-р <име>" — prefixed once, never doubled', () => {
+  // Ruling 2026-09-01: every author in this product is a physician; the sheet
+  // says so. The profile has no title field, and some doctors will have typed
+  // the title into their name themselves — so the prefix is idempotent.
+  const bare = buildPatientSummaryHtml(MINIMAL, DATE, { doctorName: 'Иванова Петрова' });
+  assert.ok(/class="byline">д-р Иванова Петрова/.test(bare),
+    'a bare profile name must gain the „д-р " prefix on the byline');
+  const titled = buildPatientSummaryHtml(MINIMAL, DATE, IDENTITY);
+  assert.ok(!visibleText(titled).includes('д-р д-р'),
+    'a name already carrying „д-р" must not be doubled');
+  const other = buildPatientSummaryHtml(MINIMAL, DATE, { doctorName: 'доц. Георгиев' });
+  assert.ok(/class="byline">доц\. Георгиев/.test(other),
+    'a name opening with another academic title keeps it — no „д-р доц."');
+});
+
+test('the contact line exists only when a phone does — absence beats a half-empty line', () => {
+  // Ruling 2026-09-01: the contact line is the red-flag instruction's callback
+  // number. Without a phone it renders NOTHING — not the practice name alone,
+  // not an empty div holding the footer open.
+  const noPhone = buildPatientSummaryHtml(MINIMAL, DATE, {
+    practiceName: 'МЦ Борово', doctorName: 'д-р Тест Лекар', specialty: 'Пулмолог',
+  });
+  assert.ok(!noPhone.includes('class="contact"'),
+    'a contact line rendered with no phone to carry');
+  assert.ok(noPhone.includes('изготвено с TuberMed'), 'the footer mark survives alone');
+  const withPhone = buildPatientSummaryHtml(MINIMAL, DATE, IDENTITY);
+  assert.ok(withPhone.includes('class="contact"'));
+  assert.ok(/тел\. <span class="tel">0700 00 000<\/span>/.test(withPhone),
+    'a stored phone must render as „тел. …"');
+  const phoneOnly = buildPatientSummaryHtml(MINIMAL, DATE, { phone: '0700 00 000' });
+  assert.ok(phoneOnly.includes('class="contact"') &&
+    !phoneOnly.includes('<span class="sep"> · </span>тел.'),
+    'a phone with no practice must not open with a dangling separator');
+});
+
 // ── 4. The page-break contract, pinned in the emitted CSS ───────────────────
 // The numbers behind these pins were measured through Chrome's own print
 // pipeline (see the file header). A DOM-free test cannot re-run Chrome; what
@@ -539,7 +602,7 @@ test('RED: …and the whitelist refuses what no denylist could spell', () => {
   }
 });
 
-test('RED: the oracle models the three published rules, independently', () => {
+test('RED: the oracle models the four published rules, independently', () => {
   // Empty heading → dropped whole.
   assert.deepEqual(expectedDoc('Какво установихме:').tokens, []);
   // Single-newline note → sections survive, disclaimer is the one line.
@@ -549,6 +612,15 @@ test('RED: the oracle models the three published rules, independently', () => {
   // Mid-text marker → stays in place (its tokens precede the next section's).
   const mid = expectedDoc(SHAPES[25].summary);
   assert.ok(mid.tokens.indexOf('Помнете') < mid.tokens.indexOf('Следващи'));
+  // The ruled reorder → the oracle expects the warning's tokens AFTER
+  // „Следващи стъпки"'s, whatever order the text wrote them in (S02 writes
+  // the warning third of four).
+  const s02 = expectedDoc(SHAPES[1].summary);
+  assert.ok(s02.tokens.indexOf('внимание') > s02.tokens.indexOf('Следващи'),
+    'the oracle no longer models the warning-last ruling');
+  // …and a warning-only note is still just the warning.
+  const only = expectedDoc(SHAPES[6].summary);
+  assert.equal(only.tokens[0], 'На');
 });
 
 test('RED: the separator arithmetic sees a document stripped of dashes and colons', () => {

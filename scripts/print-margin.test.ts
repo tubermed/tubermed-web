@@ -43,8 +43,10 @@
 // That the top edge of EVERY print surface in the repo stays under the measured
 // threshold, and that the лист's first page gives back exactly what the page
 // box gave up — so „suppress the stamp" can never quietly become „restyle the
-// document". The резюме is pinned as NOT protected, with the trade written
-// down, because dropping `size: A5` is Dimitar's call and not this batch's.
+// document". The резюме carries `size: A4` by RULING (2026-09-01, Dimitar:
+// clinic printers are A4) and is therefore a written exception to the
+// size-free rule — see PAGE_RULE_EXCEPTIONS and the резюме test below, where
+// the Letter trade is recorded.
 //
 // It sweeps rather than enumerates, because enumerating already failed once:
 // the first version held the three documents the „Печат" button builds and
@@ -135,6 +137,8 @@ function pageBlocks(css: string): Array<{ selector: string; body: string }> {
 export interface PageBox {
   topMm: number | null;
   declaresSize: boolean;
+  /** The declared size's value, verbatim (e.g. 'A4'), or null when none. */
+  sizeValue: string | null;
   blocks: number;
   /** A selector we cannot reason about (`:first`, `:left`, …). Such a rule
    *  governs SOME pages, so the general page box is still whatever the
@@ -152,6 +156,7 @@ function pageBox(html: string): PageBox {
   const blocks = pageBlocks(html);
   let topMm: number | null = null;
   let declaresSize = false;
+  let sizeValue: string | null = null;
   let qualified = false;
   for (const { selector, body } of blocks) {
     if (selector !== '') { qualified = true; continue; }  // :first / :left / :right
@@ -160,7 +165,7 @@ function pageBox(html: string): PageBox {
       if (i < 0) continue;
       const prop = decl.slice(0, i).trim().toLowerCase();
       const value = decl.slice(i + 1).trim();
-      if (prop === 'size') { declaresSize = true; continue; }
+      if (prop === 'size') { declaresSize = true; sizeValue = value; continue; }
       if (prop === 'margin-top') { topMm = lengthMm(value); continue; }
       if (prop === 'margin') {
         // 1 value → all; 2 → v h; 3 → t h b; 4 → t r b l. Top is always first.
@@ -168,7 +173,7 @@ function pageBox(html: string): PageBox {
       }
     }
   }
-  return { topMm, declaresSize, blocks: blocks.length, qualified };
+  return { topMm, declaresSize, sizeValue, blocks: blocks.length, qualified };
 }
 
 const protectedFromHeader = (b: PageBox) =>
@@ -240,6 +245,14 @@ const PAGE_RULE_EXCEPTIONS: Record<string, string> = {
   // Chrome's print path. It has no @page at all, which is why it is named here
   // rather than silently absent — see the Word test below.
   'lib/exporters.ts:generateWordHtml': 'opened in Word, never printed by the browser',
+  // The резюме declares `size: A4` by RULING (2026-09-01, Dimitar: clinic
+  // printers are A4), which `protectedFromHeader` refuses on principle — a
+  // size declaration forfeits the CSS margins on any paper it doesn't match
+  // (the measured matrix at the top of this file). The trade is accepted and
+  // held by its own dedicated test below, which pins size to exactly A4 and
+  // the top margin to 6mm; this entry only excuses it from the size-free
+  // sweep, never from the margin check that test performs.
+  'lib/patient-summary-doc.ts': 'size: A4 by ruling 2026-09-01 — held by its own test below',
 };
 
 test('every @page in the repo is under the browser\'s header threshold', () => {
@@ -280,25 +293,34 @@ test('the Word document is exempt for a written reason, not by omission', () => 
   assert.ok('lib/exporters.ts:generateWordHtml' in PAGE_RULE_EXCEPTIONS);
 });
 
-test('the резюме за пациента does not leave room for the browser\'s dated header', () => {
-  // The pin that used to sit here („NOT protected — ruling owed") is answered:
-  // the Вариант A rebuild (2026-08-31) took the owed trade. `size: A5` is
-  // DROPPED — per the matrix at the top of this file a size declaration
-  // forfeits the CSS margins on any paper it doesn't match, which is the whole
-  // reason the old sheet carried the stamp — and the page box is now
-  // `margin: 6mm 15mm 11mm`, real A4 geometry with 3mm of headroom under the
-  // measured 9mm threshold. (The design brief spelled `size: A4`; the
-  // size-less form is what the matrix measured clean on A5, A4 AND Letter,
-  // and on A4 paper — Chrome's default page box here — the two are identical.)
+test('the резюме prints A4 by ruling, top margin still under the header threshold', () => {
+  // History of this pin, both directions. The Вариант A rebuild (2026-08-31)
+  // shipped SIZE-LESS `margin: 6mm 15mm 11mm` — the matrix's only row clean on
+  // A5, A4 AND Letter — as a flagged deviation from the brief's `size: A4`.
+  // Dimitar then RULED (2026-09-01): clinic printers are A4, `size: A4` ships.
+  //
+  // The Letter trade, recorded either way per the ruling: on A4 paper the two
+  // forms are identical (A4 is Chrome's default page box here — margins hold,
+  // no stamp, measured 2026-08-31). On LETTER paper the declared A4 does not
+  // match the destination, which is the mismatch class the matrix measured on
+  // every `size: A5` row: Chrome discards the CSS margins, uses the printer's
+  // own, and a top margin ≥9mm draws the dated header. Letter under `size: A4`
+  // specifically was NOT re-run through the print pipeline in this batch — the
+  // verdict is carried over from the measured mismatch mechanism, and a clinic
+  // that somehow feeds Letter gets the stamp back. Accepted by the ruling.
   const box = pageBox(SUMMARY());
   assert.ok(box.blocks > 0, 'the резюме declares no @page at all — the browser then picks the margin');
-  assert.equal(box.declaresSize, false,
-    'the резюме must not declare @page size: a size mismatch makes Chrome discard the CSS ' +
-    'margins and print its own dated header (measured — see the matrix above)');
+  assert.equal(box.sizeValue, 'A4',
+    'the резюме declares size A4 by ruling (2026-09-01) — no other size, and not size-less');
   assert.equal(box.topMm, 6,
     `the резюме's page-box top margin is ${box.topMm}mm; the design fixes it at 6mm — ` +
     `9mm is where Chrome starts stamping, and this document already lost that fight once`);
-  assert.ok(protectedFromHeader(box));
+  assert.equal(box.qualified, false);
+  // NOT protectedFromHeader — the size declaration disqualifies it by design.
+  // That is exactly the written exception above; this test is the replacement
+  // guarantee: right size, right top margin, on A4 paper no room for the stamp.
+  assert.ok('lib/patient-summary-doc.ts' in PAGE_RULE_EXCEPTIONS,
+    'the резюме left the sweep without its written exception');
 });
 
 test('the лист gives back on the first page exactly what the page box gave up', () => {
@@ -340,6 +362,11 @@ test('RED: the parser reads every shape a page box is written in', () => {
     if (want === null) assert.equal(got, null, `${css} → ${got}, expected null`);
     else assert.ok(Math.abs(got! - want) < 1e-9, `${css} → ${got}, expected ${want}`);
   }
+  // The size VALUE is read verbatim, and its absence is null — the резюме test
+  // pins `A4` exactly, so a reader that returned garbage would pin garbage.
+  assert.equal(pageBox('<style>@page{size:A4;margin:6mm 15mm 11mm}</style>').sizeValue, 'A4');
+  assert.equal(pageBox('<style>@page{size:A5}</style>').sizeValue, 'A5');
+  assert.equal(pageBox('<style>@page{margin:6mm}</style>').sizeValue, null);
 });
 
 test('RED: the verdict goes red on every way the stamp comes back', () => {
