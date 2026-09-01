@@ -58,11 +58,16 @@ const ALLOW: ReadonlyArray<readonly [string, string, string]> = [
 
 // Blank comments while preserving line structure, so reported line numbers
 // match the source (same idiom as scripts/no-emoji-ui.ts): block/JSDoc/{/*…*/}
-// first, then line comments.
+// first, then line comments. The stripper is not string-aware; the (?<!:)
+// keeps a URL's `//` (as in `https://…`) from blanking the rest of a copy
+// line — the refuter's find: copy AFTER a URL would otherwise be invisible
+// to the gate. Residual limit, stated: a bare `//` inside a string literal
+// with no preceding colon still blanks the line's tail. That can only HIDE
+// a defect on such a line, never flag a clean one.
 function stripComments(src: string): string {
   return src
     .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
-    .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
+    .replace(/(?<!:)\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
 }
 
 function sourceFiles(): string[] {
@@ -112,6 +117,20 @@ test('detector control: the regex sees the defect class and spares the law', () 
   for (const s of mustPass) {
     assert.ok(!LOWERCASE_ADDRESS.test(s), `false positive: flagged "${s}"`);
   }
+
+  // Comment-stripping control (the refuter's find): a URL inside copy must not
+  // act as a line comment and hide the defect after it, while a real trailing
+  // comment must still be blanked.
+  const urlLine = "  x = 'вижте https://пример.бг — данните ви';";
+  assert.ok(
+    LOWERCASE_ADDRESS.test(stripComments(urlLine)),
+    'stripComments swallowed copy after a URL — the gate is blind to that line tail',
+  );
+  const commentLine = "  x = 1; // quoting the OLD copy: данните ви";
+  assert.ok(
+    !LOWERCASE_ADDRESS.test(stripComments(commentLine)),
+    'stripComments no longer blanks trailing comments — comment prose would flag',
+  );
 });
 
 test('no standalone lowercase second-person address in user-facing copy', () => {
