@@ -779,16 +779,20 @@ export function openPdfPreview(html: string, opts?: OpenPreviewOpts): boolean {
 // popup-blocked, this function has already returned true and no toast fires —
 // accepted, both halves are rare and the failure is a silent no-op, not a
 // wrong document.
-let summaryPrintFrame: { remove(): void } | null = null;
+let summaryPrintCancel: (() => void) | null = null;
 
 export function openSummaryPrint(html: string): boolean {
   try {
     // One frame at a time: a reprint must not accumulate hidden frames waiting
     // on afterprint events that never fired. A module-level handle, not a DOM
     // query — the exporters are pinned DOM-blind (scripts/ai-tint.test.ts).
-    if (summaryPrintFrame) {
-      try { summaryPrintFrame.remove(); } catch { /* already gone */ }
-      summaryPrintFrame = null;
+    // The handle is the frame's CANCEL, not the element: a superseded frame's
+    // pending settle timer must die with it, or its catch branch can open a
+    // fallback window printing the PREVIOUS call's document (refuter find,
+    // 2026-09-01 — pinned in printed-document.test.ts).
+    if (summaryPrintCancel) {
+      try { summaryPrintCancel(); } catch { /* already gone */ }
+      summaryPrintCancel = null;
     }
     const frame = document.createElement('iframe');
     frame.setAttribute('data-summary-print', '');
@@ -796,12 +800,10 @@ export function openSummaryPrint(html: string): boolean {
     frame.style.cssText =
       'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
     document.body.appendChild(frame);
-    summaryPrintFrame = frame;
     const win = frame.contentWindow;
     const doc = win ? win.document : null;
     if (!win || !doc) {
       frame.remove();
-      summaryPrintFrame = null;
       return openPdfPreview(html, { autoPrint: true });
     }
     let done = false;
@@ -809,9 +811,10 @@ export function openSummaryPrint(html: string): boolean {
       if (!done) {
         done = true;
         frame.remove();
-        if (summaryPrintFrame === frame) summaryPrintFrame = null;
+        if (summaryPrintCancel === cleanup) summaryPrintCancel = null;
       }
     };
+    summaryPrintCancel = cleanup;
     win.addEventListener('afterprint', () => setTimeout(cleanup, 150));
     doc.open();
     doc.write(html);
@@ -819,6 +822,7 @@ export function openSummaryPrint(html: string): boolean {
     // Same settle delay as the window funnel's autoPrint branch: give layout a
     // beat before the dialog snapshots the page.
     setTimeout(() => {
+      if (done) return; // superseded by a newer print — this frame is gone
       try {
         win.focus();
         win.print();

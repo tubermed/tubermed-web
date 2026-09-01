@@ -427,6 +427,52 @@ test('openSummaryPrint writes the document verbatim, and its fallback door still
   }
 });
 
+test('openSummaryPrint: a rapid reprint kills the superseded frame\'s pending print', async () => {
+  // The refuter's find (2026-09-01): a second print inside the first's 250ms
+  // settle window removed frame 1 but left its timer armed — and when the
+  // detached window's print() then threw, the stale catch opened a fallback
+  // popup carrying call ONE's document. Same visit, but a duplicate dialog
+  // the doctor never asked for. The timer must die with its frame: after a
+  // rapid double call where BOTH frames' print() throws, exactly one
+  // fallback opens, and it carries the SECOND document.
+  const first = buildPatientSummaryHtml('Първи документ.', VISIT_BG);
+  const second = buildPatientSummaryHtml('Втори документ.', VISIT_BG);
+  const opened: string[] = [];
+  const realWindow = (globalThis as { window?: unknown }).window;
+  const realDocument = (globalThis as { document?: unknown }).document;
+  (globalThis as { window?: unknown }).window = {
+    open: () => ({
+      document: { write: (s: string) => opened.push(s), close() {}, readyState: 'complete' },
+      addEventListener() {}, focus() {}, print() {},
+    }),
+  };
+  (globalThis as { document?: unknown }).document = {
+    createElement: () => ({
+      setAttribute() {},
+      style: { cssText: '' },
+      remove() {},
+      contentWindow: {
+        document: { open() {}, write() {}, close() {} },
+        addEventListener() {}, focus() {},
+        print() { throw new Error('frame print refused'); },
+      },
+    }),
+    body: { appendChild() {} },
+  };
+  try {
+    assert.equal(openSummaryPrint(first), true);
+    assert.equal(openSummaryPrint(second), true);
+    await new Promise((r) => setTimeout(r, 450));
+    assert.equal(opened.length, 1,
+      `${opened.length} fallback window(s) opened — the superseded frame's timer must not print`);
+    assert.ok(opened[0].includes('Втори документ.'),
+      'the surviving fallback must carry the SECOND call\'s document, never the superseded one');
+  } finally {
+    (globalThis as { window?: unknown }).window = realWindow;
+    (globalThis as { document?: unknown }).document = realDocument;
+  }
+});
+
 // ── 4. The file set the gate does not have to remember ──────────────────────
 
 const DATE_MACHINERY =
