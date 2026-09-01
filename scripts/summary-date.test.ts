@@ -478,11 +478,19 @@ const P = {
 
   /** The document leaves by exactly ONE door, and that door is handed exactly
    *  the builder's output. Everything else that could push bytes at a printer,
-   *  a clipboard or a disk is forbidden outright. */
+   *  a clipboard or a disk is forbidden outright.
+   *
+   *  The door is `openSummaryPrint` (2026-09-01) — the резюме-only funnel in
+   *  lib/exporters.ts that prints from a hidden same-origin iframe so Chrome's
+   *  print footer names the app origin instead of `about:blank`, falling back
+   *  to the shared window funnel internally. The modal may not call
+   *  `openPdfPreview` directly any more: a second door beside the pinned one
+   *  is exactly what this predicate exists to refuse, whichever name it has. */
   oneWayOut(src: string): boolean {
     const c = code(src);
     if (FOREIGN_EXITS.test(c)) return false;
-    const opens = callArgs(c, 'openPdfPreview');
+    if (callArgs(c, 'openPdfPreview').length !== 0) return false;
+    const opens = callArgs(c, 'openSummaryPrint');
     if (opens.length !== 1) return false;
     return opens[0][0] === `${DOC}(finalText, ${PROP}, identity)`;
   },
@@ -913,6 +921,30 @@ test('R2/4b: a foreign exit alone is enough to fail, with no date in sight', () 
   }`;
   assert.equal(P.oneWayOut(mutated), false,
     'the exits are enumerated, not merely inspected for dates — an unpinned door is the hazard');
+});
+
+test('R2/4c: the OLD door fails — a direct openPdfPreview is a second funnel now', () => {
+  // The exact shape this modal shipped with until 2026-09-01. If it comes
+  // back — a revert, a copy-paste from the лист path — the summary prints
+  // from a blank window again and the footer reads about:blank.
+  const oldDoor = `
+  function handlePrint() {
+    const opened = openPdfPreview(${DOC}(finalText, ${PROP}, identity), { autoPrint: true });
+  }`;
+  assert.equal(P.oneWayOut(oldDoor), false, 'the pinned door is openSummaryPrint, not openPdfPreview');
+  // …both doors at once is two doors, not a transition:
+  const bothDoors = `
+  function handlePrint() {
+    const opened = openSummaryPrint(${DOC}(finalText, ${PROP}, identity));
+    if (!opened) openPdfPreview(${DOC}(finalText, ${PROP}, identity), { autoPrint: true });
+  }`;
+  assert.equal(P.oneWayOut(bothDoors), false, 'the fallback lives INSIDE the funnel, never in the modal');
+  // …and the honest new shape is green, so the pin is not simply always-red.
+  const honest = `
+  function handlePrint() {
+    const opened = openSummaryPrint(${DOC}(finalText, ${PROP}, identity));
+  }`;
+  assert.equal(P.oneWayOut(honest), true);
 });
 
 test('R2/5: the builder\'s own fallback, in ISO, under a different class name', () => {

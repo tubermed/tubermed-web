@@ -760,6 +760,79 @@ export function openPdfPreview(html: string, opts?: OpenPreviewOpts): boolean {
   return true;
 }
 
+// The резюме-only print funnel (2026-09-01). openPdfPreview prints from a
+// blank window, so Chrome's print footer reads `about:blank` — on a sheet the
+// patient takes home. A hidden same-origin iframe inherits the app's origin,
+// so the footer names the app instead. Резюме-only: the лист keeps
+// openPdfPreview unchanged, where the preview window is a feature (the doctor
+// reviews the лист before printing; the резюме auto-prints with no preview).
+//
+// Cleanup is wired from the PARENT via addEventListener, never by injecting a
+// script into the frame: an about:blank frame inherits the app CSP, and an
+// inline script is the first thing a stricter CSP kills. `afterprint` fires on
+// save AND cancel; the one-frame-at-a-time sweep at the top bounds the leak if
+// a browser never fires it (a hidden 0×0 frame, not a window).
+//
+// Falls back to openPdfPreview when the frame cannot be built at all, so the
+// worst case is exactly the pre-2026-09-01 behaviour. Known residual: if
+// `win.print()` throws asynchronously AND the fallback window is then
+// popup-blocked, this function has already returned true and no toast fires —
+// accepted, both halves are rare and the failure is a silent no-op, not a
+// wrong document.
+let summaryPrintFrame: { remove(): void } | null = null;
+
+export function openSummaryPrint(html: string): boolean {
+  try {
+    // One frame at a time: a reprint must not accumulate hidden frames waiting
+    // on afterprint events that never fired. A module-level handle, not a DOM
+    // query — the exporters are pinned DOM-blind (scripts/ai-tint.test.ts).
+    if (summaryPrintFrame) {
+      try { summaryPrintFrame.remove(); } catch { /* already gone */ }
+      summaryPrintFrame = null;
+    }
+    const frame = document.createElement('iframe');
+    frame.setAttribute('data-summary-print', '');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.cssText =
+      'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+    document.body.appendChild(frame);
+    summaryPrintFrame = frame;
+    const win = frame.contentWindow;
+    const doc = win ? win.document : null;
+    if (!win || !doc) {
+      frame.remove();
+      summaryPrintFrame = null;
+      return openPdfPreview(html, { autoPrint: true });
+    }
+    let done = false;
+    const cleanup = () => {
+      if (!done) {
+        done = true;
+        frame.remove();
+        if (summaryPrintFrame === frame) summaryPrintFrame = null;
+      }
+    };
+    win.addEventListener('afterprint', () => setTimeout(cleanup, 150));
+    doc.open();
+    doc.write(html);
+    doc.close();
+    // Same settle delay as the window funnel's autoPrint branch: give layout a
+    // beat before the dialog snapshots the page.
+    setTimeout(() => {
+      try {
+        win.focus();
+        win.print();
+      } catch {
+        cleanup();
+        openPdfPreview(html, { autoPrint: true });
+      }
+    }, 250);
+    return true;
+  } catch {
+    return openPdfPreview(html, { autoPrint: true });
+  }
+}
+
 // ─── WORD (.doc download) ────────────────────────────────────
 
 function wordIdentityHeader(id: ExportIdentity): string {

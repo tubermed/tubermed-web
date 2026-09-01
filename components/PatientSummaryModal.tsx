@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, patientSummaryLimitFromError } from '@/lib/api';
-import { copyToClipboard, openPdfPreview, type ExportIdentity } from '@/lib/exporters';
+import { copyToClipboard, openSummaryPrint, type ExportIdentity } from '@/lib/exporters';
 import { buildPatientSummaryHtml } from '@/lib/patient-summary-doc';
 import SkeletonInput from '@/components/SkeletonInput';
 import { Icon } from '@/components/ui/Icon';
@@ -228,10 +228,10 @@ export default function PatientSummaryModal({
   function handlePrint() {
     // Dated by the преглед the summary was written from — never by the clock at
     // print time. A reprint in three months is the SAME visit.
-    const opened = openPdfPreview(
-      buildPatientSummaryHtml(finalText, visitDateBg, identity),
-      { autoPrint: true },
-    );
+    // openSummaryPrint (2026-09-01): hidden same-origin iframe, so Chrome's
+    // print footer names the app origin, not about:blank. Its internal
+    // fallback is the old window funnel, which is what can still be blocked.
+    const opened = openSummaryPrint(buildPatientSummaryHtml(finalText, visitDateBg, identity));
     if (!opened) {
       onToast('error', 'Изскачащият прозорец е блокиран — разрешете го за този сайт');
     }

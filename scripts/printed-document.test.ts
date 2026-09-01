@@ -63,7 +63,7 @@ registerHooks({
 const ROOT = join(import.meta.dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
-const { generatePdfHtml, generateEchoHtml, generateWordHtml, openPdfPreview } =
+const { generatePdfHtml, generateEchoHtml, generateWordHtml, openPdfPreview, openSummaryPrint } =
   await import('../lib/exporters.ts');
 const { buildPatientSummaryHtml } = await import('../lib/patient-summary-doc.ts');
 const { formatVisitDateBg } = await import('../lib/date.ts');
@@ -357,6 +357,73 @@ test('openPdfPreview adds no date to any document, on EITHER of its branches', (
     }
   } finally {
     (globalThis as { window?: unknown }).window = realOpen;
+  }
+});
+
+/** openSummaryPrint (2026-09-01), the резюме-only iframe funnel, held the same
+ *  way: as a document transformation, on BOTH its branches. The frame path
+ *  must hand the frame the builder's bytes VERBATIM (it injects nothing — its
+ *  cleanup is wired from the parent, not by an inline script); the fallback
+ *  path is openPdfPreview and must stay reachable, or a browser that refuses
+ *  the frame prints nothing at all. */
+test('openSummaryPrint writes the document verbatim, and its fallback door still opens', () => {
+  const summaryHtml = buildPatientSummaryHtml('Починете си.\n\nТекст.', VISIT_BG);
+  const written: string[] = [];
+  const opened: string[] = [];
+  const makeFrame = (withWindow: boolean) => ({
+    setAttribute() {},
+    style: { cssText: '' },
+    remove() {},
+    contentWindow: withWindow
+      ? {
+          document: { open() {}, write: (s: string) => written.push(s), close() {} },
+          addEventListener() {}, focus() {}, print() {},
+        }
+      : null,
+  });
+  const realWindow = (globalThis as { window?: unknown }).window;
+  const realDocument = (globalThis as { document?: unknown }).document;
+  (globalThis as { window?: unknown }).window = {
+    open: () => ({
+      document: { write: (s: string) => opened.push(s), close() {}, readyState: 'complete' },
+      addEventListener() {}, focus() {}, print() {},
+    }),
+  };
+  let nextFrameHasWindow = true;
+  (globalThis as { document?: unknown }).document = {
+    createElement: () => makeFrame(nextFrameHasWindow),
+    body: { appendChild() {} },
+  };
+  try {
+    // Branch 1 — the frame path: written exactly once, VERBATIM. No close
+    // script, no hidden-actions css, no date — nothing. The bytes the builder
+    // made are the bytes the printer sees.
+    const ok = atClock(CLOCK_ISO, () => openSummaryPrint(summaryHtml));
+    assert.equal(ok, true, 'the frame path refused a printable frame');
+    assert.equal(opened.length, 0, 'the frame path fell through to window.open anyway');
+    assert.equal(written.length, 1, 'the summary was not written into the frame exactly once');
+    assert.equal(written[0], summaryHtml,
+      'the iframe funnel modified the document — it must be a pass-through');
+    // Branch 2 — a frame with no reachable window: the fallback door is the
+    // shared window funnel, autoPrint branch (its own date gate runs above).
+    nextFrameHasWindow = false;
+    const ok2 = atClock(CLOCK_ISO, () => openSummaryPrint(summaryHtml));
+    assert.equal(ok2, true, 'the fallback path did not open');
+    assert.equal(opened.length, 1, 'the fallback did not go through the shared window funnel');
+    assert.ok(opened[0].includes('afterprint'), 'the fallback is not the real openPdfPreview');
+    const invented = dateRuns(opened[0]).filter((r) => !accountedFor(r, runsInInput(VISIT_BG)));
+    assert.equal(invented.length, 0, 'the fallback document carries an invented date run');
+    // Branch 3 — a document that cannot even build a frame: still the fallback,
+    // never an exception into the modal.
+    (globalThis as { document?: unknown }).document = {
+      createElement() { throw new Error('no DOM at all'); },
+    };
+    const ok3 = atClock(CLOCK_ISO, () => openSummaryPrint(summaryHtml));
+    assert.equal(ok3, true, 'a throwing DOM must land on the fallback, not throw out');
+    assert.equal(opened.length, 2);
+  } finally {
+    (globalThis as { window?: unknown }).window = realWindow;
+    (globalThis as { document?: unknown }).document = realDocument;
   }
 });
 
