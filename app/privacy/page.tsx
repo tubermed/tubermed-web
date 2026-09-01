@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 // legal text. The consent checkbox in the access form links here, so the route
 // must resolve; the section structure is scaffolding only.
 const SECTIONS = [
-  'Кой обработва данните ви',
+  'Кой обработва данните Ви',
   'Какви данни събираме',
   'Цел на обработката',
   'Правно основание',

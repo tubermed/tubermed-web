@@ -3,7 +3,7 @@
  *
  * The bug this closes was a SENTENCE, not a status code. When the pipeline
  * failed before Soniox produced a transcript, the scribe showed a panel opening
- * with „Звукът ви е запазен. Можете да опитате повторно извличане" — and the
+ * with „Звукът Ви е запазен. Можете да опитате повторно извличане" — and the
  * doctor discovered it was false by clicking and collecting a 409. A false
  * reassurance followed by a dead end, with a patient in the room.
  *
@@ -11,7 +11,7 @@
  * at the moment of rendering rather than assumed:
  *
  *   blobAvailable — is the recording ACTUALLY still in browser memory? The
- *     promise „Звукът ви е запазен" is true only while pcBlobRef holds it. It is
+ *     promise „Звукът Ви е запазен" is true only while pcBlobRef holds it. It is
  *     released after a confirmed submit, and a page refresh drops it with the
  *     rest of the tab's memory. Without this check the panel would offer a retry
  *     button whose handler begins `if (!blob) return;` — a button that silently
@@ -64,11 +64,11 @@ const BUFFER_GONE =
  */
 const SERVICE_DOWN =
   `Услугата за транскрипция не отговаря след ${MAX_TRANSCRIPTION_RETRIES} опита. ` +
-  'Звукът ви е все още в браузъра — не затваряйте страницата. ' +
+  'Звукът Ви е все още в браузъра — не затваряйте страницата. ' +
   'Опитайте пак след няколко минути; ако проблемът продължи, документирайте прегледа ръчно.';
 
 /** The audio is in memory and it is worth another try. */
-const RETRYABLE = 'Звукът ви е запазен. Опитайте отново.';
+const RETRYABLE = 'Звукът Ви е запазен. Опитайте отново.';
 
 /**
  * uploadRetryCopy(blobAvailable, attempt, reason?) → what the panel may say.

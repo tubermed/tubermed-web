@@ -259,7 +259,7 @@ function ScribePageInner() {
         setNoSpeech(true);
         return;
       }
-      // B5: the RecoveryPanel tells the doctor „звукът ви е запазен", so only
+      // B5: the RecoveryPanel tells the doctor „Звукът Ви е запазен", so only
       // route here when the audio actually reached the server and processing
       // failed AFTER upload (reachedServer). A network drop or a 4xx-on-pending
       // leaves an in-memory-only blob — nothing was persisted — so it must fall
@@ -303,7 +303,7 @@ function ScribePageInner() {
   // in-session fallback below stands in for it.
   const [pcRetry, setPcRetry] = useState<{ message: string; attempt: number | null } | null>(null);
   const pcAttemptsRef = useRef(0);
-  // Render-visible mirror of pcBlobRef. The panel's promise („Звукът ви е
+  // Render-visible mirror of pcBlobRef. The panel's promise („Звукът Ви е
   // запазен") depends on whether the buffer is REALLY held, but a ref cannot be
   // read during render — React cannot track it, and the lint rule that says so
   // is right. So every site that writes the ref reports the change here, and the
@@ -628,7 +628,7 @@ function RecoveryPanel({
       setPhase({
         kind: 'temporary',
         message:
-          'Услугата временно е недостъпна. Звукът ви е запазен — опитайте отново след малко.',
+          'Услугата временно е недостъпна. Звукът Ви е запазен — опитайте отново след малко.',
       });
     }
   }, [visitId, onSuccess]);
@@ -692,7 +692,7 @@ function RecoveryPanel({
       <p className="text-sm max-w-md" style={{ color: 'var(--color-text-muted)' }}>
         {blocked
           ? 'Звукът не е наличен за повторно извличане. Моля, започнете нов преглед.'
-          : 'Звукът ви е запазен. Можете да опитате повторно извличане, без да записвате отново.'}
+          : 'Звукът Ви е запазен. Можете да опитате повторно извличане, без да записвате отново.'}
       </p>
 
       {/* The extra notice box is only the transient "service is down, audio is
@@ -2020,7 +2020,7 @@ function PcMode({
       // F-05 — a SERVICE failure with no transcript to show for it. „5xx means
       // the transcript is on the row" was the assumption that made this panel
       // lie: a Soniox failure is also a 5xx, and it leaves NO transcript, so the
-      // recovery panel promised „Звукът ви е запазен" and then 409ed on the
+      // recovery panel promised „Звукът Ви е запазен" and then 409ed on the
       // retry-extraction it offered. The backend now says which it is, and the
       // row is back at 'pending', so the truthful offer is a same-audio re-post.
       if (isTranscriptionFailedError(err)) {

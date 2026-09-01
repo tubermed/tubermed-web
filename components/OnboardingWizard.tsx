@@ -147,10 +147,10 @@ export default function OnboardingWizard({ me, onClose, onStartTour, welcomeMedi
           <>
             <div className="px-7 pt-6 pb-7">
               <h2 className="text-lg font-semibold" style={{ color: 'var(--color-ink)' }}>
-                Няколко думи за вас
+                Няколко думи за Вас
               </h2>
               <p className="text-sm mt-1 mb-5" style={{ color: 'var(--color-text-muted)' }}>
-                Всичко е по избор — помага ни да настроим TuberMed за вашата практика.
+                Всичко е по избор — помага ни да настроим TuberMed за Вашата практика.
               </p>
               <div className="space-y-4">
                 <WizardField label="Специалност">

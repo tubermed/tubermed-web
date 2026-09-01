@@ -16,7 +16,7 @@ import {
 } from '../lib/upload-retry.ts';
 
 // The claim that was false. It may appear ONLY when the buffer is really held.
-const SAVED_CLAIM = 'Звукът ви е запазен';
+const SAVED_CLAIM = 'Звукът Ви е запазен';
 
 test('case 3 — with no blob, the panel does not claim the audio is saved', () => {
   const copy = uploadRetryCopy(false, null);
@@ -118,7 +118,7 @@ test('a caller-supplied reason is DROPPED once the service is down', () => {
 test('a blank reason falls back to the standard promise, never to an empty body', () => {
   for (const blank of ['', '   ', undefined]) {
     const copy = uploadRetryCopy(true, 1, blank);
-    assert.equal(copy.body, 'Звукът ви е запазен. Опитайте отново.');
+    assert.equal(copy.body, 'Звукът Ви е запазен. Опитайте отново.');
   }
 });
 
