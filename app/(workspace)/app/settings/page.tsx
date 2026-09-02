@@ -257,7 +257,7 @@ export default function SettingsPage() {
       setPwConfirmError(null);
     } catch (err) {
       if (err instanceof ApiError && err.status === 400 && err.message === 'password_change_unavailable') {
-        setPwError('Този акаунт използва PIN за вход — смяната на парола не е налична тук.');
+        setPwError('Този акаунт използва PIN за вход. Смяната на парола не е налична тук.');
       } else if (err instanceof ApiError) {
         setPwError(err.message); // 401 „Грешна текуща парола." и др. вече са на български
       } else {
@@ -376,7 +376,7 @@ export default function SettingsPage() {
                     />
                     <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
                       {NOTE_VERBOSITY_OPTIONS.find((o) => o.value === (form.note_verbosity || NOTE_VERBOSITY_DEFAULT))?.hint}
-                      {' '}Същото клинично съдържание, различна дължина — важи за анамнезата, находките и терапията; кодове, медикаменти и показатели не се променят. Може да се смени за отделен преглед при започването му.
+                      {' '}Същото клинично съдържание, различна дължина. Важи за анамнезата, находките и терапията; кодове, медикаменти и показатели не се променят. Може да се смени за отделен преглед при започването му.
                     </p>
                   </Field>
                 )}

@@ -67,7 +67,10 @@ test('case 4 — the changed message is honest about the service and points some
   const { body } = uploadRetryCopy(true, MAX_TRANSCRIPTION_RETRIES + 1);
   assert.ok(body.includes('не отговаря'), `must name the service failing — got: ${body}`);
   assert.ok(
-    body.includes('не затваряйте'),
+    // Capital Н: the em-dash prose sweep (2026-09-02 scoped ruling) split the
+    // sentence — „в браузъра. Не затваряйте страницата." — and this pin
+    // updates with the copy it pins.
+    body.includes('Не затваряйте'),
     `must warn against closing the page while the audio is only in memory — got: ${body}`,
   );
   assert.ok(body.includes('ръчно'), `must point at the manual fallback — got: ${body}`);

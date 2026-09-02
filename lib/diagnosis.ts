@@ -87,8 +87,8 @@ export type FiledTermSource = 'official' | 'dictated';
 export type MainDiagnosisProvenance = 'dictated' | 'no_dictation' | 'no_official_code';
 
 export const ATTRIBUTION_PREFIX = 'доктор каза: ';
-export const NO_OFFICIAL_CODE_NOTE = 'без официален код по МКБ-10 — записано е продиктуваното';
-export const NO_DICTATION_NOTE = 'без продиктувана формулировка — терминът е от МКБ-10';
+export const NO_OFFICIAL_CODE_NOTE = 'без официален код по МКБ-10, записано е продиктуваното';
+export const NO_DICTATION_NOTE = 'без продиктувана формулировка, терминът е от МКБ-10';
 export const PARENT_RUBRIC_NOTE = 'категория по МКБ-10 (3-знача рубрика)';
 
 export interface MainDiagnosisPresentation {

@@ -358,7 +358,7 @@ function ScribePageInner() {
         // processed there — a re-send can't help and can't duplicate (the backend
         // 409-gates on status). Show a calm notice, not a red error, and stop
         // offering a same-audio retry that would only 409 again.
-        setNotice('Изпращането е получено и вече се обработва — не е нужно да изпращате отново.');
+        setNotice('Изпращането е получено и вече се обработва. Не е нужно да изпращате отново.');
         return;
       }
       // F-05 — the retry hit the same pre-transcript service failure. The row is
@@ -628,7 +628,7 @@ function RecoveryPanel({
       setPhase({
         kind: 'temporary',
         message:
-          'Услугата временно е недостъпна. Звукът Ви е запазен — опитайте отново след малко.',
+          'Услугата временно е недостъпна. Звукът Ви е запазен. Опитайте отново след малко.',
       });
     }
   }, [visitId, onSuccess]);
@@ -817,7 +817,7 @@ function NoSpeechPanel({
         Не разпознахме реч в записа
       </div>
       <p className="text-sm max-w-md" style={{ color: 'var(--color-text-muted)' }}>
-        Записът изглежда без говор — възможно е микрофонът да е бил изключен или
+        Записът изглежда без говор. Възможно е микрофонът да е бил изключен или
         записът да е твърде кратък. Проверете микрофона и опитайте отново.
       </p>
 
@@ -1051,7 +1051,7 @@ function ProcessingView() {
       </ul>
       <div className="mt-5 text-xs" style={{ color: 'var(--color-text-muted)' }}>
         {overtime
-          ? 'Почти готово — отнема малко повече от обичайното…'
+          ? 'Почти готово. Отнема малко повече от обичайното…'
           : 'Обикновено отнема ~15–30 сек.'}
       </div>
     </div>
@@ -1385,7 +1385,7 @@ function PhoneMode({
             className="text-sm mb-6"
             style={{ color: 'var(--color-text-muted)' }}
           >
-            Говорете — AI слуша
+            Говорете, AI слуша
           </div>
           <Spinner />
         </div>
@@ -2168,7 +2168,7 @@ function PcMode({
               color: 'var(--color-brand-dark)',
             }}
           >
-            <span className="flex-1">Твърде тихо е — говорете по-близо до микрофона</span>
+            <span className="flex-1">Твърде тихо е, говорете по-близо до микрофона</span>
             <button
               type="button"
               onClick={dismissTooQuiet}
@@ -2251,7 +2251,7 @@ function PcMode({
               color: 'var(--color-text-muted)',
             }}
           >
-            Връзката на живо прекъсна. Записът продължава — бележката ще се
+            Връзката на живо прекъсна. Записът продължава. Бележката ще се
             обработи след прегледа.
           </div>
         )}

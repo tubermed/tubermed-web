@@ -76,12 +76,12 @@ export function mkbCorrectionCopy(c?: MkbCorrection | null): string | null {
       // and what was filed — the doctor is the one who can tell whether the lost
       // specificity mattered.
       return c.to
-        ? `Кодът е приведен от „${c.from}“ към „${c.to}“ — „${c.from}“ е от американската класификация ICD-10-CM и не съществува в българската МКБ-10.`
+        ? `Кодът е приведен от „${c.from}“ към „${c.to}“. „${c.from}“ е от американската класификация ICD-10-CM и не съществува в българската МКБ-10.`
         : null;
 
     case 'us_only_mapped':
       return c.to
-        ? `Кодът е приведен от „${c.from}“ към „${c.to}“ — международен еквивалент на американски код.`
+        ? `Кодът е приведен от „${c.from}“ към „${c.to}“, международен еквивалент на американски код.`
         : null;
 
     case 'invalid_code_stripped':
@@ -91,8 +91,8 @@ export function mkbCorrectionCopy(c?: MkbCorrection | null): string | null {
 
     case 'obstetric_no_context':
       return c.to
-        ? `Кодът е приведен от „${c.from}“ към „${c.to}“ — „${c.from}“ е от акушерската глава, а разговорът не споменава бременност.`
-        : `Кодът „${c.from}“ е от акушерската глава, а разговорът не споменава бременност — не беше записан.`;
+        ? `Кодът е приведен от „${c.from}“ към „${c.to}“. „${c.from}“ е от акушерската глава, а разговорът не споменава бременност.`
+        : `Кодът „${c.from}“ е от акушерската глава, а разговорът не споменава бременност. Кодът не беше записан.`;
 
     default:
       // An unrecognised rule renders NOTHING rather than guessing. A newer

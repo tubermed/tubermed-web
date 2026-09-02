@@ -126,7 +126,7 @@ function FlagNotes({ flags }: { flags: UncertainSpan[] }) {
           style={{ color: 'var(--color-gold)', background: 'var(--color-gold-soft, rgba(180,140,0,0.08))' }}
         >
           <span aria-hidden>⚠</span>
-          <span>{s.reason || 'Възможна транскрипционна грешка — прегледайте оригинала.'}</span>
+          <span>{s.reason || 'Възможна транскрипционна грешка. Прегледайте оригинала.'}</span>
         </div>
       ))}
     </div>

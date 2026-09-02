@@ -184,7 +184,7 @@ export default function SignupPage() {
               className="mb-6"
               style={{ color: "var(--color-text-secondary)", fontSize: 13 }}
             >
-              Нужен е код за достъп — получавате го от екипа на TuberMed.
+              Нужен е код за достъп. Получавате го от екипа на TuberMed.
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-4">

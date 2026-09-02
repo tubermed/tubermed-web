@@ -82,8 +82,8 @@ export default function StartVisitCard({ state, onChange, onStartVisit, isSaving
           />
           <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
             {state.note_verbosity
-              ? 'Само за този преглед. Съдържанието е същото — различна е дължината на текста.'
-              : 'Без избор — дължината от настройките на профила.'}
+              ? 'Само за този преглед. Съдържанието е същото, различна е дължината на текста.'
+              : 'Без избор, дължината от настройките на профила.'}
           </p>
         </CardSection>
       )}

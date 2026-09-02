@@ -87,7 +87,7 @@ export default function SpecialtyTypeahead({
         type="text"
         value={value}
         disabled={disabled}
-        placeholder="напр. Кардиолог — или свободен текст"
+        placeholder="напр. Кардиолог или свободен текст"
         onChange={(e) => {
           onChange(e.target.value);
           setOpen(true);

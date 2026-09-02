@@ -669,7 +669,7 @@ function ResultPageInner() {
           }
           if (consultation.status === 'abandoned' || consultation.status === 'error') {
             toastIdRef.current += 1;
-            setToast({ kind: 'error', message: 'Бележката не е налична — започнете нов преглед', id: toastIdRef.current });
+            setToast({ kind: 'error', message: 'Бележката не е налична. Започнете нов преглед', id: toastIdRef.current });
           }
           return;
         }
@@ -780,7 +780,7 @@ function ResultPageInner() {
             toastIdRef.current += 1;
             setToast({
               kind: 'error',
-              message: 'Листът е приключен — промените не са запазени. Корекциите се правят в Хипократ.',
+              message: 'Листът е приключен. Промените не са запазени. Корекциите се правят в Хипократ.',
               id: toastIdRef.current,
             });
             return;
@@ -1347,7 +1347,7 @@ function ResultPageInner() {
       if (!original) return;
       const transcript = original.transcript || '';
       if (!transcript.trim()) {
-        showToast('error', 'Източникът не е наличен — транскриптът липсва.');
+        showToast('error', 'Източникът не е наличен. Транскриптът липсва.');
         return;
       }
       setTranscriptOpen(true);
@@ -1383,7 +1383,7 @@ function ResultPageInner() {
       setSourceSpan(span);
       setSourceTick((n) => n + 1);
     } else {
-      showToast('info', 'Не открихме ясен източник — проверете ръчно.');
+      showToast('info', 'Не открихме ясен източник. Проверете ръчно.');
     }
   }, [original, activeSourceField, showToast]);
 
@@ -1477,7 +1477,7 @@ function ResultPageInner() {
         // 'retrying' — a re-extraction is in flight and would re-populate the
         // note AFTER the scrub. Transient (the 15-min sweeper bounds it), so
         // this is a „try again", never a failure.
-        showToast('error', 'Листът се обработва в момента — опитайте пак след минута.');
+        showToast('error', 'Листът се обработва в момента. Опитайте пак след минута.');
       } else {
         showToast(
           'error',
@@ -1574,10 +1574,10 @@ function ResultPageInner() {
     if (isLocked) return;
     const html = generateEchoHtml(fields as unknown as EchoFields, listDateBg);
     if (openPdfPreview(html)) {
-      showToast('success', 'Преглед отворен — Запази като PDF от бутона');
+      showToast('success', 'Преглед отворен. Запази като PDF от бутона');
       signalExport('pdf');
     } else {
-      showToast('error', 'Изскачащият прозорец е блокиран — разрешете го за този сайт');
+      showToast('error', 'Изскачащият прозорец е блокиран. Разрешете го за този сайт');
     }
   }, [fields, isLocked, listDateBg, showToast, signalExport]);
 
@@ -1587,7 +1587,7 @@ function ResultPageInner() {
     if (openPdfPreview(html, { autoPrint: true })) {
       signalExport('print');
     } else {
-      showToast('error', 'Изскачащият прозорец е блокиран — разрешете го за този сайт');
+      showToast('error', 'Изскачащият прозорец е блокиран. Разрешете го за този сайт');
     }
   }, [fields, isLocked, listDateBg, showToast, signalExport]);
 
@@ -1596,12 +1596,12 @@ function ResultPageInner() {
     const html = generatePdfHtml(fields, listDateBg, exportIdentity);
     const opened = openPdfPreview(html);
     if (opened) {
-      showToast('success', 'Преглед отворен — Запази като PDF от бутона');
+      showToast('success', 'Преглед отворен. Запази като PDF от бутона');
       signalExport('pdf');
     } else {
       showToast(
         'error',
-        'Изскачащият прозорец е блокиран — разрешете го за този сайт'
+        'Изскачащият прозорец е блокиран. Разрешете го за този сайт'
       );
     }
   }, [fields, isLocked, listDateBg, showToast, signalExport, exportIdentity]);
@@ -1631,7 +1631,7 @@ function ResultPageInner() {
     } else {
       showToast(
         'error',
-        'Изскачащият прозорец е блокиран — разрешете го за този сайт'
+        'Изскачащият прозорец е блокиран. Разрешете го за този сайт'
       );
     }
   }, [fields, isLocked, listDateBg, showToast, signalExport, exportIdentity]);
@@ -1731,8 +1731,8 @@ function ResultPageInner() {
             </div>
             <div className="text-xs leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
               Клиничният текст и транскрипцията са премахнати необратимо. Записът
-              за прегледа — дата, вид на посещението и отметките за съгласие и
-              потвърждение — остава.
+              за прегледа (дата, вид на посещението и отметките за съгласие и
+              потвърждение) остава.
             </div>
           </div>
         </div>
@@ -2819,7 +2819,7 @@ function EraseConfirmModal({
 
         <p className="text-sm leading-relaxed mb-3" style={{ color: 'var(--color-text)' }}>
           Съдържанието на този лист ще бъде премахнато{' '}
-          <strong>необратимо</strong> — анамнеза, обективно състояние,
+          <strong>необратимо</strong>: анамнеза, обективно състояние,
           изследвания, диагнози, терапия, както и транскрипцията на разговора.
           Действието не може да бъде отменено.
         </p>
@@ -2898,11 +2898,11 @@ function StatusBadge({
       <div
         className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium"
         style={{ background: 'var(--color-ok-soft)', color: 'var(--color-ok)' }}
-        title={`Приключен на ${formatSealedAt(sealedAt)} — редакциите се правят в Хипократ.`}
+        title={`Приключен на ${formatSealedAt(sealedAt)}. Редакциите се правят в Хипократ.`}
       >
         <span className="w-2 h-2 rounded-full" style={{ background: 'var(--color-ok)' }} />
         <span className="inline-flex items-center gap-1.5">
-          <Icon name="check" /> Потвърден и затворен — само за преглед
+          <Icon name="check" /> Потвърден и затворен, само за преглед
         </span>
       </div>
     );
@@ -2934,7 +2934,7 @@ function StatusBadge({
           </span>
         ) : (
           <span className="inline-flex items-center gap-1.5">
-            <Icon name="lock" /> Чака преглед — действията са заключени
+            <Icon name="lock" /> Чака преглед, действията са заключени
           </span>
         )}
       </button>
@@ -3126,7 +3126,7 @@ function SourceButton({
       title={
         resolved
           ? 'Покажи мястото в транскрипта, от което идва това поле'
-          : 'Няма потвърден източник в транскрипта — отвори за предположение'
+          : 'Няма потвърден източник в транскрипта, отвори за предположение'
       }
       className="no-print flex-shrink-0 text-xs underline decoration-dotted underline-offset-2 transition hover:opacity-80"
       style={{ color: 'var(--color-text-muted)', background: 'transparent' }}

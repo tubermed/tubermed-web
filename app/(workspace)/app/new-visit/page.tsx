@@ -20,9 +20,9 @@ const PENDING_VISIT_KEY = 'tuber_pending_visit';
 // A4 spotlight tour — anchored to data-tour attributes on this page +
 // StartVisitCard. One sentence per step (see AGENTS.md "A4 onboarding").
 const TOUR_STEPS: TourStep[] = [
-  { selector: '[data-tour="visit-context"]', text: 'Изберете тип преглед — една кратка причина за визитата е достатъчна.' },
+  { selector: '[data-tour="visit-context"]', text: 'Изберете тип преглед. Една кратка причина за визитата е достатъчна.' },
   { selector: '[data-tour="start"]', text: 'Натиснете тук и говорете с пациента както обикновено.' },
-  { selector: '[data-tour="today"]', text: 'Всички прегледи се появяват тук — най-новите най-отгоре, с час, тип и повод.' },
+  { selector: '[data-tour="today"]', text: 'Всички прегледи се появяват тук, най-новите най-отгоре, с час, тип и повод.' },
 ];
 
 export default function NewVisitPage() {

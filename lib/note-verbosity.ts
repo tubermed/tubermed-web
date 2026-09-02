@@ -26,7 +26,7 @@ export const NOTE_VERBOSITY_ENABLED = noteVerbosityEnabled();
 export const NOTE_VERBOSITY_DEFAULT: NoteVerbosity = 'tochno';
 
 export const NOTE_VERBOSITY_OPTIONS: Array<{ value: NoteVerbosity; label: string; hint: string }> = [
-  { value: 'kratko',   label: 'Кратко',   hint: 'Телеграфно — фрази и съкращения, нищо излишно.' },
+  { value: 'kratko',   label: 'Кратко',   hint: 'Телеграфно, фрази и съкращения, нищо излишно.' },
   { value: 'tochno',   label: 'Точно',    hint: 'Стандартният запис.' },
   { value: 'podrobno', label: 'Подробно', hint: 'Пълни изречения, с контекста на разговора.' },
 ];

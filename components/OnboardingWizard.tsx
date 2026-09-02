@@ -157,7 +157,7 @@ export default function OnboardingWizard({ me, onClose, onStartTour, welcomeMedi
                 className="mt-2 leading-relaxed"
                 style={{ color: 'var(--color-text-muted)', fontSize: 14 }}
               >
-                Говорете с пациента — амбулаторният лист се пише сам.
+                Говорете с пациента. Амбулаторният лист се пише сам.
               </p>
             </div>
             <Footer

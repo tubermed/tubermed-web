@@ -421,7 +421,7 @@ function ManualEditForm({
         className="text-xs"
         style={{ color: 'var(--color-text-muted)' }}
       >
-        Лекарството не е в ИАЛ регистъра — редактирай ръчно.
+        Лекарството не е в ИАЛ регистъра. Редактирай ръчно.
       </div>
       <FieldRow label="Лекарство (INN)">
         <input
@@ -655,7 +655,7 @@ function ExpandedForm({
           className="text-xs py-2"
           style={{ color: 'var(--color-text-muted)' }}
         >
-          Няма данни за форма/доза от ИАЛ — въведете ръчно по-долу.
+          Няма данни за форма/доза от ИАЛ. Въведете ръчно по-долу.
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">

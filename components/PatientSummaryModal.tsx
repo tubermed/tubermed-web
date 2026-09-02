@@ -233,7 +233,7 @@ export default function PatientSummaryModal({
     // fallback is the old window funnel, which is what can still be blocked.
     const opened = openSummaryPrint(buildPatientSummaryHtml(finalText, visitDateBg, identity));
     if (!opened) {
-      onToast('error', 'Изскачащият прозорец е блокиран — разрешете го за този сайт');
+      onToast('error', 'Изскачащият прозорец е блокиран. Разрешете го за този сайт');
     }
   }
 
@@ -338,7 +338,7 @@ export default function PatientSummaryModal({
                 className="text-xs font-medium"
                 style={{ color: 'var(--color-text-muted)' }}
               >
-                Текст за пациента — можете да редактирате преди печат/копиране
+                Текст за пациента. Можете да редактирате преди печат/копиране
               </label>
               <textarea
                 value={draft}
@@ -355,7 +355,7 @@ export default function PatientSummaryModal({
               {edited && (
                 <>
                   <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                    Редакциите са временни — не се записват на сървъра.
+                    Редакциите са временни. Не се записват на сървъра.
                   </p>
                   <button
                     onClick={() => setDraft(originalBody)}

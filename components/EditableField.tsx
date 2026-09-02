@@ -443,7 +443,7 @@ function HighlightPopover({
             className="text-xs leading-snug pt-1"
             style={{ color: 'var(--color-text-muted)' }}
           >
-            Листът е приключен — само за преглед.
+            Листът е приключен, само за преглед.
           </div>
         ) : (
           <div className="flex gap-2">
