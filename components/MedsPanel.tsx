@@ -521,7 +521,7 @@ function Slot({ value }: { value: string | undefined }) {
       <span
         className="inline-flex items-center gap-1"
         style={{ color: 'var(--color-gold)', fontWeight: 600 }}
-        title="липсва, попълни"
+        title="Липсва. Попълнете."
       >
         <Icon name="alert-triangle" size={14} /> {NOT_SPECIFIED}
       </span>
