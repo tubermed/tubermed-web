@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
+import * as Sentry from '@sentry/nextjs';
 import SpecialtyTypeahead from '@/components/SpecialtyTypeahead';
 import { api, type ConsultationsBand, type MeResponse, type UpdateMePayload } from '@/lib/api';
+import { markOnboardingComplete, type CompletionDeps } from '@/lib/onboarding-completion';
 import { Dialog } from '@/components/ui/Dialog';
 
 // ── A4 first-run wizard ──────────────────────────────────────────────────────
@@ -13,14 +15,39 @@ import { Dialog } from '@/components/ui/Dialog';
 // out of the wizard (Пропусни on step 1, Esc, Не сега, Започни) fires
 // PATCH { onboarding_completed: true } exactly once — first-write-wins
 // server-side — so a doctor is never nagged twice, even after skipping all of
-// it. The PATCH is best-effort: if it fails (offline), the wizard may appear
-// once more next session; it never blocks the doctor.
+// it. The PATCH never blocks the doctor, and since 2026-09-02 it is no longer
+// fire-and-forget: lib/onboarding-completion.ts retries it, writes a
+// per-doctor localStorage marker the new-visit page consults so a failed write
+// cannot re-show the wizard to a doctor who completed it, and reports a
+// persistent failure to Sentry (numbers only). The server value stays the
+// source of truth — the marker is a hint, spent the moment /me confirms.
 //
 // Step 2's quiet "Пропусни" is different: it skips the PROFILE SAVE and moves
 // to the tour offer — it does not end the wizard.
 //
 // Styling mirrors PatientLoadConfirmModal (fixed inset overlay, --color-bg-card
 // card, --color-brand primary action).
+
+// The ONE browser wiring for lib/onboarding-completion.ts — shared by finish()
+// below and by the new-visit page's mount decision, and pinned as source by
+// scripts/onboarding-completion.test.ts (a .tsx cannot be imported by
+// node --test, so the executable logic lives in the lib module and this stays
+// glue). localStorage on purpose: the marker must survive a browser restart —
+// the failed-write re-show is exactly a next-session defect. Accessing it can
+// itself throw (privacy modes); null degrades to the pre-fix behaviour.
+export function onboardingCompletionDeps(): CompletionDeps {
+  let storage: CompletionDeps['storage'] = null;
+  try {
+    if (typeof window !== 'undefined') storage = window.localStorage;
+  } catch {
+    /* storage unavailable — the server value alone decides, as before */
+  }
+  return {
+    updateMe: () => api.updateMe({ onboarding_completed: true }),
+    report: (m) => Sentry.captureMessage(m, 'warning'),
+    storage,
+  };
+}
 
 const BANDS: { value: ConsultationsBand; label: string }[] = [
   { value: 'under_100', label: 'До 100' },
@@ -61,11 +88,11 @@ export default function OnboardingWizard({ me, onClose, onStartTour, welcomeMedi
   const [specialtyOpen, setSpecialtyOpen] = useState(false);
 
   // The single exit point — marks onboarding complete (once; the wizard
-  // unmounts immediately after) and routes to the tour or plain close.
+  // unmounts immediately after) and routes to the tour or plain close. The
+  // completion write outlives the component: module-level retries + marker +
+  // persistent-failure report, see lib/onboarding-completion.ts.
   function finish(startTour: boolean) {
-    api.updateMe({ onboarding_completed: true }).catch(() => {
-      /* best-effort — see header comment */
-    });
+    void markOnboardingComplete(me.id, onboardingCompletionDeps());
     if (startTour) onStartTour();
     else onClose();
   }

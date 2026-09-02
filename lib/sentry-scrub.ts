@@ -152,6 +152,12 @@ export const ALLOWED_MESSAGE_PATTERNS: RegExp[] = [
   // name and an e-mail address and never rides the event.
   /^\[pilot-leads\] insert refused: status=\d{1,3} code=[A-Z0-9_]{1,10} count=\d+$/,
   /^\[pilot-leads\] submit failed: status=\d{1,3} count=\d+$/,
+  // [onboarding], 2026-09-02 — lib/onboarding-completion.ts, the wizard's
+  // completion PATCH after its bounded retries all failed. Before this alert
+  // that failure was a swallowed catch: the doctor met the completed wizard
+  // again next session and nothing anywhere recorded why. A status and an
+  // attempt count, nothing else — the formatter clamps both by construction.
+  /^\[onboarding\] completion write failed: status=\d{1,3} attempts=\d{1,2}$/,
 ];
 const REDACTED_MESSAGE = "[redacted: message not on the tag allowlist]";
 

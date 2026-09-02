@@ -70,8 +70,14 @@
         "tag": "[pilot-leads]",
         "pattern": "^\\[pilot-leads\\] submit failed: status=\\d{1,3} count=\\d+$",
         "source": "tubermed-web/components/landing/AccessForm.tsx buildSubmitFailedMessage()"
+      },
+      {
+        "tag": "[onboarding]",
+        "pattern": "^\\[onboarding\\] completion write failed: status=\\d{1,3} attempts=\\d{1,2}$",
+        "source": "tubermed-web/lib/onboarding-completion.ts buildCompletionFailedMessage()"
       }
     ],
+    "onboarding_why": "Added 2026-09-02, policy UNCHANGED (still v4, still full-string). The onboarding wizard's completion PATCH was fire-and-forget with a swallowed catch: one failed write on flaky clinic Wi-Fi and the doctor met the completed wizard again next session, with zero telemetry trace. The browser is the only witness — the server never saw a request. The message carries the last attempt's HTTP status (0 = no answer at all) and the attempt count, both clamped at the call site; a doctor id, a name, or any field value never rides the event.",
     "pilot_leads_why": "Added 2026-08-31, policy UNCHANGED (still v4, still full-string). The public lead form had captured zero leads since it shipped and the only place that failure was ever rendered was the visitor's own screen. Two call sites because the two silences are on opposite sides of the network: the backend one reports an insert the database refused; the browser one reports a request that got no answer at all (status=0), which is the ONLY witness available when a CORS preflight is refused and the POST is therefore never dispatched — no server-side channel can see a request the browser did not send. Both carry a status, a count, and nothing else; the payload of that form is a name and an e-mail address and never rides the event. `code` is normalised to [A-Z0-9_] at the call site before it reaches this pattern, because a PostgREST error object's `details`/`hint` echo the offending row.",
     "why": "captureMessage is called in production, so 'assert it empty' is not available — the assertion would be false on the first cap crossing. It is scrubbed instead.",
     "policy_why": "v3 matched a PREFIX, and a refuter rode arbitrary text in behind an allowed tag: '[usage-caps] пациент Иванов ЕГН …' survived verbatim. A prefix allowlist is the caller-discipline guarantee this contract exists to replace — the very argument used to drop breadcrumbs. Each allowed message now matches a FULL-STRING pattern that admits only counts and closed enums. drop_formatted is new for the same reason: logentry.formatted IS the interpolation of message+params, so dropping params while keeping formatted dropped the copy and kept the result."

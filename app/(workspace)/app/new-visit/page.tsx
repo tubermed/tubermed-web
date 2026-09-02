@@ -8,7 +8,8 @@ import { SCRIBE_FLOW_STEPS } from '@/lib/flow';
 import StartVisitCard, { EMPTY_START_VISIT, type StartVisitState } from '@/components/StartVisitCard';
 import NotesLibrary from '@/components/NotesLibrary';
 import Toast, { type ToastData, type ToastKind } from '@/components/Toast';
-import OnboardingWizard from '@/components/OnboardingWizard';
+import OnboardingWizard, { onboardingCompletionDeps } from '@/components/OnboardingWizard';
+import { resolveOnboardingOnLoad } from '@/lib/onboarding-completion';
 import SpotlightTour, { type TourStep } from '@/components/SpotlightTour';
 import ValueStatsCard from '@/components/ValueStatsCard';
 import { api, ApiError, getSession, type MeResponse, type ValueStats } from '@/lib/api';
@@ -38,7 +39,10 @@ export default function NewVisitPage() {
   // The wizard opens ONLY on an explicit onboarding_completed_at === null
   // from /me (fresh post-015 signup). An ABSENT key (backend migration 015
   // not applied) or a failed fetch means "unknown" → show nothing — an
-  // existing doctor must never see a wizard flash.
+  // existing doctor must never see a wizard flash. The null case is refined by
+  // lib/onboarding-completion.ts: a doctor whose completion WRITE failed
+  // (per-doctor marker) is not re-shown the wizard — the write is re-fired
+  // instead, and a persistent failure reports to Sentry, numbers only.
   const [me, setMe] = useState<MeResponse | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [tourOpen, setTourOpen]     = useState(false);
@@ -50,7 +54,7 @@ export default function NewVisitPage() {
       .then((m) => {
         if (cancelled) return;
         setMe(m);
-        if (m.onboarding_completed_at === null) setWizardOpen(true);
+        if (resolveOnboardingOnLoad(m, onboardingCompletionDeps()).showWizard) setWizardOpen(true);
       })
       .catch(() => {
         /* unknown — show nothing */
