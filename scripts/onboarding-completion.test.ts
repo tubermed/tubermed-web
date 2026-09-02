@@ -294,13 +294,28 @@ const CHECKS: Check[] = [
     holds: (w, p) => w.length > 500 && /OnboardingWizard/.test(w) && p.length > 500 && /OnboardingWizard/.test(p),
   },
   {
+    // ⚠ Hardened after the 2026-09-02 refuter round (B1'): the first cut banned
+    // only `.catch`, so a `.then(noop, noop)` swallow rode back in behind a
+    // dead-conditioned pinned call. Now: the call must stand as its OWN
+    // 4-space-indented statement, finish() carries exactly ONE `if` (the
+    // startTour fork), and no promise-swallow of updateMe survives anywhere.
     name: 'finish() routes through markOnboardingComplete — the swallowed-catch fire-and-forget is gone',
     holds: (w) => {
       const finish = /function finish\(startTour: boolean\) \{[\s\S]*?\n {2}\}/.exec(w);
       return !!finish
-        && /markOnboardingComplete\(me\.id, onboardingCompletionDeps\(\)\)/.test(finish[0])
-        && !/updateMe\([^)]*\)\.catch/.test(w);
+        && /^ {4}void markOnboardingComplete\(me\.id, onboardingCompletionDeps\(\)\);$/m.test(finish[0])
+        // ascii-safe: counts the ASCII keyword `if` in TypeScript source code
+        && (finish[0].match(/\bif\b/g) || []).length === 1
+        && /if \(startTour\)/.test(finish[0])
+        && !/updateMe\([^)]*\)\.(then|catch)/.test(w);
     },
+  },
+  {
+    // ⚠ Refuter B2'': `deps.report = () => {}` after construction silenced the
+    // alert with every pinned line intact. The deps object is built as one
+    // literal and never reassigned — in either file.
+    name: 'the deps cannot be rewired after construction — no .report/.updateMe/.storage assignment',
+    holds: (w, p) => ![w, p].some((s) => /\.(report|updateMe|storage)\s*=(?!=)/.test(s)),
   },
   {
     name: 'the deps wire Sentry.captureMessage as the reporter, ungated by any env var',
@@ -338,6 +353,18 @@ const MUTATIONS: Array<[string, (w: string, p: string) => [string, string]]> = [
   ['the page reverts to the bare null check',
     (w, p) => [w, p.replace(/if \(resolveOnboardingOnLoad\(m, onboardingCompletionDeps\(\)\)\.showWizard\) setWizardOpen\(true\);/,
       'if (m.onboarding_completed_at === null) setWizardOpen(true);')]],
+  // The two shapes the 2026-09-02 refuter round drove PAST the first cut of
+  // these checks — kept here verbatim so the widened anchors stay earned.
+  ["refuter B1': dead-conditioned pinned call + a .then(noop, noop) swallow",
+    (w, p) => [w.replace('    void markOnboardingComplete(me.id, onboardingCompletionDeps());',
+      '    if (false as boolean) {\n      void markOnboardingComplete(me.id, onboardingCompletionDeps());\n    }\n'
+      + '    api.updateMe({ onboarding_completed: true }).then(() => {}, () => {});'), p]],
+  ["refuter B1' variant: the pinned line kept at its own indent under a dead if",
+    (w, p) => [w.replace('    void markOnboardingComplete(me.id, onboardingCompletionDeps());',
+      '    if (false as boolean)\n    void markOnboardingComplete(me.id, onboardingCompletionDeps());'), p]],
+  ["refuter B2'': the reporter is rewired to a no-op after construction",
+    (w, p) => [w.replace('    void markOnboardingComplete(me.id, onboardingCompletionDeps());',
+      '    const d = onboardingCompletionDeps();\n    d.report = () => {};\n    void markOnboardingComplete(me.id, d);'), p]],
 ];
 
 test('every mutation that would re-open the silence breaks at least one wiring check', () => {
